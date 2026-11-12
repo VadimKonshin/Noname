@@ -3,27 +3,87 @@
 {% block title %}Корзина — NoName{% endblock %}
 {% block content %}
 <section class="container commerce-page noname-cart">
- <div class="eyebrow"><span class="tiny-dot"></span> CHECKOUT / 01</div><h1 class="commerce-heading">ТВОЯ КОРЗИНА<span class="heading-period">.</span></h1>
- <p class="page-lead">Сначала вещи, затем способ доставки. Регистрация не требуется.</p>
- {% if cart.lines %}
- <div class="cart-sequence">
-  <div class="checkout-step-title"><span>01 / ВЕЩИ</span><span>{{ cart.count }} ЕД.</span></div>
-  {% for item in cart.lines %}<article class="basket-line">
-   <a href="{{ item.product.get_absolute_url }}" class="basket-photo">{% with photo=item.product.photo %}{% if photo %}<img src="{{ photo.url }}" alt="{{ item.product.title }}">{% else %}<img src="{% static 'img/placeholder.svg' %}" alt="Фото отсутствует">{% endif %}{% endwith %}</a>
-   <div class="basket-info"><div class="eyebrow">{{ item.product.brand.name|default:'INDEPENDENT'|upper }}</div><h2><a href="{{ item.product.get_absolute_url }}">{{ item.product.title }}</a></h2><p>РАЗМЕР <strong>{{ item.size }}</strong> / {{ item.product.color }}</p><p>{{ item.unit_price|floatformat:0 }} ₽ / ШТ</p>
-   <form method="post" action="{% url 'cart_update' %}" class="basket-actions">{% csrf_token %}<input type="hidden" name="product_id" value="{{ item.product.pk }}"><input type="hidden" name="size" value="{{ item.size }}"><label>КОЛ-ВО <input type="number" name="quantity" min="0" max="10" value="{{ item.quantity }}" required></label><button type="submit" class="small-action">ОБНОВИТЬ</button><button type="submit" name="quantity" value="0" class="small-action muted-action" formnovalidate>УДАЛИТЬ ×</button></form>
-   </div><div class="basket-sum">{{ item.line_total|floatformat:0 }} ₽</div></article>{% endfor %}
-  <div class="cart-subtotal-line"><span>СУММА ТОВАРОВ</span><strong>{{ cart.subtotal|floatformat:0 }} ₽</strong></div>
-  <div class="checkout-step-title shipping-step-title"><span>02 / ДОСТАВКА</span><span>ВЫБЕРИ ОДИН ВАРИАНТ</span></div>
-  <form action="{% url 'cart_delivery' %}" method="post" class="cart-delivery-form" data-delivery-form data-subtotal="{{ cart.subtotal }}">{% csrf_token %}
-   {% for method in delivery_methods %}
-   <label class="shipping-option"><input type="radio" name="delivery_method" value="{{ method.pk }}" data-method-price="{{ method.price }}" {% if selected_method.pk == method.pk %}checked{% endif %} required><span class="shipping-option-mark" aria-hidden="true"></span><span class="shipping-option-copy"><strong>{{ method.name }}</strong><small>{{ method.description }}</small></span><strong class="shipping-option-price">{% if method.price %}{{ method.price|floatformat:0 }} ₽{% else %}БЕСПЛАТНО{% endif %}</strong></label>
-   {% empty %}<p class="detail-notice">Способы доставки пока не настроены. Администратор может добавить их в Django Admin.</p>{% endfor %}
-   <div class="cart-totals"><div class="summary-row"><span>Вещи</span><strong>{{ cart.subtotal|floatformat:0 }} ₽</strong></div><div class="summary-row"><span>Доставка</span><strong data-shipping-preview>{% if selected_method %}{{ selected_method.price|floatformat:0 }} ₽{% else %}НЕ ВЫБРАНА{% endif %}</strong></div><div class="summary-total"><span>ИТОГО</span><strong data-total-preview>{% if selected_method %}{{ grand_total|floatformat:0 }} ₽{% else %}{{ cart.subtotal|floatformat:0 }} ₽ *{% endif %}</strong></div><small>* Итоговая стоимость рассчитывается после выбора доставки.</small></div>
-   <button name="next" value="1" type="submit" class="btn btn-dark btn-wide" {% if not delivery_methods %}disabled{% endif %}>ПРОДОЛЖИТЬ ОФОРМЛЕНИЕ ↗</button>
-  </form>
-  <p class="guest-hint">АККАУНТ НЕ НУЖЕН / КОНТАКТЫ УКАЖЕШЬ НА СЛЕДУЮЩЕМ ШАГЕ</p>
- </div>
- {% else %}<div class="empty-state"><span class="empty-symbol">∅</span><h2>ПОКА НИЧЕГО</h2><p>Добавь вещь в корзину, чтобы оформить заказ.</p><a href="{% url 'catalog' %}" class="btn btn-dark">ИССЛЕДОВАТЬ КАТАЛОГ ↗</a></div>{% endif %}
+  <div class="eyebrow"><span class="tiny-dot"></span> CHECKOUT / 01</div>
+  <h1 class="commerce-heading">ТВОЯ КОРЗИНА<span class="heading-period">.</span></h1>
+  <p class="page-lead">Сначала вещи, затем способ доставки. Регистрация не требуется.</p>
+
+  {% if cart.lines %}
+    <div class="cart-sequence">
+      <div class="checkout-step-title"><span>01 / ВЕЩИ</span><span>{{ cart.count }} ЕД.</span></div>
+      {% for item in cart.lines %}
+        <article class="basket-line">
+          <a href="{{ item.product.get_absolute_url }}" class="basket-photo">
+            {% with photo=item.product.photo %}
+              {% if photo %}
+                <img src="{{ photo.url }}" alt="{{ item.product.title }}">
+              {% else %}
+                <img src="{% static 'img/placeholder.svg' %}" alt="Фото отсутствует">
+              {% endif %}
+            {% endwith %}
+          </a>
+          <div class="basket-info">
+            <div class="eyebrow">{{ item.product.brand.name|default:'INDEPENDENT'|upper }}</div>
+            <h2><a href="{{ item.product.get_absolute_url }}">{{ item.product.title }}</a></h2>
+            <p>РАЗМЕР <strong>{{ item.size }}</strong> / {{ item.product.color }}</p>
+            <p>{{ item.unit_price|floatformat:0 }} ₽ / ШТ</p>
+            <form method="post" action="{% url 'cart_update' %}" class="basket-actions">
+              {% csrf_token %}
+              <input type="hidden" name="product_id" value="{{ item.product.pk }}">
+              <input type="hidden" name="size" value="{{ item.size }}">
+              <label>КОЛ-ВО <input type="number" name="quantity" min="0" max="10" value="{{ item.quantity }}" required></label>
+              <button type="submit" class="small-action">ОБНОВИТЬ</button>
+              <button type="submit" name="quantity" value="0" class="small-action muted-action" formnovalidate>УДАЛИТЬ ×</button>
+            </form>
+          </div>
+          <div class="basket-sum">{{ item.line_total|floatformat:0 }} ₽</div>
+        </article>
+      {% endfor %}
+
+      <div class="cart-subtotal-line">
+        <span>СУММА ТОВАРОВ</span><strong>{{ cart.subtotal|floatformat:0 }} ₽</strong>
+      </div>
+      <div class="checkout-step-title shipping-step-title">
+        <span>02 / ДОСТАВКА</span><span>ВЫБЕРИ ОДИН ВАРИАНТ</span>
+      </div>
+      <form action="{% url 'cart_delivery' %}" method="post" class="cart-delivery-form" data-delivery-form data-subtotal="{{ cart.subtotal }}">
+        {% csrf_token %}
+        {% for method in delivery_methods %}
+          <label class="shipping-option">
+            <input type="radio" name="delivery_method" value="{{ method.pk }}" data-method-price="{{ method.price }}" {% if selected_method.pk == method.pk %}checked{% endif %} required>
+            <span class="shipping-option-mark" aria-hidden="true"></span>
+            <span class="shipping-option-copy"><strong>{{ method.name }}</strong><small>{{ method.description }}</small></span>
+            <strong class="shipping-option-price">
+              {% if method.price %}{{ method.price|floatformat:0 }} ₽{% else %}БЕСПЛАТНО{% endif %}
+            </strong>
+          </label>
+        {% empty %}
+          <p class="detail-notice">Способы доставки пока не настроены. Администратор может добавить их в Django Admin.</p>
+        {% endfor %}
+        <div class="cart-totals">
+          <div class="summary-row"><span>Вещи</span><strong>{{ cart.subtotal|floatformat:0 }} ₽</strong></div>
+          <div class="summary-row">
+            <span>Доставка</span>
+            <strong data-shipping-preview>{% if selected_method %}{{ selected_method.price|floatformat:0 }} ₽{% else %}НЕ ВЫБРАНА{% endif %}</strong>
+          </div>
+          <div class="summary-total">
+            <span>ИТОГО</span>
+            <strong data-total-preview>{% if selected_method %}{{ grand_total|floatformat:0 }} ₽{% else %}{{ cart.subtotal|floatformat:0 }} ₽ *{% endif %}</strong>
+          </div>
+          <small>* Итоговая стоимость рассчитывается после выбора доставки.</small>
+        </div>
+        <button name="next" value="1" type="submit" class="btn btn-dark btn-wide" {% if not delivery_methods %}disabled{% endif %}>
+          ПРОДОЛЖИТЬ ОФОРМЛЕНИЕ ↗
+        </button>
+      </form>
+      <p class="guest-hint">АККАУНТ НЕ НУЖЕН / КОНТАКТЫ УКАЖЕШЬ НА СЛЕДУЮЩЕМ ШАГЕ</p>
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <span class="empty-symbol">∅</span>
+      <h2>ПОКА НИЧЕГО</h2>
+      <p>Добавь вещь в корзину, чтобы оформить заказ.</p>
+      <a href="{% url 'catalog' %}" class="btn btn-dark">ИССЛЕДОВАТЬ КАТАЛОГ ↗</a>
+    </div>
+  {% endif %}
 </section>
 {% endblock %}

@@ -1,5 +1,35 @@
 {% extends 'base.html' %}
 {% block title %}Регистрация — NoName{% endblock %}
 {% block content %}
-<section class="auth-section"><div class="auth-art"><span class="auth-art-top">NoName® / NEW MEMBER</span><div class="auth-art-symbol">◌</div><p>IDENTITY<br>IS A CHOICE.</p><span class="auth-art-bottom">CREATE YOUR OWN RULES.</span></div><div class="auth-content"><div class="auth-box"><div class="eyebrow"><span class="tiny-dot"></span> ЛИЧНЫЙ КАБИНЕТ / РЕГИСТРАЦИЯ</div><h1>СОЗДАТЬ АККАУНТ<span class="heading-period">.</span></h1><p>Зарегистрируйся, чтобы стать частью ПУСТОТЫ.</p><form method="post" class="auth-form" novalidate>{% csrf_token %}{% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}{% for field in form %}<div class="form-field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}{% if field.name == 'password1' %}<small>Минимум 8 символов. Не используй простой или часто встречающийся пароль.</small>{% endif %}</div>{% endfor %}<button type="submit" class="btn btn-dark btn-wide">Создать аккаунт <span>↗</span></button></form><div class="auth-bottom">Уже есть аккаунт? <a href="{% url 'login' %}">Войти ↗</a></div></div></div></section>
+<section class="auth-section">
+  <div class="auth-art">
+    <span class="auth-art-top">NoName® / NEW MEMBER</span>
+    <div class="auth-art-symbol">◌</div>
+    <p>IDENTITY<br>IS A CHOICE.</p>
+    <span class="auth-art-bottom">CREATE YOUR OWN RULES.</span>
+  </div>
+  <div class="auth-content">
+    <div class="auth-box">
+      <div class="eyebrow"><span class="tiny-dot"></span> ЛИЧНЫЙ КАБИНЕТ / РЕГИСТРАЦИЯ</div>
+      <h1>СОЗДАТЬ АККАУНТ<span class="heading-period">.</span></h1>
+      <p>Зарегистрируйся, чтобы стать частью ПУСТОТЫ.</p>
+      <form method="post" class="auth-form" novalidate>
+        {% csrf_token %}
+        {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+        {% for field in form %}
+          <div class="form-field">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
+            {% if field.name == 'password1' %}
+              <small>Минимум 8 символов. Не используй простой или часто встречающийся пароль.</small>
+            {% endif %}
+          </div>
+        {% endfor %}
+        <button type="submit" class="btn btn-dark btn-wide">Создать аккаунт <span>↗</span></button>
+      </form>
+      <div class="auth-bottom">Уже есть аккаунт? <a href="{% url 'login' %}">Войти ↗</a></div>
+    </div>
+  </div>
+</section>
 {% endblock %}

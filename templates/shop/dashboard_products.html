@@ -2,11 +2,63 @@
 {% block title %}Управление товарами — NoName{% endblock %}
 {% block content %}
 <section class="container commerce-page">
- <div class="eyebrow"><span class="tiny-dot"></span> STAFF / КАТАЛОГ</div><h1 class="commerce-heading">УПРАВЛЕНИЕ ТОВАРАМИ<span class="heading-period">.</span></h1>
- <div class="dash-nav">{% if perms.shop.view_order %}<a href="{% url 'dashboard' %}">Статистика</a><a href="{% url 'dashboard_orders' %}">Заказы</a>{% endif %}<a class="active" href="{% url 'dashboard_products' %}">Товары</a>{% if perms.shop.add_product %}<a href="{% url 'product_create' %}">+ Создать товар</a>{% endif %}</div>
- <p class="page-lead">Удаление убирает товар из магазина и корзин покупателей, но сохраняет историю заказов и аналитику. Восстановленные товары остаются черновиками.</p>
- <div class="table-scroll"><table class="store-table"><thead><tr><th>Товар</th><th>Цена</th><th>Состояние</th><th>Управление</th></tr></thead><tbody>
- {% for product in products %}<tr><td><strong>{{ product.title }}</strong><small class="table-muted">{{ product.color }} · {{ product.sizes }}</small></td><td>{{ product.price|floatformat:0 }} ₽</td><td>{% if product.is_deleted %}<span class="status-pill status-cancelled">Удалён</span>{% elif not product.is_published %}<span class="status-pill">Черновик</span>{% elif product.is_available %}<span class="status-pill status-completed">В продаже</span>{% else %}<span class="status-pill">Нет в наличии</span>{% endif %}</td><td><div class="table-actions">{% if product.is_deleted %}{% if perms.shop.change_product %}<form method="post" action="{% url 'product_restore' slug=product.slug %}">{% csrf_token %}<button class="small-action" type="submit">Восстановить</button></form>{% endif %}{% else %}{% if perms.shop.change_product %}<a class="table-link" href="{% url 'product_edit' slug=product.slug %}">Изменить</a>{% endif %}{% if perms.shop.delete_product %}<a class="table-link danger-link" href="{% url 'product_delete' slug=product.slug %}">Удалить</a>{% endif %}{% endif %}</div></td></tr>{% empty %}<tr><td colspan="4">Товаров нет. Добавь первую футболку.</td></tr>{% endfor %}
- </tbody></table></div>
+  <div class="eyebrow"><span class="tiny-dot"></span> STAFF / КАТАЛОГ</div>
+  <h1 class="commerce-heading">УПРАВЛЕНИЕ ТОВАРАМИ<span class="heading-period">.</span></h1>
+  {% include 'includes/dashboard_nav.html' with active_page='products' %}
+
+  <p class="page-lead">
+    Удаление убирает товар из магазина и корзин покупателей, но сохраняет историю заказов и аналитику.
+    Восстановленные товары остаются черновиками.
+  </p>
+  <div class="table-scroll">
+    <table class="store-table">
+      <thead>
+        <tr><th>Товар</th><th>Цена</th><th>Состояние</th><th>Управление</th></tr>
+      </thead>
+      <tbody>
+        {% for product in products %}
+          <tr>
+            <td>
+              <strong>{{ product.title }}</strong>
+              <small class="table-muted">{{ product.color }} · {{ product.sizes }}</small>
+            </td>
+            <td>{{ product.price|floatformat:0 }} ₽</td>
+            <td>
+              {% if product.is_deleted %}
+                <span class="status-pill status-cancelled">Удалён</span>
+              {% elif not product.is_published %}
+                <span class="status-pill">Черновик</span>
+              {% elif product.is_available %}
+                <span class="status-pill status-completed">В продаже</span>
+              {% else %}
+                <span class="status-pill">Нет в наличии</span>
+              {% endif %}
+            </td>
+            <td>
+              <div class="table-actions">
+                {% if product.is_deleted %}
+                  {% if perms.shop.change_product %}
+                    <form method="post" action="{% url 'product_restore' slug=product.slug %}">
+                      {% csrf_token %}
+                      <button class="small-action" type="submit">Восстановить</button>
+                    </form>
+                  {% endif %}
+                {% else %}
+                  {% if perms.shop.change_product %}
+                    <a class="table-link" href="{% url 'product_edit' slug=product.slug %}">Изменить</a>
+                  {% endif %}
+                  {% if perms.shop.delete_product %}
+                    <a class="table-link danger-link" href="{% url 'product_delete' slug=product.slug %}">Удалить</a>
+                  {% endif %}
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4">Товаров нет. Добавь первую футболку.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 {% endblock %}

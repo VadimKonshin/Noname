@@ -1,0 +1,15 @@
+<div class="dash-nav">
+  {% if perms.shop.view_order %}
+    <a href="{% url 'dashboard' %}" {% if active_page == 'dashboard' %}class="active"{% endif %}>Статистика</a>
+    <a href="{% url 'dashboard_orders' %}" {% if active_page == 'orders' %}class="active"{% endif %}>Заказы</a>
+  {% endif %}
+  {% if perms.shop.view_product %}
+    <a href="{% url 'dashboard_products' %}" {% if active_page == 'products' %}class="active"{% endif %}>Товары</a>
+  {% endif %}
+  {% if perms.shop.add_product %}
+    <a href="{% url 'product_create' %}">+ Создать товар</a>
+  {% endif %}
+  {% if show_admin and user.is_staff %}
+    <a href="{% url 'admin:index' %}">Django Admin ↗</a>
+  {% endif %}
+</div>

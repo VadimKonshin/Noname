@@ -2,11 +2,47 @@
 {% block title %}Все заказы — NoName{% endblock %}
 {% block content %}
 <section class="container commerce-page">
- <div class="eyebrow"><span class="tiny-dot"></span> STAFF / ЗАКАЗЫ</div><h1 class="commerce-heading">ИСТОРИЯ ЗАКАЗОВ<span class="heading-period">.</span></h1>
- <div class="dash-nav"><a href="{% url 'dashboard' %}">Статистика</a><a class="active" href="{% url 'dashboard_orders' %}">Заказы</a>{% if perms.shop.view_product %}<a href="{% url 'dashboard_products' %}">Товары</a>{% endif %}{% if perms.shop.add_product %}<a href="{% url 'product_create' %}">+ Создать товар</a>{% endif %}{% if user.is_staff %}<a href="{% url 'admin:index' %}">Django Admin ↗</a>{% endif %}</div>
- <form method="get" class="order-filter"><label for="status-filter">Фильтр по статусу</label><select id="status-filter" name="status" data-auto-submit><option value="">Все заказы</option>{% for code, name in statuses %}<option value="{{ code }}" {% if selected_status == code %}selected{% endif %}>{{ name }}</option>{% endfor %}</select><button type="submit" class="small-action">Показать</button></form>
- <div class="table-scroll"><table class="store-table"><thead><tr><th>№</th><th>Дата</th><th>Покупатель</th><th>Телефон</th><th>Доставка</th><th>Сумма</th><th>Статус</th><th></th></tr></thead><tbody>
- {% for order in page %}<tr><td><strong>#{{ order.pk }}</strong></td><td>{{ order.created_at|date:'d.m.Y H:i' }}</td><td>{{ order.full_name }}<small class="table-muted">{{ order.email }}</small></td><td>{{ order.phone }}</td><td>{{ order.delivery_name }}</td><td><strong>{{ order.total|floatformat:0 }} ₽</strong></td><td><span class="status-pill status-{{ order.status }}">{{ order.get_status_display }}</span></td><td><a class="table-link" href="{{ order.get_absolute_url }}">Открыть ↗</a></td></tr>{% empty %}<tr><td colspan="8">Заказов с таким статусом пока нет.</td></tr>{% endfor %}
- </tbody></table></div>{% include 'includes/pagination.html' %}
+  <div class="eyebrow"><span class="tiny-dot"></span> STAFF / ЗАКАЗЫ</div>
+  <h1 class="commerce-heading">ИСТОРИЯ ЗАКАЗОВ<span class="heading-period">.</span></h1>
+  {% include 'includes/dashboard_nav.html' with active_page='orders' show_admin=1 %}
+
+  <form method="get" class="order-filter">
+    <label for="status-filter">Фильтр по статусу</label>
+    <select id="status-filter" name="status" data-auto-submit>
+      <option value="">Все заказы</option>
+      {% for code, name in statuses %}
+        <option value="{{ code }}" {% if selected_status == code %}selected{% endif %}>{{ name }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="small-action">Показать</button>
+  </form>
+
+  <div class="table-scroll">
+    <table class="store-table">
+      <thead>
+        <tr>
+          <th>№</th><th>Дата</th><th>Покупатель</th><th>Телефон</th>
+          <th>Доставка</th><th>Сумма</th><th>Статус</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for order in page %}
+          <tr>
+            <td><strong>#{{ order.pk }}</strong></td>
+            <td>{{ order.created_at|date:'d.m.Y H:i' }}</td>
+            <td>{{ order.full_name }}<small class="table-muted">{{ order.email }}</small></td>
+            <td>{{ order.phone }}</td>
+            <td>{{ order.delivery_name }}</td>
+            <td><strong>{{ order.total|floatformat:0 }} ₽</strong></td>
+            <td><span class="status-pill status-{{ order.status }}">{{ order.get_status_display }}</span></td>
+            <td><a class="table-link" href="{{ order.get_absolute_url }}">Открыть ↗</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8">Заказов с таким статусом пока нет.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include 'includes/pagination.html' %}
 </section>
 {% endblock %}

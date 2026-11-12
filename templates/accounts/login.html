@@ -1,5 +1,36 @@
 {% extends 'base.html' %}
 {% block title %}Войти — NoName{% endblock %}
 {% block content %}
-<section class="auth-section"><div class="auth-art"><span class="auth-art-top">NoName® / MEMBERS AREA</span><div class="auth-art-symbol">◌</div><p>THE OTHER<br>SIDE OF FORM.</p><span class="auth-art-bottom">NOT FOR EVERYONE. FOR YOU.</span></div><div class="auth-content"><div class="auth-box"><div class="eyebrow"><span class="tiny-dot"></span> ЛИЧНЫЙ КАБИНЕТ / ВХОД</div><h1>С ВОЗВРАЩЕНИЕМ<span class="heading-period">.</span></h1><p>Войди в свой аккаунт.</p><form method="post" class="auth-form">{% csrf_token %}{% if form.non_field_errors %}<div class="form-errors">Неверный логин или пароль. Попробуй ещё раз.</div>{% endif %}<div class="form-field"><label for="id_username">Логин</label><input type="text" name="username" id="id_username" autocomplete="username" required autofocus value="{{ form.username.value|default_if_none:'' }}"></div><div class="form-field"><label for="id_password">Пароль</label><input type="password" name="password" id="id_password" autocomplete="current-password" required></div><input type="hidden" name="next" value="{{ next }}"><button type="submit" class="btn btn-dark btn-wide">Войти <span>↗</span></button></form><div class="auth-bottom">Ещё нет аккаунта? <a href="{% url 'register' %}">Зарегистрироваться ↗</a></div></div></div></section>
+<section class="auth-section">
+  <div class="auth-art">
+    <span class="auth-art-top">NoName® / MEMBERS AREA</span>
+    <div class="auth-art-symbol">◌</div>
+    <p>THE OTHER<br>SIDE OF FORM.</p>
+    <span class="auth-art-bottom">NOT FOR EVERYONE. FOR YOU.</span>
+  </div>
+  <div class="auth-content">
+    <div class="auth-box">
+      <div class="eyebrow"><span class="tiny-dot"></span> ЛИЧНЫЙ КАБИНЕТ / ВХОД</div>
+      <h1>С ВОЗВРАЩЕНИЕМ<span class="heading-period">.</span></h1>
+      <p>Войди в свой аккаунт.</p>
+      <form method="post" class="auth-form">
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+          <div class="form-errors">Неверный логин или пароль. Попробуй ещё раз.</div>
+        {% endif %}
+        <div class="form-field">
+          <label for="id_username">Логин</label>
+          <input type="text" name="username" id="id_username" autocomplete="username" required autofocus value="{{ form.username.value|default_if_none:'' }}">
+        </div>
+        <div class="form-field">
+          <label for="id_password">Пароль</label>
+          <input type="password" name="password" id="id_password" autocomplete="current-password" required>
+        </div>
+        <input type="hidden" name="next" value="{{ next }}">
+        <button type="submit" class="btn btn-dark btn-wide">Войти <span>↗</span></button>
+      </form>
+      <div class="auth-bottom">Ещё нет аккаунта? <a href="{% url 'register' %}">Зарегистрироваться ↗</a></div>
+    </div>
+  </div>
+</section>
 {% endblock %}

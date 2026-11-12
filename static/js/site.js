@@ -30,38 +30,6 @@
   }
 })();
 
-// Checkout preview only. Server always recalculates authoritative totals.
-(() => {
-  const select = document.getElementById('id_delivery_method');
-  const catalog = document.getElementById('delivery-catalog');
-  if (!select || !catalog) return;
-  const subtotalEl = document.getElementById('checkout-subtotal');
-  const shippingEl = document.getElementById('checkout-shipping');
-  const totalEl = document.getElementById('checkout-grand-total');
-  const asNumber = raw => Number(String(raw || '0').replace(/\s/g, '').replace(',', '.')) || 0;
-  const money = value => new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2, minimumFractionDigits: 0}).format(value) + ' ₽';
-  function refresh() {
-    const options = [...catalog.querySelectorAll('[data-method-id]')];
-    const selected = options.find(option => option.dataset.methodId === select.value);
-    options.forEach(option => option.classList.toggle('is-selected', option === selected));
-    if (!selected) return;
-    const price = asNumber(selected.dataset.methodPrice);
-    const subtotal = asNumber(subtotalEl?.dataset.amount);
-    if (shippingEl) shippingEl.textContent = money(price);
-    if (totalEl) totalEl.textContent = money(subtotal + price);
-    const needsAddress = selected.dataset.requiresAddress === '1';
-    document.querySelectorAll('[data-address-field]').forEach(wrapper => {
-      const input = wrapper.querySelector('input');
-      if (!input) return;
-      const required = needsAddress && wrapper.dataset.addressField !== 'postal_code';
-      input.required = required;
-      wrapper.classList.toggle('address-not-required', !needsAddress);
-    });
-  }
-  select.addEventListener('change', refresh);
-  refresh();
-})();
-
 // NoName: no size is preselected; unavailable sizes are truly disabled.
 (() => {
   document.querySelectorAll('[data-size-picker]').forEach(form => {

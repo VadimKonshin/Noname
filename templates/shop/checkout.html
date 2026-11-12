@@ -2,25 +2,88 @@
 {% block title %}Оформление заказа — NoName{% endblock %}
 {% block content %}
 <section class="container commerce-page">
- <div class="eyebrow"><span class="tiny-dot"></span> CHECKOUT / 02</div><h1 class="commerce-heading">ОФОРМЛЕНИЕ<span class="heading-period">.</span></h1>
- <p class="page-lead">Никакой обязательной регистрации. Оставь данные для связи — мы подтвердим заказ.</p>
- <div class="commerce-layout">
-  <div class="checkout-panel"><form method="post" id="checkout-form" class="checkout-form" novalidate>{% csrf_token %}<input type="hidden" name="checkout_token" value="{{ checkout_token }}">
-   {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
-   <div class="form-section"><h2>01 / КОНТАКТЫ</h2>{% for field in form %}{% if field.name == 'full_name' or field.name == 'email' or field.name == 'phone' %}<div class="form-field"><label for="{{ field.id_for_label }}">{{ field.label }} *</label>{{ field }}{% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}</div>{% endif %}{% endfor %}</div>
-   <div class="form-section"><h2>02 / ДОСТАВКА</h2><div class="selected-shipping"><div><strong>{{ selected_method.name }}</strong><small>{{ selected_method.description }}</small></div><strong>{{ selected_method.price|floatformat:0 }} ₽</strong><a href="{% url 'cart' %}">ИЗМЕНИТЬ ↗</a></div>
-    {% if selected_method.requires_address %}<p class="form-hint">Укажи город и адрес или пункт выдачи для выбранной службы.</p>{% endif %}
-    {% for field in form %}{% if field.name == 'city' or field.name == 'address' or field.name == 'postal_code' %}<div class="form-field" {% if not selected_method.requires_address %}hidden{% endif %}><label for="{{ field.id_for_label }}">{{ field.label }}{% if selected_method.requires_address and field.name != 'postal_code' %} *{% endif %}</label>{{ field }}{% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}</div>{% endif %}{% endfor %}
-   </div>
-   <div class="form-section"><h2>03 / КОММЕНТАРИЙ</h2><div class="form-field"><label for="{{ form.comment.id_for_label }}">{{ form.comment.label }}</label>{{ form.comment }}{% if form.comment.errors %}<div class="field-error">{{ form.comment.errors }}</div>{% endif %}</div></div>
-   <p class="checkout-terms">Нажимая «Отправить заказ», ты передаёшь контактные данные магазину для обработки заказа. Онлайн-списания средств нет. Для гостевого заказа сохрани номер подтверждения.</p>
-   <button type="submit" class="btn btn-dark btn-wide">ОТПРАВИТЬ ЗАКАЗ <span>↗</span></button>
-  </form></div>
-  <aside class="summary-box sticky-summary"><div class="eyebrow"><span class="tiny-dot"></span> YOUR ORDER</div><h2>СУММА</h2>
-   {% for item in cart.lines %}<div class="checkout-line"><span>{{ item.product.title }}<small>{{ item.product.brand.name|default:'NO LABEL' }} / {{ item.size }} × {{ item.quantity }}</small></span><strong>{{ item.line_total|floatformat:0 }} ₽</strong></div>{% endfor %}
-   <div class="summary-row"><span>Вещи</span><strong>{{ cart.subtotal|floatformat:0 }} ₽</strong></div><div class="summary-row"><span>{{ selected_method.name }}</span><strong>{{ selected_method.price|floatformat:0 }} ₽</strong></div><div class="summary-total"><span>ИТОГО</span><strong>{{ grand_total|floatformat:0 }} ₽</strong></div>
-   <p class="summary-note">Стоимость пересчитывается сервером перед подтверждением, не по данным браузера.</p><a href="{% url 'cart' %}" class="back-catalog">← Вернуться к корзине</a>
-  </aside>
- </div>
+  <div class="eyebrow"><span class="tiny-dot"></span> CHECKOUT / 02</div>
+  <h1 class="commerce-heading">ОФОРМЛЕНИЕ<span class="heading-period">.</span></h1>
+  <p class="page-lead">Никакой обязательной регистрации. Оставь данные для связи — мы подтвердим заказ.</p>
+
+  <div class="commerce-layout">
+    <div class="checkout-panel">
+      <form method="post" id="checkout-form" class="checkout-form" novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="checkout_token" value="{{ checkout_token }}">
+        {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+
+        <div class="form-section">
+          <h2>01 / КОНТАКТЫ</h2>
+          {% for field in form %}
+            {% if field.name == 'full_name' or field.name == 'email' or field.name == 'phone' %}
+              <div class="form-field">
+                <label for="{{ field.id_for_label }}">{{ field.label }} *</label>
+                {{ field }}
+                {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
+              </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+
+        <div class="form-section">
+          <h2>02 / ДОСТАВКА</h2>
+          <div class="selected-shipping">
+            <div><strong>{{ selected_method.name }}</strong><small>{{ selected_method.description }}</small></div>
+            <strong>{{ selected_method.price|floatformat:0 }} ₽</strong>
+            <a href="{% url 'cart' %}">ИЗМЕНИТЬ ↗</a>
+          </div>
+          {% if selected_method.requires_address %}
+            <p class="form-hint">Укажи город и адрес или пункт выдачи для выбранной службы.</p>
+          {% endif %}
+          {% for field in form %}
+            {% if field.name == 'city' or field.name == 'address' or field.name == 'postal_code' %}
+              <div class="form-field" {% if not selected_method.requires_address %}hidden{% endif %}>
+                <label for="{{ field.id_for_label }}">
+                  {{ field.label }}{% if selected_method.requires_address and field.name != 'postal_code' %} *{% endif %}
+                </label>
+                {{ field }}
+                {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
+              </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+
+        <div class="form-section">
+          <h2>03 / КОММЕНТАРИЙ</h2>
+          <div class="form-field">
+            <label for="{{ form.comment.id_for_label }}">{{ form.comment.label }}</label>
+            {{ form.comment }}
+            {% if form.comment.errors %}<div class="field-error">{{ form.comment.errors }}</div>{% endif %}
+          </div>
+        </div>
+
+        <p class="checkout-terms">
+          Нажимая «Отправить заказ», ты передаёшь контактные данные магазину для обработки заказа.
+          Онлайн-списания средств нет. Для гостевого заказа сохрани номер подтверждения.
+        </p>
+        <button type="submit" class="btn btn-dark btn-wide">ОТПРАВИТЬ ЗАКАЗ <span>↗</span></button>
+      </form>
+    </div>
+
+    <aside class="summary-box sticky-summary">
+      <div class="eyebrow"><span class="tiny-dot"></span> YOUR ORDER</div>
+      <h2>СУММА</h2>
+      {% for item in cart.lines %}
+        <div class="checkout-line">
+          <span>
+            {{ item.product.title }}
+            <small>{{ item.product.brand.name|default:'NO LABEL' }} / {{ item.size }} × {{ item.quantity }}</small>
+          </span>
+          <strong>{{ item.line_total|floatformat:0 }} ₽</strong>
+        </div>
+      {% endfor %}
+      <div class="summary-row"><span>Вещи</span><strong>{{ cart.subtotal|floatformat:0 }} ₽</strong></div>
+      <div class="summary-row"><span>{{ selected_method.name }}</span><strong>{{ selected_method.price|floatformat:0 }} ₽</strong></div>
+      <div class="summary-total"><span>ИТОГО</span><strong>{{ grand_total|floatformat:0 }} ₽</strong></div>
+      <p class="summary-note">Стоимость пересчитывается сервером перед подтверждением, не по данным браузера.</p>
+      <a href="{% url 'cart' %}" class="back-catalog">← Вернуться к корзине</a>
+    </aside>
+  </div>
 </section>
 {% endblock %}

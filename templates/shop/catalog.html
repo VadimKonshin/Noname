@@ -1,15 +1,67 @@
 {% extends 'base.html' %}
 {% block title %}Каталог футболок — NoName{% endblock %}
 {% block content %}
-<section class="catalog-intro container"><div class="eyebrow"><span class="tiny-dot"></span> INDEPENDENT LABELS / NONAME</div><div class="catalog-title-row"><h1>КАТАЛОГ<span class="heading-period">.</span></h1><span class="count-label">{{ total }} ПРЕДМ.</span></div><p>Авторская одежда небольших независимых брендов. Выбирай свой голос.</p></section>
+<section class="catalog-intro container">
+  <div class="eyebrow"><span class="tiny-dot"></span> INDEPENDENT LABELS / NONAME</div>
+  <div class="catalog-title-row">
+    <h1>КАТАЛОГ<span class="heading-period">.</span></h1>
+    <span class="count-label">{{ total }} ПРЕДМ.</span>
+  </div>
+  <p>Авторская одежда небольших независимых брендов. Выбирай свой голос.</p>
+</section>
+
 <section class="container catalog-content">
   <form class="catalog-controls" method="get" action="{% url 'catalog' %}">
-    <label class="search-field" aria-label="Поиск товаров"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10.8" cy="10.8" r="7.2"/><path d="m16 16 5 5"/></svg><input type="search" name="q" placeholder="Поиск по коллекции..." value="{{ query }}"><button type="submit">Найти ↗</button></label>
-    <label class="sort-field"><span>Сортировка</span><select name="sort" data-auto-submit><option value="new" {% if sort == 'new' %}selected{% endif %}>Сначала новые</option><option value="price_low" {% if sort == 'price_low' %}selected{% endif %}>Сначала дешевле</option><option value="price_high" {% if sort == 'price_high' %}selected{% endif %}>Сначала дороже</option><option value="name" {% if sort == 'name' %}selected{% endif %}>По названию</option></select></label>
-  <label class="sort-field"><span>Бренд</span><select name="brand" data-auto-submit><option value="">Все бренды</option>{% for brand in brands %}<option value="{{ brand.slug }}" {% if selected_brand == brand.slug %}selected{% endif %}>{{ brand.name }}</option>{% endfor %}</select></label>
+    <label class="search-field" aria-label="Поиск товаров">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+        <circle cx="10.8" cy="10.8" r="7.2"/><path d="m16 16 5 5"/>
+      </svg>
+      <input type="search" name="q" placeholder="Поиск по коллекции..." value="{{ query }}">
+      <button type="submit">Найти ↗</button>
+    </label>
+    <label class="sort-field">
+      <span>Сортировка</span>
+      <select name="sort" data-auto-submit>
+        <option value="new" {% if sort == 'new' %}selected{% endif %}>Сначала новые</option>
+        <option value="price_low" {% if sort == 'price_low' %}selected{% endif %}>Сначала дешевле</option>
+        <option value="price_high" {% if sort == 'price_high' %}selected{% endif %}>Сначала дороже</option>
+        <option value="name" {% if sort == 'name' %}selected{% endif %}>По названию</option>
+      </select>
+    </label>
+    <label class="sort-field">
+      <span>Бренд</span>
+      <select name="brand" data-auto-submit>
+        <option value="">Все бренды</option>
+        {% for brand in brands %}
+          <option value="{{ brand.slug }}" {% if selected_brand == brand.slug %}selected{% endif %}>{{ brand.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
   </form>
-  {% if page.object_list %}<div class="product-grid catalog-grid">{% for product in page %}{% include 'includes/product_card.html' %}{% endfor %}</div>
-  {% else %}<div class="empty-panel"><span class="empty-symbol">∅</span><h3>Ничего не найдено</h3><p>Попробуй другой запрос или загляни в полный каталог.</p><a href="{% url 'catalog' %}" class="btn btn-dark">Сбросить фильтры ↗</a></div>{% endif %}
-  {% if page.paginator.num_pages > 1 %}<nav class="pagination" aria-label="Страницы каталога">{% if page.has_previous %}<a href="?q={{ query|urlencode }}&sort={{ sort }}&brand={{ selected_brand|urlencode }}&page={{ page.previous_page_number }}">← Назад</a>{% endif %}<span>{{ page.number }} / {{ page.paginator.num_pages }}</span>{% if page.has_next %}<a href="?q={{ query|urlencode }}&sort={{ sort }}&brand={{ selected_brand|urlencode }}&page={{ page.next_page_number }}">Вперёд →</a>{% endif %}</nav>{% endif %}
+
+  {% if page.object_list %}
+    <div class="product-grid catalog-grid">
+      {% for product in page %}{% include 'includes/product_card.html' %}{% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-panel">
+      <span class="empty-symbol">∅</span>
+      <h3>Ничего не найдено</h3>
+      <p>Попробуй другой запрос или загляни в полный каталог.</p>
+      <a href="{% url 'catalog' %}" class="btn btn-dark">Сбросить фильтры ↗</a>
+    </div>
+  {% endif %}
+
+  {% if page.paginator.num_pages > 1 %}
+    <nav class="pagination" aria-label="Страницы каталога">
+      {% if page.has_previous %}
+        <a href="?q={{ query|urlencode }}&sort={{ sort }}&brand={{ selected_brand|urlencode }}&page={{ page.previous_page_number }}">← Назад</a>
+      {% endif %}
+      <span>{{ page.number }} / {{ page.paginator.num_pages }}</span>
+      {% if page.has_next %}
+        <a href="?q={{ query|urlencode }}&sort={{ sort }}&brand={{ selected_brand|urlencode }}&page={{ page.next_page_number }}">Вперёд →</a>
+      {% endif %}
+    </nav>
+  {% endif %}
 </section>
 {% endblock %}

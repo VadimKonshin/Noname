@@ -1,12 +1,45 @@
 {% load static %}
 <article class="product-card">
- <a class="product-image-link" href="{{ product.get_absolute_url }}" aria-label="Открыть {{ product.title }}"><div class="product-visual">
- {% with photo=product.photo %}{% if photo %}<img src="{{ photo.url }}" alt="{{ product.title }}" loading="lazy">{% else %}<img src="{% static 'img/placeholder.svg' %}" alt="Фото скоро появится" loading="lazy">{% endif %}{% endwith %}
- <span class="product-corner">{% if product.brand %}{{ product.brand.name }}{% else %}INDEPENDENT{% endif %}</span><span class="card-go" aria-hidden="true">↗</span></div></a>
- <div class="card-meta"><span>{{ product.brand.name|default:'NO LABEL'|upper }}</span><span>{{ product.color|upper }}</span></div>
- <div class="card-info"><h3><a href="{{ product.get_absolute_url }}">{{ product.title }}</a></h3><span class="price">{{ product.price|floatformat:0 }} ₽</span></div>
- {% if product.is_available %}<form method="post" action="{% url 'cart_add' slug=product.slug %}" class="quick-buy" data-size-picker>{% csrf_token %}
- <fieldset class="sizes-fieldset"><legend>РАЗМЕР / ВЫБЕРИ</legend><div class="size-grid">{% for option in product.all_size_options %}<label class="size-choice"><input type="radio" name="size" value="{{ option.name }}" {% if not option.available %}disabled{% endif %}><span>{{ option.name }}</span></label>{% endfor %}</div></fieldset>
- <input type="hidden" name="quantity" value="1"><input type="hidden" name="go_to_cart" value="1"><button type="submit" class="quick-add-btn" disabled>ВЫБЕРИ РАЗМЕР <span>＋</span></button>
- </form>{% else %}<div class="sold-out-note">СЕЙЧАС НЕДОСТУПНО</div>{% endif %}
+  <a class="product-image-link" href="{{ product.get_absolute_url }}" aria-label="Открыть {{ product.title }}">
+    <div class="product-visual">
+      {% with photo=product.photo %}
+        {% if photo %}
+          <img src="{{ photo.url }}" alt="{{ product.title }}" loading="lazy">
+        {% else %}
+          <img src="{% static 'img/placeholder.svg' %}" alt="Фото скоро появится" loading="lazy">
+        {% endif %}
+      {% endwith %}
+      <span class="product-corner">{% if product.brand %}{{ product.brand.name }}{% else %}INDEPENDENT{% endif %}</span>
+      <span class="card-go" aria-hidden="true">↗</span>
+    </div>
+  </a>
+  <div class="card-meta">
+    <span>{{ product.brand.name|default:'NO LABEL'|upper }}</span>
+    <span>{{ product.color|upper }}</span>
+  </div>
+  <div class="card-info">
+    <h3><a href="{{ product.get_absolute_url }}">{{ product.title }}</a></h3>
+    <span class="price">{{ product.price|floatformat:0 }} ₽</span>
+  </div>
+  {% if product.is_available %}
+    <form method="post" action="{% url 'cart_add' slug=product.slug %}" class="quick-buy" data-size-picker>
+      {% csrf_token %}
+      <fieldset class="sizes-fieldset">
+        <legend>РАЗМЕР / ВЫБЕРИ</legend>
+        <div class="size-grid">
+          {% for option in product.all_size_options %}
+            <label class="size-choice">
+              <input type="radio" name="size" value="{{ option.name }}" {% if not option.available %}disabled{% endif %}>
+              <span>{{ option.name }}</span>
+            </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+      <input type="hidden" name="quantity" value="1">
+      <input type="hidden" name="go_to_cart" value="1">
+      <button type="submit" class="quick-add-btn" disabled>ВЫБЕРИ РАЗМЕР <span>＋</span></button>
+    </form>
+  {% else %}
+    <div class="sold-out-note">СЕЙЧАС НЕДОСТУПНО</div>
+  {% endif %}
 </article>

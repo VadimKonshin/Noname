@@ -2,26 +2,112 @@
 {% block title %}Статистика — NoName{% endblock %}
 {% block content %}
 <section class="container commerce-page">
- <div class="eyebrow"><span class="tiny-dot"></span> STAFF / АНАЛИТИКА</div><h1 class="commerce-heading">ПАНЕЛЬ МАГАЗИНА<span class="heading-period">.</span></h1>
- <div class="dash-nav"><a class="active" href="{% url 'dashboard' %}">Статистика</a><a href="{% url 'dashboard_orders' %}">Заказы</a>{% if perms.shop.view_product %}<a href="{% url 'dashboard_products' %}">Товары</a>{% endif %}{% if perms.shop.add_product %}<a href="{% url 'product_create' %}">+ Создать товар</a>{% endif %}{% if user.is_staff %}<a href="{% url 'admin:index' %}">Django Admin ↗</a>{% endif %}</div>
- <div class="metric-grid">
-  <div class="metric"><span>ВСЕ ЗАКАЗЫ</span><strong>{{ orders_count }}</strong><small>Включая отменённые</small></div>
-  <div class="metric"><span>НОВЫЕ ЗАКАЗЫ</span><strong>{{ new_count }}</strong><small>Требуют обработки</small></div>
-  <div class="metric"><span>ОФОРМЛЕНО НА СУММУ</span><strong>{{ orders_total|floatformat:0 }} ₽</strong><small>С доставкой, без отменённых</small></div>
-  <div class="metric"><span>ТОВАРОВ В ЗАКАЗАХ</span><strong>{{ items_total|floatformat:0 }} ₽</strong><small>Без доставки и отменённых</small></div>
- </div>
- <div class="analytics-note">Это <strong>статистика оформленных заказов</strong>, а не полученных платежей: онлайн-оплата пока не подключена. Отменённые заказы исключены из суммы и статистики по моделям.</div>
- <div class="dash-section-heading"><h2>СТАТИСТИКА ПО МОДЕЛЯМ</h2><span>Количество единиц и стоимость товаров в заказах</span></div>
- <div class="table-scroll"><table class="store-table"><thead><tr><th>Модель</th><th>Заказов</th><th>Штук</th><th>Сумма товаров</th></tr></thead><tbody>
- {% for model in sold_models %}<tr><td><strong>{{ model.display_title }}</strong>{% if model.product__is_deleted %}<small class="table-muted">Снята с продажи</small>{% endif %}</td><td>{{ model.order_count }}</td><td>{{ model.units }}</td><td><strong>{{ model.value|floatformat:0 }} ₽</strong></td></tr>{% empty %}<tr><td colspan="4">Заказов пока нет. После первой покупки появится статистика по каждой модели.</td></tr>{% endfor %}
- </tbody></table></div>
- <div class="dash-section-heading"><h2>СТАТИСТИКА ПО БРЕНДАМ</h2><span>Оформленные товары без отменённых заказов</span></div>
- <div class="table-scroll"><table class="store-table"><thead><tr><th>Бренд</th><th>Заказов</th><th>Штук</th><th>Товары на сумму</th></tr></thead><tbody>
- {% for label in brand_sales %}<tr><td><strong>{{ label.brand_name|default:'Бренд не указан' }}</strong></td><td>{{ label.orders }}</td><td>{{ label.units }}</td><td><strong>{{ label.value|floatformat:0 }} ₽</strong></td></tr>{% empty %}<tr><td colspan="4">Пока нет заказов.</td></tr>{% endfor %}
- </tbody></table></div>
- <div class="dash-section-heading"><h2>ПОСЛЕДНИЕ ЗАКАЗЫ</h2><a class="table-link" href="{% url 'dashboard_orders' %}">Все заказы ↗</a></div>
- <div class="table-scroll"><table class="store-table"><thead><tr><th>Заказ</th><th>Покупатель</th><th>Статус</th><th>Итого</th><th>Дата</th></tr></thead><tbody>
- {% for order in recent_orders %}<tr><td><a class="table-link" href="{{ order.get_absolute_url }}">#{{ order.pk }} ↗</a></td><td>{{ order.full_name }}</td><td><span class="status-pill status-{{ order.status }}">{{ order.get_status_display }}</span></td><td>{{ order.total|floatformat:0 }} ₽</td><td>{{ order.created_at|date:'d.m.Y H:i' }}</td></tr>{% empty %}<tr><td colspan="5">Пока нет заказов.</td></tr>{% endfor %}
- </tbody></table></div>
+  <div class="eyebrow"><span class="tiny-dot"></span> STAFF / АНАЛИТИКА</div>
+  <h1 class="commerce-heading">ПАНЕЛЬ МАГАЗИНА<span class="heading-period">.</span></h1>
+  {% include 'includes/dashboard_nav.html' with active_page='dashboard' show_admin=1 %}
+
+  <div class="metric-grid">
+    <div class="metric">
+      <span>ВСЕ ЗАКАЗЫ</span>
+      <strong>{{ orders_count }}</strong>
+      <small>Включая отменённые</small>
+    </div>
+    <div class="metric">
+      <span>НОВЫЕ ЗАКАЗЫ</span>
+      <strong>{{ new_count }}</strong>
+      <small>Требуют обработки</small>
+    </div>
+    <div class="metric">
+      <span>ОФОРМЛЕНО НА СУММУ</span>
+      <strong>{{ orders_total|floatformat:0 }} ₽</strong>
+      <small>С доставкой, без отменённых</small>
+    </div>
+    <div class="metric">
+      <span>ТОВАРОВ В ЗАКАЗАХ</span>
+      <strong>{{ items_total|floatformat:0 }} ₽</strong>
+      <small>Без доставки и отменённых</small>
+    </div>
+  </div>
+
+  <div class="analytics-note">
+    Это <strong>статистика оформленных заказов</strong>, а не полученных платежей: онлайн-оплата пока не подключена.
+    Отменённые заказы исключены из суммы и статистики по моделям.
+  </div>
+
+  <div class="dash-section-heading">
+    <h2>СТАТИСТИКА ПО МОДЕЛЯМ</h2>
+    <span>Количество единиц и стоимость товаров в заказах</span>
+  </div>
+  <div class="table-scroll">
+    <table class="store-table">
+      <thead>
+        <tr><th>Модель</th><th>Заказов</th><th>Штук</th><th>Сумма товаров</th></tr>
+      </thead>
+      <tbody>
+        {% for model in sold_models %}
+          <tr>
+            <td>
+              <strong>{{ model.display_title }}</strong>
+              {% if model.product__is_deleted %}<small class="table-muted">Снята с продажи</small>{% endif %}
+            </td>
+            <td>{{ model.order_count }}</td>
+            <td>{{ model.units }}</td>
+            <td><strong>{{ model.value|floatformat:0 }} ₽</strong></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4">Заказов пока нет. После первой покупки появится статистика по каждой модели.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="dash-section-heading">
+    <h2>СТАТИСТИКА ПО БРЕНДАМ</h2>
+    <span>Оформленные товары без отменённых заказов</span>
+  </div>
+  <div class="table-scroll">
+    <table class="store-table">
+      <thead>
+        <tr><th>Бренд</th><th>Заказов</th><th>Штук</th><th>Товары на сумму</th></tr>
+      </thead>
+      <tbody>
+        {% for label in brand_sales %}
+          <tr>
+            <td><strong>{{ label.brand_name|default:'Бренд не указан' }}</strong></td>
+            <td>{{ label.orders }}</td>
+            <td>{{ label.units }}</td>
+            <td><strong>{{ label.value|floatformat:0 }} ₽</strong></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4">Пока нет заказов.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="dash-section-heading">
+    <h2>ПОСЛЕДНИЕ ЗАКАЗЫ</h2>
+    <a class="table-link" href="{% url 'dashboard_orders' %}">Все заказы ↗</a>
+  </div>
+  <div class="table-scroll">
+    <table class="store-table">
+      <thead>
+        <tr><th>Заказ</th><th>Покупатель</th><th>Статус</th><th>Итого</th><th>Дата</th></tr>
+      </thead>
+      <tbody>
+        {% for order in recent_orders %}
+          <tr>
+            <td><a class="table-link" href="{{ order.get_absolute_url }}">#{{ order.pk }} ↗</a></td>
+            <td>{{ order.full_name }}</td>
+            <td><span class="status-pill status-{{ order.status }}">{{ order.get_status_display }}</span></td>
+            <td>{{ order.total|floatformat:0 }} ₽</td>
+            <td>{{ order.created_at|date:'d.m.Y H:i' }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5">Пока нет заказов.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 {% endblock %}

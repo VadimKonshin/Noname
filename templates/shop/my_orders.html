@@ -2,8 +2,41 @@
 {% block title %}Мои заказы — NoName{% endblock %}
 {% block content %}
 <section class="container commerce-page">
-  <div class="eyebrow"><span class="tiny-dot"></span> ЛИЧНЫЙ КАБИНЕТ</div><h1 class="commerce-heading">МОИ ЗАКАЗЫ<span class="heading-period">.</span></h1>
-  {% if page %}<div class="table-scroll"><table class="store-table"><thead><tr><th>Номер</th><th>Дата</th><th>Статус</th><th>Состав</th><th>Итого</th><th></th></tr></thead><tbody>{% for order in page %}<tr><td>#{{ order.pk }}</td><td>{{ order.created_at|date:'d.m.Y H:i' }}</td><td><span class="status-pill status-{{ order.status }}">{{ order.get_status_display }}</span></td><td>{% for item in order.items.all %}{{ item.product_title }} / {{ item.size }} × {{ item.quantity }}{% if not forloop.last %}<span class="item-separator">, </span>{% endif %}{% endfor %}</td><td><strong>{{ order.total|floatformat:0 }} ₽</strong></td><td><a class="table-link" href="{{ order.get_absolute_url }}">Подробнее ↗</a></td></tr>{% endfor %}</tbody></table></div>{% include 'includes/pagination.html' %}
-  {% else %}<div class="empty-state"><span class="empty-symbol">◌</span><h2>ЗАКАЗОВ ПОКА НЕТ</h2><p>Выбери футболки, а история покупок появится здесь.</p><a href="{% url 'catalog' %}" class="btn btn-dark">Перейти в каталог ↗</a></div>{% endif %}
+  <div class="eyebrow"><span class="tiny-dot"></span> ЛИЧНЫЙ КАБИНЕТ</div>
+  <h1 class="commerce-heading">МОИ ЗАКАЗЫ<span class="heading-period">.</span></h1>
+
+  {% if page %}
+    <div class="table-scroll">
+      <table class="store-table">
+        <thead>
+          <tr><th>Номер</th><th>Дата</th><th>Статус</th><th>Состав</th><th>Итого</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for order in page %}
+            <tr>
+              <td>#{{ order.pk }}</td>
+              <td>{{ order.created_at|date:'d.m.Y H:i' }}</td>
+              <td><span class="status-pill status-{{ order.status }}">{{ order.get_status_display }}</span></td>
+              <td>
+                {% for item in order.items.all %}
+                  {{ item.product_title }} / {{ item.size }} × {{ item.quantity }}{% if not forloop.last %}<span class="item-separator">, </span>{% endif %}
+                {% endfor %}
+              </td>
+              <td><strong>{{ order.total|floatformat:0 }} ₽</strong></td>
+              <td><a class="table-link" href="{{ order.get_absolute_url }}">Подробнее ↗</a></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include 'includes/pagination.html' %}
+  {% else %}
+    <div class="empty-state">
+      <span class="empty-symbol">◌</span>
+      <h2>ЗАКАЗОВ ПОКА НЕТ</h2>
+      <p>Выбери футболки, а история покупок появится здесь.</p>
+      <a href="{% url 'catalog' %}" class="btn btn-dark">Перейти в каталог ↗</a>
+    </div>
+  {% endif %}
 </section>
 {% endblock %}

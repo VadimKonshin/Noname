@@ -1,5 +1,11 @@
-{% if page.has_other_pages %}<nav class="pagination" aria-label="Страницы">
- {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}{% if selected_status %}&amp;status={{ selected_status }}{% endif %}">← Назад</a>{% endif %}
- <span>{{ page.number }} / {{ page.paginator.num_pages }}</span>
- {% if page.has_next %}<a href="?page={{ page.next_page_number }}{% if selected_status %}&amp;status={{ selected_status }}{% endif %}">Дальше →</a>{% endif %}
-</nav>{% endif %}
+{% if page.has_other_pages %}
+  <nav class="pagination" aria-label="Страницы">
+    {% if page.has_previous %}
+      <a href="?page={{ page.previous_page_number }}{% if selected_status %}&amp;status={{ selected_status }}{% endif %}">← Назад</a>
+    {% endif %}
+    <span>{{ page.number }} / {{ page.paginator.num_pages }}</span>
+    {% if page.has_next %}
+      <a href="?page={{ page.next_page_number }}{% if selected_status %}&amp;status={{ selected_status }}{% endif %}">Дальше →</a>
+    {% endif %}
+  </nav>
+{% endif %}
