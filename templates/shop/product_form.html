@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block title %}{% if product %}Редактирование товара{% else %}Новый товар{% endif %} — NoName{% endblock %}
+{% block content %}
+<section class="container admin-section">
+  <div class="eyebrow"><span class="tiny-dot"></span> УПРАВЛЕНИЕ КАТАЛОГОМ</div><h1>{% if product %}ИЗМЕНИТЬ ТОВАР<span class="heading-period">.</span>{% else %}НОВЫЙ ТОВАР<span class="heading-period">.</span>{% endif %}</h1><p class="page-lead">Заполни описание, цену и загрузи фотографии. После сохранения товар появится в каталоге, если включена публикация.</p>
+  <form class="editor-form" method="post" enctype="multipart/form-data" novalidate>{% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    <div class="editor-grid"><div class="editor-main">
+      <div class="form-section"><h2>01 / Бренд и товар</h2>{% for field in form %}{% if field.name == 'brand' or field.name == 'title' or field.name == 'description' or field.name == 'price' or field.name == 'sizes' or field.name == 'color' %}<div class="form-field"><label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} *{% endif %}</label>{{ field }}{% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}</div>{% endif %}{% endfor %}</div>
+      <div class="form-section"><h2>02 / Фотографии</h2><p class="form-hint">JPG, PNG или WebP. До 8 МБ на изображение. Добавь обложку и до {{ max_gallery }} дополнительных фотографий.</p><div class="form-field"><label for="{{ form.cover.id_for_label }}">Главная фотография</label>{{ form.cover }}{% if form.cover.errors %}<div class="field-error">{{ form.cover.errors }}</div>{% endif %}</div><div class="form-field"><label for="gallery_images">Дополнительные фотографии</label><input type="file" id="gallery_images" name="gallery_images" accept="image/jpeg,image/png,image/webp" multiple><small id="gallery-file-count">Можно выбрать сразу несколько файлов.</small></div>
+        {% if product and product.images.exists %}<div class="current-photos"><h3>Загруженные фотографии</h3><p class="form-hint">Отметь изображения, которые хочешь удалить при сохранении.</p><div class="existing-images">{% for photo in product.images.all %}<label class="existing-image"><img src="{{ photo.image.url }}" alt="Дополнительное фото"><span><input type="checkbox" name="delete_images" value="{{ photo.pk }}"> Удалить</span></label>{% endfor %}</div></div>{% endif %}
+      </div>
+    </div><aside class="editor-sidebar"><div class="form-section"><h2>03 / Публикация</h2>{% for field in form %}{% if field.name == 'is_available' or field.name == 'is_published' or field.name == 'is_featured' %}<label class="check-field">{{ field }}<span>{{ field.label }}</span></label>{% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}{% endif %}{% endfor %}<div class="publication-note">Товар увидят покупатели только при включённом пункте «Показывать в каталоге».</div></div><button class="btn btn-dark btn-wide" type="submit">Сохранить товар <span>↗</span></button><a class="cancel-link" href="{% if product and product.is_published %}{{ product.get_absolute_url }}{% else %}{% url 'catalog' %}{% endif %}">Отмена</a></aside></div>
+  </form>
+</section>
+{% endblock %}

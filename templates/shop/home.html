@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block title %}NoName — одежда независимых брендов{% endblock %}
+{% block content %}
+<section class="hero underground-hero">
+  <div class="container underground-hero-inner">
+    <div class="hero-upperline"><span><i class="pulse-dot"></i> INDEPENDENT LABELS / CURATED STREETWEAR</span><span>[ NO. 001 — 2026 ]</span></div>
+    <div class="hero-statement"><span class="hero-index">/ 001</span><h1>NO<span>NAME</span><b>®</b></h1><p class="hero-statement-sub">НИКАКИХ ГРОМКИХ ИМЁН.<br><strong>ТОЛЬКО ВЕЩИ С ХАРАКТЕРОМ.</strong></p></div>
+    <div class="hero-rail"><div class="hero-raster">NN / NN / NN / NN / NN / NN / NN / NN</div><p>Место для тех, кто создаёт своё. Независимые бренды, локальные дизайнеры, малые тиражи — на одной площадке.</p><a class="btn btn-light" href="{% url 'catalog' %}">ИССЛЕДОВАТЬ КАТАЛОГ <span>↗</span></a></div>
+    <div class="hero-bottom"><span>НЕ ОБЯЗАТЕЛЬНО БЫТЬ ИЗВЕСТНЫМ, ЧТОБЫ БЫТЬ УСЛЫШАННЫМ.</span><span>SCROLL TO DISCOVER ↓</span></div>
+  </div>
+</section>
+<section class="ticker brand-ticker" aria-label="Представленные бренды"><div class="ticker-track"><div class="ticker-run">{% for brand in ticker_brands %}<a href="{% url 'catalog' %}?brand={{ brand.slug|urlencode }}">{{ brand.name }} <span aria-hidden="true">✳</span></a>{% empty %}<span>СКОРО ЗДЕСЬ ПОЯВЯТСЯ НЕЗАВИСИМЫЕ БРЕНДЫ ✳</span>{% endfor %}{% for brand in ticker_brands %}<span>{{ brand.name }} <span>✳</span></span>{% endfor %}</div><div class="ticker-run" aria-hidden="true">{% for brand in ticker_brands %}<span>{{ brand.name }} <span>✳</span></span>{% empty %}<span>СКОРО ЗДЕСЬ ПОЯВЯТСЯ НЕЗАВИСИМЫЕ БРЕНДЫ ✳</span>{% endfor %}{% for brand in ticker_brands %}<span>{{ brand.name }} <span>✳</span></span>{% endfor %}</div></div></section>
+<section class="collection-section section-space"><div class="container">
+ <div class="section-heading"><div><div class="eyebrow"><span class="tiny-dot"></span> SELECTED / NONAME</div><h2>НЕЗАВИСИМАЯ<br>ПОДБОРКА<span class="heading-period">.</span></h2></div><a href="{% url 'catalog' %}" class="text-link">ВСЁ В КАТАЛОГЕ ↗</a></div>
+ {% if featured %}<div class="product-grid">{% for product in featured %}{% include 'includes/product_card.html' %}{% endfor %}</div>
+ {% else %}<div class="empty-panel"><span class="empty-symbol">∅</span><h3>Пока без товаров.</h3><p>Бренды и коллекции появятся после добавления администратором.</p>{% if user.is_staff %}<a class="btn btn-dark" href="{% url 'product_create' %}">Добавить товар ↗</a>{% endif %}</div>{% endif %}
+</div></section>
+<section class="manifesto noname-manifesto"><div class="container manifesto-grid"><div><div class="eyebrow light">/ ПРОСТРАНСТВО ДЛЯ НЕИЗВЕСТНЫХ</div><p class="manifesto-small">МАНИФЕСТ / 01</p></div><div><h2>ТВОЙ БРЕНД<br><span>НЕ НУЖДАЕТСЯ В РАЗРЕШЕНИИ.</span></h2><p>NoName собирает вещи тех, кто делает своё: небольшие мастерские, независимые авторы, коллекции без конвейера.</p><a class="text-link text-link-light" href="{% url 'catalog' %}">НАЙТИ СВОЁ ↗</a></div></div></section>
+<section class="container facts-row"><div><span>01 /</span><h3>Независимые бренды</h3><p>На одной площадке — разные имена и эстетики.</p></div><div><span>02 /</span><h3>Малые тиражи</h3><p>Никакого обязательного массового производства.</p></div><div><span>03 /</span><h3>Без регистрации</h3><p>Добавляй вещи в корзину и оформляй заказ как гость.</p></div></section>
+{% endblock %}

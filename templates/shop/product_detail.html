@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}{{ product.title }} — NoName{% endblock %}
+{% block content %}
+<div class="container detail-breadcrumb"><a href="{% url 'home' %}">Главная</a><span>/</span><a href="{% url 'catalog' %}">Каталог</a><span>/</span>{{ product.brand.name|default:'Бренд' }}<span>/</span><span>{{ product.title }}</span></div>
+<section class="container detail-layout">
+ <div class="detail-gallery"><div class="detail-main-photo">{% with photo=product.photo %}{% if photo %}<img id="gallery-main" src="{{ photo.url }}" alt="{{ product.title }}">{% else %}<img id="gallery-main" src="{% static 'img/placeholder.svg' %}" alt="Фото товара скоро появится">{% endif %}{% endwith %}<span class="detail-image-label">NONAME / CURATED LABELS</span></div>
+ {% if product.cover or product.images.exists %}<div class="thumbnail-grid" aria-label="Фотографии товара">{% if product.cover %}<button type="button" class="thumb active" data-gallery-src="{{ product.cover.url }}" data-gallery-alt="{{ product.title }} — главное фото"><img src="{{ product.cover.url }}" alt="Главное фото"></button>{% endif %}{% for photo in product.images.all %}<button type="button" class="thumb{% if not product.cover and forloop.first %} active{% endif %}" data-gallery-src="{{ photo.image.url }}" data-gallery-alt="{{ photo.alt_text|default:product.title }}"><img src="{{ photo.image.url }}" alt="{{ photo.alt_text|default:product.title }}"></button>{% endfor %}</div>{% endif %}
+ </div>
+ <div class="detail-info"><div class="eyebrow"><span class="tiny-dot"></span> {{ product.brand.name|default:'INDEPENDENT LABEL'|upper }} / ITEM {{ product.pk|stringformat:'03d' }}</div><h1>{{ product.title }}</h1><p class="detail-price">{{ product.price|floatformat:0 }} ₽</p><div class="detail-divider"></div>
+ <div class="detail-stat"><span>СТАТУС</span>{% if product.is_available %}<strong class="availability"><i></i> Доступно к заказу</strong>{% else %}<strong>Сейчас недоступен</strong>{% endif %}</div>
+ <div class="detail-stat"><span>БРЕНД</span><strong>{% if product.brand %}<a href="{% url 'catalog' %}?brand={{ product.brand.slug|urlencode }}">{{ product.brand.name }} ↗</a>{% else %}Не указан{% endif %}</strong></div>
+ <div class="detail-stat"><span>ЦВЕТ</span><strong>{{ product.color }}</strong></div>
+ {% if product.is_available %}<form method="post" action="{% url 'cart_add' slug=product.slug %}" class="buy-form" data-size-picker>{% csrf_token %}
+   <fieldset class="sizes-fieldset detail-sizes"><legend>ВЫБЕРИ РАЗМЕР <small>— НЕАКТИВНЫЕ РАЗМЕРЫ ОТСУТСТВУЮТ</small></legend><div class="size-grid">{% for option in product.all_size_options %}<label class="size-choice"><input type="radio" name="size" value="{{ option.name }}" {% if not option.available %}disabled{% endif %}><span>{{ option.name }}</span></label>{% endfor %}</div><p class="size-help" data-size-status aria-live="polite">Размер пока не выбран</p></fieldset>
+   <div class="quantity-line"><label for="order-qty">КОЛИЧЕСТВО</label><input id="order-qty" type="number" name="quantity" min="1" max="10" value="1" required></div>
+   <button type="submit" name="go_to_cart" value="1" class="btn btn-dark btn-wide" disabled>ВЫБЕРИ РАЗМЕР <span>＋</span></button>
+ </form>{% else %}<div class="detail-notice">Товар временно недоступен к заказу.</div>{% endif %}
+ <div class="detail-description"><h2>О ВЕЩИ</h2><p>{{ product.description|linebreaksbr }}</p></div>
+ <div class="detail-notice"><span>✳</span><p>Заказ можно оформить без регистрации. Оплата онлайн пока не подключена — магазин свяжется для подтверждения.</p></div>
+ {% if user.is_staff %}<div class="product-admin-actions"><a href="{% url 'product_edit' slug=product.slug %}" class="btn btn-dark">Редактировать ↗</a><a href="{% url 'product_delete' slug=product.slug %}" class="btn btn-outline-danger">Удалить товар</a></div>{% endif %}
+ <a href="{% url 'catalog' %}" class="back-catalog">← К каталогу</a></div>
+</section>
+{% endblock %}

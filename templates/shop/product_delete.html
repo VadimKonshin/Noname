@@ -1,0 +1,9 @@
+{% extends 'base.html' %}
+{% block title %}Удаление товара — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page narrow-page"><div class="eyebrow"><span class="tiny-dot"></span> STAFF / ПОДТВЕРЖДЕНИЕ</div><h1 class="commerce-heading">УДАЛИТЬ ТОВАР<span class="heading-period">?</span></h1>
+ <div class="form-section"><h2>{{ product.title }}</h2><p class="page-lead">Товар исчезнет из каталога, станет недоступен для новых заказов и удалится из корзин при их следующем открытии. История покупок и статистика сохранятся.</p>
+ <form method="post">{% csrf_token %}<button type="submit" class="btn btn-danger btn-wide">Да, удалить из магазина ↗</button></form>
+ <a class="back-catalog" href="{% url 'dashboard_products' %}">← Отмена</a></div>
+</section>
+{% endblock %}

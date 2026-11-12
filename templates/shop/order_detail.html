@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block title %}Заказ №{{ order.pk }} — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page">
+ <div class="eyebrow"><span class="tiny-dot"></span> ЗАКАЗ / {{ order.created_at|date:'d.m.Y H:i' }}</div><h1 class="commerce-heading">ЗАКАЗ #{{ order.pk }}<span class="heading-period">.</span></h1>
+ <p class="page-lead">Статус: <span class="status-pill status-{{ order.status }}">{{ order.get_status_display }}</span>. Заказ создан, но это не подтверждение оплаты.</p>
+ <div class="commerce-layout"><div>
+  <div class="form-section"><h2>Состав заказа</h2>
+    {% for item in order.items.all %}<div class="order-line"><div><strong>{{ item.product_title }}</strong>{% if item.brand_name %}<small>{{ item.brand_name }}</small>{% endif %}<small>Размер {{ item.size }} · {{ item.unit_price|floatformat:0 }} ₽ × {{ item.quantity }}</small></div><strong>{{ item.line_total|floatformat:0 }} ₽</strong></div>{% endfor %}
+  </div>
+  <div class="form-section order-contact"><h2>Получатель и доставка</h2><p><strong>{{ order.full_name }}</strong></p><p>{{ order.phone }} · {{ order.email }}</p><p><strong>{{ order.delivery_name }}</strong></p>{% if order.city or order.address %}<p>{{ order.postal_code }} {{ order.city }}, {{ order.address }}</p>{% endif %}{% if order.comment %}<p>Комментарий: {{ order.comment }}</p>{% endif %}</div>
+  {% if user.is_staff %}<div class="form-section"><h2>Управление статусом</h2><form method="post" action="{% url 'change_order_status' pk=order.pk %}" class="status-form">{% csrf_token %}{{ status_form.status }}<button class="btn btn-dark" type="submit">Сохранить статус</button></form></div>{% endif %}
+ </div><aside class="summary-box"><div class="eyebrow"><span class="tiny-dot"></span> ИТОГО</div><h2>ЗАКАЗ #{{ order.pk }}</h2><div class="summary-row"><span>Товары</span><strong>{{ order.subtotal|floatformat:0 }} ₽</strong></div><div class="summary-row"><span>Доставка</span><strong>{{ order.delivery_price|floatformat:0 }} ₽</strong></div><div class="summary-total"><span>Всего</span><strong>{{ order.total|floatformat:0 }} ₽</strong></div><p class="summary-note">Онлайн-оплата не подключена. Магазин свяжется для подтверждения. Если заказ оформлен без аккаунта, сохрани номер: доступ к этой странице есть в текущем браузере.</p><a class="back-catalog" href="{% if user.is_staff %}{% url 'dashboard_orders' %}{% elif user.is_authenticated and order.user_id %}{% url 'my_orders' %}{% else %}{% url 'catalog' %}{% endif %}">← {% if user.is_staff or order.user_id %}К списку заказов{% else %}В каталог{% endif %}</a></aside></div>
+</section>
+{% endblock %}
