@@ -1,0 +1,7 @@
+{% extends 'base.html' %}
+{% block title %}Слишком много запросов — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page">
+  <div class="empty-state"><span class="empty-symbol">∅</span><h1>СЛИШКОМ МНОГО ПОПЫТОК</h1><p>Подождите несколько минут и повторите запрос.</p><a class="btn btn-dark" href="{% url 'home' %}">На главную</a></div>
+</section>
+{% endblock %}

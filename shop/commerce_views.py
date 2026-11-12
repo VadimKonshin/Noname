@@ -3,8 +3,7 @@ import secrets
 from decimal import Decimal
 
 from django.contrib import messages
-from django.contrib.auth.decorators import login_required
-from django.core.exceptions import PermissionDenied
+from django.contrib.auth.decorators import login_required, permission_required
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Sum
@@ -12,6 +11,7 @@ from django.db.models.functions import Coalesce
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
+from django_ratelimit.decorators import ratelimit
 
 from .commerce import CART_SESSION_KEY, DELIVERY_SESSION_KEY, MAX_PER_VARIANT, get_cart, put, set_quantity
 from .commerce_forms import CheckoutForm, OrderStatusForm
@@ -93,6 +93,7 @@ def cart_update(request):
     return redirect('cart')
 
 
+@ratelimit(group='checkout', key='ip', rate='10/h', method='POST')
 @require_http_methods(['GET', 'POST'])
 def checkout(request):
     current_cart = get_cart(request)
@@ -192,26 +193,24 @@ def my_orders(request):
 @require_GET
 def order_detail(request, pk):
     order = get_object_or_404(Order.objects.prefetch_related('items'), pk=pk)
-    is_staff = request.user.is_authenticated and request.user.is_staff
+    can_view_any_order = request.user.has_perm('shop.view_order')
+    can_change_order = request.user.has_perm('shop.change_order')
     owns_order = request.user.is_authenticated and order.user_id == request.user.pk
     owns_guest_order = order.user_id is None and order.pk in request.session.get('guest_order_ids', [])
-    if not (is_staff or owns_order or owns_guest_order):
+    if not (can_view_any_order or owns_order or owns_guest_order):
         raise Http404('Заказ не найден.')
     return render(request, 'shop/order_detail.html', {
         'order': order,
-        'status_form': OrderStatusForm(instance=order) if is_staff else None,
+        'can_view_any_order': can_view_any_order,
+        'can_change_order': can_change_order,
+        'status_form': OrderStatusForm(instance=order) if can_change_order else None,
     })
 
 
-def staff_only(request):
-    if not request.user.is_staff:
-        raise PermissionDenied('Этот раздел доступен только сотрудникам магазина.')
-
-
 @login_required
+@permission_required('shop.view_order', raise_exception=True)
 @require_GET
 def dashboard(request):
-    staff_only(request)
     active_orders = Order.objects.exclude(status=Order.CANCELLED)
     status_counts = {entry['status']: entry['count'] for entry in Order.objects.values('status').annotate(count=Count('pk'))}
     totals = active_orders.aggregate(total=Sum('total'), subtotal=Sum('subtotal'))
@@ -242,9 +241,9 @@ def dashboard(request):
 
 
 @login_required
+@permission_required('shop.view_order', raise_exception=True)
 @require_GET
 def dashboard_orders(request):
-    staff_only(request)
     status = request.GET.get('status', '')
     orders = Order.objects.select_related('user').order_by('-created_at')
     if status in dict(Order.STATUS_CHOICES):
@@ -258,9 +257,9 @@ def dashboard_orders(request):
 
 
 @login_required
+@permission_required('shop.change_order', raise_exception=True)
 @require_POST
 def change_order_status(request, pk):
-    staff_only(request)
     order = get_object_or_404(Order, pk=pk)
     form = OrderStatusForm(request.POST, instance=order)
     if form.is_valid():
@@ -273,17 +272,17 @@ def change_order_status(request, pk):
 
 
 @login_required
+@permission_required('shop.view_product', raise_exception=True)
 @require_GET
 def dashboard_products(request):
-    staff_only(request)
     products = Product.objects.all().order_by('is_deleted', '-created_at')
     return render(request, 'shop/dashboard_products.html', {'products': products})
 
 
 @login_required
+@permission_required('shop.delete_product', raise_exception=True)
 @require_http_methods(['GET', 'POST'])
 def product_delete(request, slug):
-    staff_only(request)
     product = get_object_or_404(Product, slug=slug, is_deleted=False)
     if request.method == 'POST':
         product.soft_delete()
@@ -293,9 +292,9 @@ def product_delete(request, slug):
 
 
 @login_required
+@permission_required('shop.change_product', raise_exception=True)
 @require_POST
 def product_restore(request, slug):
-    staff_only(request)
     product = get_object_or_404(Product, slug=slug, is_deleted=True)
     product.restore()
     messages.success(request, f'«{product.title}» восстановлен как черновик. Проверьте цену и публикацию.')

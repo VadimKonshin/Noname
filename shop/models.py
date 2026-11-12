@@ -6,6 +6,7 @@ from django.db import models
 from django.utils import timezone
 from django.urls import reverse
 from django.utils.text import slugify
+from .validators import validate_product_image
 
 
 class Brand(models.Model):
@@ -44,7 +45,7 @@ class Product(models.Model):
     slug = models.SlugField('Адрес товара', max_length=180, unique=True, blank=True, allow_unicode=True)
     description = models.TextField('Описание')
     price = models.DecimalField('Цена, ₽', max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
-    cover = models.ImageField('Главное фото', upload_to='products/covers/', blank=True)
+    cover = models.ImageField('Главное фото', upload_to='products/covers/', blank=True, validators=[validate_product_image])
     sizes = models.CharField('Размеры через запятую', max_length=100, default='S, M, L, XL')
     color = models.CharField('Цвет', max_length=80, default='Чёрный')
     is_available = models.BooleanField('В наличии / доступен под заказ', default=True)
@@ -116,7 +117,7 @@ class Product(models.Model):
 
 class ProductImage(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='images', verbose_name='Товар')
-    image = models.ImageField('Фото', upload_to='products/gallery/')
+    image = models.ImageField('Фото', upload_to='products/gallery/', validators=[validate_product_image])
     alt_text = models.CharField('Описание фото', max_length=160, blank=True)
     sort_order = models.PositiveSmallIntegerField('Порядок', default=0)
 

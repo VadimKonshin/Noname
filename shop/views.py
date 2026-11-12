@@ -1,19 +1,18 @@
-from django import forms
 from django.contrib import messages
 from django.contrib.auth import login
-from django.contrib.auth.decorators import login_required
-from django.core.exceptions import PermissionDenied, ValidationError
+from django.contrib.auth.decorators import login_required, permission_required
+from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db.models import Q
-from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods
+from django_ratelimit.decorators import ratelimit
 from .forms import ProductForm, RegisterForm
 from .models import Brand, Product, ProductImage
+from .validators import validate_product_image
 
 
 GALLERY_MAX_COUNT = 8
-MAX_IMAGE_BYTES = 8 * 1024 * 1024
 
 
 def home(request):
@@ -43,6 +42,11 @@ def product_detail(request, slug):
     return render(request, 'shop/product_detail.html', {'product': product})
 
 
+def ratelimited_error(request, exception=None):
+    return render(request, '429.html', status=429)
+
+
+@ratelimit(group='register', key='ip', rate='5/h', method='POST')
 @require_http_methods(['GET', 'POST'])
 def register(request):
     if request.user.is_authenticated:
@@ -60,21 +64,10 @@ def validate_gallery(files, max_new=GALLERY_MAX_COUNT):
     if len(files) > max_new:
         raise ValidationError(f'Можно добавить ещё не более {max_new} фотографий (всего максимум {GALLERY_MAX_COUNT}).')
     for uploaded in files:
-        if uploaded.size > MAX_IMAGE_BYTES:
-            raise ValidationError(f'Файл «{uploaded.name}» превышает 8 МБ.')
         try:
-            forms.ImageField().clean(uploaded)
-        except forms.ValidationError as exc:
-            raise ValidationError(f'«{uploaded.name}»: загрузите корректный JPEG, PNG или WebP.') from exc
-        # ImageField validation reads from the file; reset before saving it.
-        uploaded.seek(0)
-        if (getattr(uploaded, 'image', None) and uploaded.image.format not in ('JPEG', 'PNG', 'WEBP')) or uploaded.content_type not in ('image/jpeg', 'image/png', 'image/webp'):
-            raise ValidationError(f'«{uploaded.name}»: поддерживаются только JPG, PNG и WebP.')
-
-
-def staff_only(request):
-    if not request.user.is_staff:
-        raise PermissionDenied('Добавление и редактирование товаров доступно только сотрудникам магазина.')
+            validate_product_image(uploaded)
+        except ValidationError as exc:
+            raise ValidationError(f'«{uploaded.name}»: {exc.message}') from exc
 
 
 def save_product(request, product=None):
@@ -110,15 +103,15 @@ def save_product(request, product=None):
 
 
 @login_required
+@permission_required('shop.add_product', raise_exception=True)
 @require_http_methods(['GET', 'POST'])
 def product_create(request):
-    staff_only(request)
     return save_product(request)
 
 
 @login_required
+@permission_required('shop.change_product', raise_exception=True)
 @require_http_methods(['GET', 'POST'])
 def product_edit(request, slug):
-    staff_only(request)
     product = get_object_or_404(Product.objects.prefetch_related('images'), slug=slug)
     return save_product(request, product)

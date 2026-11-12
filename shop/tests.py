@@ -3,8 +3,10 @@ import io
 import tempfile
 from decimal import Decimal
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
+from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase, override_settings
+from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from PIL import Image
 from .models import Brand, Product, ProductImage
@@ -19,10 +21,11 @@ def sample_png(name='test.png'):
     return SimpleUploadedFile(name, output.getvalue(), content_type='image/png')
 
 
+@override_settings(RATELIMIT_ENABLE=False)
 class StoreTests(TestCase):
     @classmethod
     def setUpTestData(cls):
-        cls.staff = User.objects.create_user(username='manager', password='SecurePass813!', is_staff=True)
+        cls.staff = User.objects.create_user(username='manager', password='SecurePass813!', is_staff=True, is_superuser=True)
         cls.customer = User.objects.create_user(username='buyer', password='SecurePass813!')
         cls.brand = Brand.objects.create(name='ПУСТОТА', slug='pustota')
         cls.product = Product.objects.create(brand=cls.brand, title='Тестовая футболка', description='Мягкий хлопок', price=Decimal('2990.00'), is_featured=True)
@@ -130,3 +133,63 @@ class StoreTests(TestCase):
         catalog = self.client.get(reverse('catalog'))
         self.assertContains(catalog, 'data-size-picker')
         self.assertContains(catalog, 'name="go_to_cart" value="1"')
+
+
+class SecurityTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        brand = Brand.objects.create(name='Security brand', slug='security-brand')
+        self.product = Product.objects.create(brand=brand, title='Security product', description='Test', price=1000)
+
+    def tearDown(self):
+        cache.clear()
+
+    def test_staff_flag_alone_does_not_grant_management_access(self):
+        staff = User.objects.create_user(username='limited_staff', password='SecurePass813!', is_staff=True)
+        self.client.force_login(staff)
+        self.assertEqual(self.client.get(reverse('product_create')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('dashboard')).status_code, 403)
+
+    def test_model_image_validation_rejects_non_image(self):
+        image = ProductImage(
+            product=self.product,
+            image=SimpleUploadedFile('fake.png', b'not an image', content_type='image/png'),
+        )
+        with self.assertRaises(ValidationError):
+            image.full_clean()
+
+    def test_model_image_validation_rejects_oversized_file(self):
+        uploaded = sample_png()
+        uploaded.size = 8 * 1024 * 1024 + 1
+        image = ProductImage(product=self.product, image=uploaded)
+        with self.assertRaises(ValidationError):
+            image.full_clean()
+
+    def test_csrf_is_required_for_cart_changes(self):
+        client = Client(enforce_csrf_checks=True)
+        response = client.post(reverse('cart_add', args=[self.product.slug]), {'size': 'M', 'quantity': 1})
+        self.assertEqual(response.status_code, 403)
+
+    def test_login_rate_limit(self):
+        for _ in range(10):
+            response = self.client.post(reverse('login'), {'username': 'nobody', 'password': 'wrong-password'})
+            self.assertEqual(response.status_code, 200)
+        response = self.client.post(reverse('login'), {'username': 'nobody', 'password': 'wrong-password'})
+        self.assertEqual(response.status_code, 429)
+
+    def test_admin_login_rate_limit(self):
+        for _ in range(10):
+            response = self.client.post('/admin/login/', {'username': 'nobody', 'password': 'wrong-password'})
+            self.assertEqual(response.status_code, 200)
+        response = self.client.post('/admin/login/', {'username': 'nobody', 'password': 'wrong-password'})
+        self.assertEqual(response.status_code, 429)
+
+    def test_registration_rate_limit(self):
+        for _ in range(5):
+            self.client.post(reverse('register'), {})
+        self.assertEqual(self.client.post(reverse('register'), {}).status_code, 429)
+
+    def test_checkout_rate_limit(self):
+        for _ in range(10):
+            self.client.post(reverse('checkout'), {})
+        self.assertEqual(self.client.post(reverse('checkout'), {}).status_code, 429)

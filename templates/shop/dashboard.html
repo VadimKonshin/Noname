@@ -3,7 +3,7 @@
 {% block content %}
 <section class="container commerce-page">
  <div class="eyebrow"><span class="tiny-dot"></span> STAFF / АНАЛИТИКА</div><h1 class="commerce-heading">ПАНЕЛЬ МАГАЗИНА<span class="heading-period">.</span></h1>
- <div class="dash-nav"><a class="active" href="{% url 'dashboard' %}">Статистика</a><a href="{% url 'dashboard_orders' %}">Заказы</a><a href="{% url 'dashboard_products' %}">Товары</a><a href="{% url 'product_create' %}">+ Создать товар</a><a href="{% url 'admin:index' %}">Django Admin ↗</a></div>
+ <div class="dash-nav"><a class="active" href="{% url 'dashboard' %}">Статистика</a><a href="{% url 'dashboard_orders' %}">Заказы</a>{% if perms.shop.view_product %}<a href="{% url 'dashboard_products' %}">Товары</a>{% endif %}{% if perms.shop.add_product %}<a href="{% url 'product_create' %}">+ Создать товар</a>{% endif %}{% if user.is_staff %}<a href="{% url 'admin:index' %}">Django Admin ↗</a>{% endif %}</div>
  <div class="metric-grid">
   <div class="metric"><span>ВСЕ ЗАКАЗЫ</span><strong>{{ orders_count }}</strong><small>Включая отменённые</small></div>
   <div class="metric"><span>НОВЫЕ ЗАКАЗЫ</span><strong>{{ new_count }}</strong><small>Требуют обработки</small></div>

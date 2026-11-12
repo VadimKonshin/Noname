@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.http import HttpRequest
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from .commerce import get_cart
@@ -12,11 +12,12 @@ from .models import Brand, DeliveryMethod, Order, OrderItem, Product
 User = get_user_model()
 
 
+@override_settings(RATELIMIT_ENABLE=False)
 class CommerceTests(TestCase):
     @classmethod
     def setUpTestData(cls):
         cls.member = User.objects.create_user('customer', email='client@example.org', password='PassWithLength#178')
-        cls.staff = User.objects.create_user('store_admin', email='admin@example.org', password='PassWithLength#178', is_staff=True)
+        cls.staff = User.objects.create_user('store_admin', email='admin@example.org', password='PassWithLength#178', is_staff=True, is_superuser=True)
         cls.brand = Brand.objects.create(name='ПУСТОТА', slug='pustota')
         cls.shirt = Product.objects.create(brand=cls.brand, title='MOON / Черная футболка', description='Хлопок', price=Decimal('3000.00'), sizes='M, L', is_published=True, is_available=True)
         cls.delivery = DeliveryMethod.objects.create(name='Пункт выдачи', price=Decimal('350.00'), requires_address=True)
@@ -263,3 +264,13 @@ class CommerceTests(TestCase):
         self.client.get(reverse('product_delete', args=[self.shirt.slug]))
         self.shirt.refresh_from_db()
         self.assertFalse(self.shirt.is_deleted)
+
+    def test_staff_flag_alone_does_not_expose_orders(self):
+        order = self._create_order()
+        limited_staff = User.objects.create_user('limited_manager', password='AnotherPass#831', is_staff=True)
+        self.client.force_login(limited_staff)
+        self.assertEqual(self.client.get(reverse('dashboard')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('dashboard_orders')).status_code, 403)
+        self.assertEqual(self.client.get(order.get_absolute_url()).status_code, 404)
+        response = self.client.post(reverse('change_order_status', args=[order.pk]), {'status': Order.CANCELLED})
+        self.assertEqual(response.status_code, 403)

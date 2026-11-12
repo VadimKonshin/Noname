@@ -1,7 +1,6 @@
 from django import forms
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
-from django.core.files.uploadedfile import UploadedFile
 from .models import Brand, Product
 
 
@@ -60,12 +59,3 @@ class ProductForm(forms.ModelForm):
         if price <= 0:
             raise forms.ValidationError('Цена должна быть больше нуля.')
         return price
-
-    def clean_cover(self):
-        cover = self.cleaned_data.get('cover')
-        if isinstance(cover, UploadedFile):
-            if cover.size > 8 * 1024 * 1024:
-                raise forms.ValidationError('Размер файла не должен превышать 8 МБ.')
-            if (getattr(cover, 'image', None) and cover.image.format not in ('JPEG', 'PNG', 'WEBP')) or cover.content_type not in ('image/jpeg', 'image/png', 'image/webp'):
-                raise forms.ValidationError('Загрузите изображение в формате JPG, PNG или WebP.')
-        return cover

@@ -2,8 +2,10 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
+from django_ratelimit.decorators import ratelimit
 
 urlpatterns = [
+    path('admin/login/', ratelimit(group='admin_login', key='ip', rate='10/5m', method='POST')(admin.site.login)),
     path('admin/', admin.site.urls),
     path('', include('shop.urls')),
 ]

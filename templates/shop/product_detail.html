@@ -18,7 +18,7 @@
  </form>{% else %}<div class="detail-notice">Товар временно недоступен к заказу.</div>{% endif %}
  <div class="detail-description"><h2>О ВЕЩИ</h2><p>{{ product.description|linebreaksbr }}</p></div>
  <div class="detail-notice"><span>✳</span><p>Заказ можно оформить без регистрации. Оплата онлайн пока не подключена — магазин свяжется для подтверждения.</p></div>
- {% if user.is_staff %}<div class="product-admin-actions"><a href="{% url 'product_edit' slug=product.slug %}" class="btn btn-dark">Редактировать ↗</a><a href="{% url 'product_delete' slug=product.slug %}" class="btn btn-outline-danger">Удалить товар</a></div>{% endif %}
+ {% if perms.shop.change_product or perms.shop.delete_product %}<div class="product-admin-actions">{% if perms.shop.change_product %}<a href="{% url 'product_edit' slug=product.slug %}" class="btn btn-dark">Редактировать ↗</a>{% endif %}{% if perms.shop.delete_product %}<a href="{% url 'product_delete' slug=product.slug %}" class="btn btn-outline-danger">Удалить товар</a>{% endif %}</div>{% endif %}
  <a href="{% url 'catalog' %}" class="back-catalog">← К каталогу</a></div>
 </section>
 {% endblock %}

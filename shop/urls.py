@@ -1,6 +1,11 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path
+from django_ratelimit.decorators import ratelimit
 from . import views, commerce_views
+
+login_view = ratelimit(group='login', key='ip', rate='10/5m', method='POST')(
+    auth_views.LoginView.as_view(template_name='accounts/login.html', redirect_authenticated_user=True)
+)
 
 urlpatterns = [
     path('', views.home, name='home'),
@@ -19,7 +24,7 @@ urlpatterns = [
 
     path('catalog/<str:slug>/', views.product_detail, name='product_detail'),
     path('register/', views.register, name='register'),
-    path('login/', auth_views.LoginView.as_view(template_name='accounts/login.html', redirect_authenticated_user=True), name='login'),
+    path('login/', login_view, name='login'),
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),
     path('products/add/', views.product_create, name='product_create'),
     path('products/<str:slug>/edit/', views.product_edit, name='product_edit'),

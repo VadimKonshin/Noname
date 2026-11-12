@@ -23,7 +23,7 @@
         <a href="{% url 'catalog' %}" {% if request.resolver_match.url_name == 'catalog' or request.resolver_match.url_name == 'product_detail' %}class="active"{% endif %}>Одежда</a>
         <a href="{% url 'cart' %}" class="nav-cart{% if request.resolver_match.url_name == 'cart' %} active{% endif %}">Корзина <span class="cart-counter">{{ cart_count }}</span></a>
         {% if user.is_authenticated %}
-          {% if user.is_staff %}<a href="{% url 'dashboard' %}">Панель</a><a href="{% url 'product_create' %}" class="nav-add">+ Товар</a>{% else %}<a href="{% url 'my_orders' %}">Мои заказы</a>{% endif %}
+          {% if perms.shop.view_order %}<a href="{% url 'dashboard' %}">Панель</a>{% endif %}{% if perms.shop.add_product %}<a href="{% url 'product_create' %}" class="nav-add">+ Товар</a>{% endif %}<a href="{% url 'my_orders' %}">Мои заказы</a>
           <span class="nav-user">{{ user.username }}</span>
           <form method="post" action="{% url 'logout' %}" class="logout-form">{% csrf_token %}<button type="submit" class="nav-text-btn">Выйти</button></form>
         {% else %}
