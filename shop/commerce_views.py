@@ -23,7 +23,7 @@ def selected_delivery(request):
     method_id = request.session.get(DELIVERY_SESSION_KEY)
     if type(method_id) is not int:
         return None
-    method = DeliveryMethod.objects.filter(pk=method_id, is_active=True).first()
+    method = DeliveryMethod.objects.filter(pk=method_id, is_active=True, price__gte=0).first()
     if method is None:
         request.session.pop(DELIVERY_SESSION_KEY, None)
     return method
@@ -32,7 +32,7 @@ def selected_delivery(request):
 @require_GET
 def cart(request):
     current = get_cart(request)
-    delivery_methods = list(DeliveryMethod.objects.filter(is_active=True))
+    delivery_methods = list(DeliveryMethod.objects.filter(is_active=True, price__gte=0))
     selected = selected_delivery(request)
     return render(request, 'shop/cart.html', {
         'cart': current, 'delivery_methods': delivery_methods, 'selected_method': selected,
@@ -43,7 +43,7 @@ def cart(request):
 @require_POST
 def cart_delivery(request):
     method_id = _integer(request.POST.get('delivery_method'))
-    method = DeliveryMethod.objects.filter(pk=method_id, is_active=True).first() if method_id else None
+    method = DeliveryMethod.objects.filter(pk=method_id, is_active=True, price__gte=0).first() if method_id else None
     if not method:
         messages.error(request, 'Выберите доступный способ доставки.')
         return redirect('cart')
@@ -64,7 +64,7 @@ def _integer(raw):
 
 @require_POST
 def cart_add(request, slug):
-    product = get_object_or_404(Product, slug=slug, is_published=True, is_available=True, is_deleted=False)
+    product = get_object_or_404(Product, slug=slug, price__gt=0, is_published=True, is_available=True, is_deleted=False)
     size = request.POST.get('size', '').strip()
     quantity = _integer(request.POST.get('quantity', '1'))
     if len(size) > 40 or ':' in size or size not in product.size_list:

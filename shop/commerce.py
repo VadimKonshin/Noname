@@ -26,7 +26,7 @@ def get_cart(request):
             identifiers.add(int(prefix))
     products = Product.objects.filter(
         pk__in=identifiers, price__gt=0, is_published=True, is_available=True, is_deleted=False,
-    ).prefetch_related('images')
+    ).select_related('brand').prefetch_related('images')
     available = {p.pk: p for p in products}
     cleaned = {}
     lines = []

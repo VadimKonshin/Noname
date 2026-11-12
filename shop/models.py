@@ -1,4 +1,7 @@
+from decimal import Decimal
+
 from django.conf import settings
+from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils import timezone
 from django.urls import reverse
@@ -40,7 +43,7 @@ class Product(models.Model):
     title = models.CharField('Название', max_length=160)
     slug = models.SlugField('Адрес товара', max_length=180, unique=True, blank=True, allow_unicode=True)
     description = models.TextField('Описание')
-    price = models.DecimalField('Цена, ₽', max_digits=10, decimal_places=2)
+    price = models.DecimalField('Цена, ₽', max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
     cover = models.ImageField('Главное фото', upload_to='products/covers/', blank=True)
     sizes = models.CharField('Размеры через запятую', max_length=100, default='S, M, L, XL')
     color = models.CharField('Цвет', max_length=80, default='Чёрный')
@@ -129,7 +132,7 @@ class ProductImage(models.Model):
 class DeliveryMethod(models.Model):
     name = models.CharField('Название доставки', max_length=100)
     description = models.CharField('Условия', max_length=220, blank=True)
-    price = models.DecimalField('Цена доставки, ₽', max_digits=10, decimal_places=2, default=0)
+    price = models.DecimalField('Цена доставки, ₽', max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(Decimal('0.00'))])
     requires_address = models.BooleanField('Нужен адрес получателя', default=True)
     is_active = models.BooleanField('Доступен покупателям', default=True)
     sort_order = models.PositiveSmallIntegerField('Порядок', default=0)

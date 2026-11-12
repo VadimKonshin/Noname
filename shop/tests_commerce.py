@@ -1,9 +1,12 @@
 """Run: python manage.py test shop"""
 from decimal import Decimal
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
+from django.http import HttpRequest
 from django.test import TestCase
 from django.urls import reverse
 
+from .commerce import get_cart
 from .models import Brand, DeliveryMethod, Order, OrderItem, Product
 
 User = get_user_model()
@@ -58,6 +61,39 @@ class CommerceTests(TestCase):
     def test_invalid_quantity_not_added(self):
         self._add(quantity=10000)
         self.assertEqual(self.client.get(reverse('cart')).context['cart']['count'], 0)
+
+    def test_product_price_must_be_positive(self):
+        self.shirt.price = Decimal('0.00')
+        with self.assertRaises(ValidationError):
+            self.shirt.full_clean()
+
+    def test_non_positive_price_cannot_be_added(self):
+        self.shirt.price = Decimal('0.00')
+        self.shirt.save()
+        response = self._add()
+        self.assertEqual(response.status_code, 404)
+        self.assertNotIn('pustota_cart', self.client.session)
+
+    def test_delivery_price_cannot_be_negative(self):
+        self.delivery.price = Decimal('-1.00')
+        with self.assertRaises(ValidationError):
+            self.delivery.full_clean()
+
+    def test_negative_delivery_cannot_be_selected(self):
+        self.delivery.price = Decimal('-350.00')
+        self.delivery.save()
+        self._add()
+        response = self._choose_delivery()
+        self.assertRedirects(response, reverse('cart'))
+        self.assertNotIn('noname_delivery_id', self.client.session)
+
+    def test_cart_lines_prefetch_brand(self):
+        self._add()
+        request = HttpRequest()
+        request.session = self.client.session
+        current = get_cart(request)
+        with self.assertNumQueries(0):
+            self.assertEqual(current['lines'][0]['product'].brand.name, self.brand.name)
 
     def test_cart_update_and_remove(self):
         self._add()

@@ -35,11 +35,11 @@ def catalog(request):
     orders = {'new': '-created_at', 'price_low': 'price', 'price_high': '-price', 'name': 'title'}
     products = products.order_by(orders.get(sort, '-created_at'), '-pk')
     page = Paginator(products, 9).get_page(request.GET.get('page'))
-    return render(request, 'shop/catalog.html', {'page': page, 'query': query, 'sort': sort, 'total': products.count(), 'selected_brand': selected_brand, 'brands': Brand.objects.filter(is_active=True).order_by('sort_order', 'name')})
+    return render(request, 'shop/catalog.html', {'page': page, 'query': query, 'sort': sort, 'total': page.paginator.count, 'selected_brand': selected_brand, 'brands': Brand.objects.filter(is_active=True).order_by('sort_order', 'name')})
 
 
 def product_detail(request, slug):
-    product = get_object_or_404(Product.objects.prefetch_related('images'), slug=slug, is_published=True, is_deleted=False)
+    product = get_object_or_404(Product.objects.select_related('brand').prefetch_related('images'), slug=slug, is_published=True, is_deleted=False)
     return render(request, 'shop/product_detail.html', {'product': product})
 
 
