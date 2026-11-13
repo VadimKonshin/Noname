@@ -2,7 +2,7 @@ from django.contrib import admin, messages
 from django.urls import reverse
 from django.utils.html import format_html
 
-from .models import Brand, DeliveryMethod, Order, OrderItem, Product, ProductImage
+from .models import Brand, BrandManager, DeliveryMethod, Order, OrderItem, Product, ProductImage
 
 
 class ProductImageInline(admin.TabularInline):
@@ -25,6 +25,15 @@ class BrandAdmin(admin.ModelAdmin):
     list_editable = ('is_active', 'sort_order')
     search_fields = ('name', 'description')
     readonly_fields = ('slug',)
+
+
+@admin.register(BrandManager)
+class BrandManagerAdmin(admin.ModelAdmin):
+    list_display = ('user', 'brand', 'is_approved', 'created_at')
+    list_editable = ('is_approved',)
+    list_filter = ('is_approved', 'brand')
+    search_fields = ('user__username', 'user__email', 'brand__name')
+    readonly_fields = ('created_at',)
 
 
 @admin.register(Product)

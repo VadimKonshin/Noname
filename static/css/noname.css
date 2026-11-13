@@ -107,7 +107,8 @@ a,button {transition:color .18s,background .18s,border-color .18s}
 .catalog-intro>p,.page-lead {color:#92929a}
 .catalog-content {background:var(--paper)}
 .count-label {color:#87878b}
-.search-field,.sort-field select,.search-field input,.form-field input:not([type=checkbox]),.form-field textarea,.form-field select,.auth-form input,.buy-form select,.buy-form input,.basket-actions input,.status-form select {background:#1b1b1f!important;color:#e8e7e2!important;border:1px solid #424248!important}
+.search-field,.sort-field select,.search-field input,.form-field input:not([type=checkbox]),.form-field textarea,.form-field select,.auth-form input,.auth-form select,.buy-form select,.buy-form input,.basket-actions input,.status-form select {background:#1b1b1f!important;color:#e8e7e2!important;border:1px solid #424248!important}
+.auth-form select {width:100%;min-height:49px;padding:13px 14px;border-radius:0}
 .search-field button {color:#d5d5d8}
 .search-field input::placeholder,.form-field input::placeholder {color:#6d6d75}
 .sort-field>span {color:#99999f}

@@ -9,7 +9,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from PIL import Image
-from .models import Brand, Product, ProductImage
+from .models import Brand, BrandManager, Product, ProductImage
 
 
 User = get_user_model()
@@ -193,3 +193,108 @@ class SecurityTests(TestCase):
         for _ in range(10):
             self.client.post(reverse('checkout'), {})
         self.assertEqual(self.client.post(reverse('checkout'), {}).status_code, 429)
+
+
+@override_settings(RATELIMIT_ENABLE=False)
+class BrandAccountTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.password = 'SecurePass813!'
+        cls.brand = Brand.objects.create(name='FIRST BRAND', slug='first-brand')
+        cls.other_brand = Brand.objects.create(name='OTHER BRAND', slug='other-brand')
+        cls.manager_user = User.objects.create_user(username='brand_manager', password=cls.password)
+        cls.manager = BrandManager.objects.create(user=cls.manager_user, brand=cls.brand, is_approved=True)
+        cls.other_user = User.objects.create_user(username='other_manager', password=cls.password)
+        BrandManager.objects.create(user=cls.other_user, brand=cls.other_brand, is_approved=True)
+        cls.customer = User.objects.create_user(username='ordinary_customer', password=cls.password)
+        cls.product = Product.objects.create(
+            brand=cls.brand, title='Own product', description='Own description', price=Decimal('2000.00'),
+        )
+        cls.other_product = Product.objects.create(
+            brand=cls.other_brand, title='Other product', description='Other description', price=Decimal('3000.00'),
+        )
+
+    def test_brand_registration_requires_admin_approval(self):
+        response = self.client.post(reverse('brand_register'), {
+            'username': 'new_brand_manager',
+            'email': 'manager@example.com',
+            'brand': self.brand.pk,
+            'password1': 'AnotherSecurePass#831',
+            'password2': 'AnotherSecurePass#831',
+        })
+        self.assertRedirects(response, reverse('brand_pending'))
+        manager = BrandManager.objects.get(user__username='new_brand_manager')
+        self.assertFalse(manager.is_approved)
+        self.assertEqual(manager.brand, self.brand)
+        self.assertEqual(self.client.get(reverse('brand_dashboard')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('brand_products')).status_code, 403)
+
+    def test_brand_login_redirects_approved_and_pending_managers(self):
+        response = self.client.post(reverse('brand_login'), {
+            'username': self.manager_user.username, 'password': self.password,
+        })
+        self.assertRedirects(response, reverse('brand_dashboard'))
+        self.client.logout()
+        pending_user = User.objects.create_user(username='pending_manager', password=self.password)
+        BrandManager.objects.create(user=pending_user, brand=self.brand)
+        response = self.client.post(reverse('brand_login'), {
+            'username': pending_user.username, 'password': self.password,
+        })
+        self.assertRedirects(response, reverse('brand_pending'))
+
+    def test_customer_cannot_login_through_brand_form(self):
+        response = self.client.post(reverse('brand_login'), {
+            'username': self.customer.username, 'password': self.password,
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'не зарегистрирован как менеджер бренда')
+        self.assertNotIn('_auth_user_id', self.client.session)
+
+    def test_manager_creates_product_only_for_own_brand(self):
+        self.client.force_login(self.manager_user)
+        form_page = self.client.get(reverse('product_create'))
+        self.assertNotIn('brand', form_page.context['form'].fields)
+        self.assertNotIn('is_featured', form_page.context['form'].fields)
+        response = self.client.post(reverse('product_create'), {
+            'brand': self.other_brand.pk,
+            'title': 'Manager product',
+            'description': 'Created by manager',
+            'price': '4500',
+            'sizes': 'S, M',
+            'color': 'Чёрный',
+            'is_available': 'on',
+            'is_published': 'on',
+            'is_featured': 'on',
+        })
+        product = Product.objects.get(title='Manager product')
+        self.assertRedirects(response, product.get_absolute_url())
+        self.assertEqual(product.brand, self.brand)
+        self.assertFalse(product.is_featured)
+
+    def test_manager_cannot_change_or_delete_other_brand_product(self):
+        self.client.force_login(self.manager_user)
+        self.assertEqual(self.client.get(reverse('product_edit', args=[self.other_product.slug])).status_code, 404)
+        self.assertEqual(self.client.post(reverse('product_delete', args=[self.other_product.slug])).status_code, 404)
+        self.other_product.soft_delete()
+        self.assertEqual(self.client.post(reverse('product_restore', args=[self.other_product.slug])).status_code, 404)
+        self.assertEqual(self.client.get(reverse('dashboard_products')).status_code, 403)
+
+    def test_brand_product_list_contains_only_own_products(self):
+        self.client.force_login(self.manager_user)
+        response = self.client.get(reverse('brand_products'))
+        self.assertContains(response, self.product.title)
+        self.assertNotContains(response, self.other_product.title)
+        self.assertContains(response, 'Изменить')
+        self.assertContains(response, 'Удалить')
+
+    def test_manager_can_delete_and_restore_own_product(self):
+        self.client.force_login(self.manager_user)
+        response = self.client.post(reverse('product_delete', args=[self.product.slug]))
+        self.assertRedirects(response, reverse('brand_products'))
+        self.product.refresh_from_db()
+        self.assertTrue(self.product.is_deleted)
+        response = self.client.post(reverse('product_restore', args=[self.product.slug]))
+        self.assertRedirects(response, reverse('product_edit', args=[self.product.slug]))
+        self.product.refresh_from_db()
+        self.assertFalse(self.product.is_deleted)
+        self.assertFalse(self.product.is_published)

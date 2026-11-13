@@ -6,13 +6,17 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Sum
+from django.db.models import Count, Prefetch, Sum
 from django.db.models.functions import Coalesce
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from django_ratelimit.decorators import ratelimit
 
+from .access import (
+    brand_manager_required, get_brand_manager, get_scoped_object_or_404,
+    product_permission_required, scoped_order_items,
+)
 from .commerce import CART_SESSION_KEY, DELIVERY_SESSION_KEY, MAX_PER_VARIANT, get_cart, put, set_quantity
 from .commerce_forms import CheckoutForm, OrderStatusForm
 from .models import DeliveryMethod, Order, OrderItem, Product
@@ -190,17 +194,35 @@ def my_orders(request):
     })
 
 
+def attach_brand_items(orders, brand):
+    items = scoped_order_items(brand, OrderItem.objects.select_related('product'))
+    return orders.prefetch_related(Prefetch('items', queryset=items, to_attr='brand_items'))
+
+
+def set_brand_totals(orders):
+    for order in orders:
+        order.brand_total = sum((item.line_total for item in order.brand_items), Decimal('0.00'))
+    return orders
+
+
 @require_GET
 def order_detail(request, pk):
     order = get_object_or_404(Order.objects.prefetch_related('items'), pk=pk)
     can_view_any_order = request.user.has_perm('shop.view_order')
-    can_change_order = request.user.has_perm('shop.change_order')
     owns_order = request.user.is_authenticated and order.user_id == request.user.pk
     owns_guest_order = order.user_id is None and order.pk in request.session.get('guest_order_ids', [])
-    if not (can_view_any_order or owns_order or owns_guest_order):
+    manager = get_brand_manager(request.user)
+    brand_items = list(scoped_order_items(manager.brand, order.items)) if manager else []
+    can_view_brand_order = bool(brand_items)
+    brand_order_view = can_view_brand_order and not (can_view_any_order or owns_order or owns_guest_order)
+    if not (can_view_any_order or owns_order or owns_guest_order or can_view_brand_order):
         raise Http404('Заказ не найден.')
+    can_change_order = request.user.has_perm('shop.change_order') and not brand_order_view
     return render(request, 'shop/order_detail.html', {
         'order': order,
+        'order_items': brand_items if brand_order_view else order.items.all(),
+        'brand_order_view': brand_order_view,
+        'brand_subtotal': sum((item.line_total for item in brand_items), Decimal('0.00')),
         'can_view_any_order': can_view_any_order,
         'can_change_order': can_change_order,
         'status_form': OrderStatusForm(instance=order) if can_change_order else None,
@@ -240,6 +262,38 @@ def dashboard(request):
     })
 
 
+@brand_manager_required
+@require_GET
+def brand_dashboard(request):
+    brand = request.brand_manager.brand
+    items = scoped_order_items(brand, OrderItem.objects.all())
+    orders = Order.objects.filter(items__in=items).distinct()
+    active_orders = orders.exclude(status=Order.CANCELLED)
+    active_items = items.exclude(order__status=Order.CANCELLED)
+    totals = active_items.aggregate(units=Sum('quantity'), value=Sum('line_total'))
+    status_counts = {
+        entry['status']: entry['count']
+        for entry in orders.values('status').annotate(count=Count('pk', distinct=True))
+    }
+    sales = (active_items.annotate(display_title=Coalesce('product__title', 'product_title'))
+             .values('product_id', 'display_title', 'product__slug', 'product__is_deleted')
+             .annotate(units=Sum('quantity'), value=Sum('line_total'), order_count=Count('order_id', distinct=True))
+             .order_by('-units', '-value'))
+    recent = attach_brand_items(orders.select_related('user').order_by('-created_at'), brand)[:8]
+    return render(request, 'shop/brand_dashboard.html', {
+        'brand': brand,
+        'orders_count': orders.count(),
+        'active_orders_count': active_orders.count(),
+        'sold_units': totals['units'] or 0,
+        'items_total': totals['value'] or Decimal('0.00'),
+        'status_counts': status_counts,
+        'sold_models': sales,
+        'recent_orders': set_brand_totals(recent),
+        'cancelled_count': status_counts.get(Order.CANCELLED, 0),
+        'new_count': status_counts.get(Order.NEW, 0),
+    })
+
+
 @login_required
 @permission_required('shop.view_order', raise_exception=True)
 @require_GET
@@ -253,6 +307,37 @@ def dashboard_orders(request):
     return render(request, 'shop/dashboard_orders.html', {
         'page': Paginator(orders, 20).get_page(request.GET.get('page')),
         'statuses': Order.STATUS_CHOICES, 'selected_status': status,
+    })
+
+
+@brand_manager_required
+@require_GET
+def brand_orders(request):
+    brand = request.brand_manager.brand
+    items = scoped_order_items(brand, OrderItem.objects.all())
+    orders = Order.objects.filter(items__in=items).distinct().select_related('user').order_by('-created_at')
+    status = request.GET.get('status', '')
+    if status in dict(Order.STATUS_CHOICES):
+        orders = orders.filter(status=status)
+    else:
+        status = ''
+    products = Product.objects.filter(brand=brand).order_by('title')
+    product_id = _integer(request.GET.get('product'))
+    selected_product = products.filter(pk=product_id).first() if product_id else None
+    if selected_product:
+        orders = orders.filter(items__product=selected_product)
+    else:
+        product_id = ''
+    orders = attach_brand_items(orders, brand)
+    page = Paginator(orders, 20).get_page(request.GET.get('page'))
+    set_brand_totals(page)
+    return render(request, 'shop/brand_orders.html', {
+        'brand': brand,
+        'page': page,
+        'statuses': Order.STATUS_CHOICES,
+        'selected_status': status,
+        'products': products,
+        'selected_product_id': selected_product.pk if selected_product else '',
     })
 
 
@@ -276,26 +361,31 @@ def change_order_status(request, pk):
 @require_GET
 def dashboard_products(request):
     products = Product.objects.all().order_by('is_deleted', '-created_at')
-    return render(request, 'shop/dashboard_products.html', {'products': products})
+    return render(request, 'shop/dashboard_products.html', {
+        'products': products,
+        'can_change_products': request.user.has_perm('shop.change_product'),
+        'can_delete_products': request.user.has_perm('shop.delete_product'),
+    })
 
 
-@login_required
-@permission_required('shop.delete_product', raise_exception=True)
+@product_permission_required('shop.delete_product')
 @require_http_methods(['GET', 'POST'])
 def product_delete(request, slug):
-    product = get_object_or_404(Product, slug=slug, is_deleted=False)
+    product = get_scoped_object_or_404(request, Product.objects, slug=slug, is_deleted=False)
+    is_brand_manager = bool(getattr(request, 'brand_manager', None))
     if request.method == 'POST':
         product.soft_delete()
         messages.success(request, f'«{product.title}» удалён из каталога. История заказов сохранена.')
-        return redirect('dashboard_products')
-    return render(request, 'shop/product_delete.html', {'product': product})
+        return redirect('brand_products' if is_brand_manager else 'dashboard_products')
+    return render(request, 'shop/product_delete.html', {
+        'product': product, 'brand_cabinet': is_brand_manager,
+    })
 
 
-@login_required
-@permission_required('shop.change_product', raise_exception=True)
+@product_permission_required('shop.change_product')
 @require_POST
 def product_restore(request, slug):
-    product = get_object_or_404(Product, slug=slug, is_deleted=True)
+    product = get_scoped_object_or_404(request, Product.objects, slug=slug, is_deleted=True)
     product.restore()
     messages.success(request, f'«{product.title}» восстановлен как черновик. Проверьте цену и публикацию.')
     return redirect('product_edit', slug=product.slug)

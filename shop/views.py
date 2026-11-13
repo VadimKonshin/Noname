@@ -1,13 +1,15 @@
 from django.contrib import messages
 from django.contrib.auth import login
-from django.contrib.auth.decorators import login_required, permission_required
-from django.core.exceptions import ValidationError
+from django.contrib.auth import views as auth_views
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
-from django.views.decorators.http import require_http_methods
+from django.urls import reverse_lazy
+from django.views.decorators.http import require_GET, require_http_methods
 from django_ratelimit.decorators import ratelimit
-from .forms import ProductForm, RegisterForm
+from .access import brand_manager_required, get_brand_manager, get_scoped_object_or_404, product_permission_required
+from .forms import BrandAuthenticationForm, BrandManagerRegisterForm, ProductForm, RegisterForm
 from .models import Brand, Product, ProductImage
 from .validators import validate_product_image
 
@@ -39,7 +41,13 @@ def catalog(request):
 
 def product_detail(request, slug):
     product = get_object_or_404(Product.objects.select_related('brand').prefetch_related('images'), slug=slug, is_published=True, is_deleted=False)
-    return render(request, 'shop/product_detail.html', {'product': product})
+    manager = get_brand_manager(request.user)
+    manages_brand = manager and product.brand_id == manager.brand_id
+    return render(request, 'shop/product_detail.html', {
+        'product': product,
+        'can_change_product': request.user.has_perm('shop.change_product') or manages_brand,
+        'can_delete_product': request.user.has_perm('shop.delete_product') or manages_brand,
+    })
 
 
 def ratelimited_error(request, exception=None):
@@ -60,6 +68,52 @@ def register(request):
     return render(request, 'accounts/register.html', {'form': form})
 
 
+def brand_account_home(user):
+    manager = get_brand_manager(user, approved_only=False)
+    if manager:
+        return 'brand_dashboard' if manager.is_approved else 'brand_pending'
+    if user.is_superuser:
+        return 'dashboard'
+    return 'home'
+
+
+class BrandLoginView(auth_views.LoginView):
+    template_name = 'accounts/brand_login.html'
+    authentication_form = BrandAuthenticationForm
+    redirect_authenticated_user = True
+
+    def get_success_url(self):
+        return reverse_lazy(brand_account_home(self.request.user))
+
+
+@ratelimit(group='brand_register', key='ip', rate='5/h', method='POST')
+@require_http_methods(['GET', 'POST'])
+def brand_register(request):
+    if request.user.is_authenticated:
+        return redirect(brand_account_home(request.user))
+    form = BrandManagerRegisterForm(request.POST if request.method == 'POST' else None)
+    if request.method == 'POST' and form.is_valid():
+        user = form.save()
+        login(request, user)
+        messages.success(request, 'Заявка создана. Администратор должен подтвердить вашу связь с брендом.')
+        return redirect('brand_pending')
+    return render(request, 'accounts/brand_register.html', {'form': form})
+
+
+@require_GET
+def brand_pending(request):
+    if not request.user.is_authenticated:
+        return redirect(f'{reverse_lazy("brand_login")}?next={request.path}')
+    manager = get_brand_manager(request.user, approved_only=False)
+    if manager and manager.is_approved:
+        return redirect('brand_dashboard')
+    if manager is None:
+        if request.user.is_superuser:
+            return redirect('dashboard')
+        raise PermissionDenied
+    return render(request, 'accounts/brand_pending.html', {'manager': manager})
+
+
 def validate_gallery(files, max_new=GALLERY_MAX_COUNT):
     if len(files) > max_new:
         raise ValidationError(f'Можно добавить ещё не более {max_new} фотографий (всего максимум {GALLERY_MAX_COUNT}).')
@@ -71,10 +125,12 @@ def validate_gallery(files, max_new=GALLERY_MAX_COUNT):
 
 
 def save_product(request, product=None):
+    manager = getattr(request, 'brand_manager', None)
     form = ProductForm(
         request.POST if request.method == 'POST' else None,
         request.FILES if request.method == 'POST' else None,
         instance=product,
+        managed_brand=manager.brand if manager else None,
     )
     if request.method == 'POST':
         gallery = request.FILES.getlist('gallery_images')
@@ -87,6 +143,8 @@ def save_product(request, product=None):
             form.add_error(None, exc)
         if form.is_valid():
             instance = form.save(commit=False)
+            if manager:
+                instance.brand = manager.brand
             if instance.is_deleted:
                 instance.is_published = False
                 instance.is_available = False
@@ -99,19 +157,32 @@ def save_product(request, product=None):
                 instance.images.filter(pk__in=deleted_ids).delete()
             messages.success(request, 'Товар сохранён.')
             return redirect('product_detail', slug=instance.slug) if instance.is_published else redirect('product_edit', slug=instance.slug)
-    return render(request, 'shop/product_form.html', {'form': form, 'product': product, 'max_gallery': GALLERY_MAX_COUNT})
+    return render(request, 'shop/product_form.html', {
+        'form': form, 'product': product, 'max_gallery': GALLERY_MAX_COUNT,
+        'managed_brand': manager.brand if manager else None,
+    })
 
 
-@login_required
-@permission_required('shop.add_product', raise_exception=True)
+@product_permission_required('shop.add_product')
 @require_http_methods(['GET', 'POST'])
 def product_create(request):
     return save_product(request)
 
 
-@login_required
-@permission_required('shop.change_product', raise_exception=True)
+@product_permission_required('shop.change_product')
 @require_http_methods(['GET', 'POST'])
 def product_edit(request, slug):
-    product = get_object_or_404(Product.objects.prefetch_related('images'), slug=slug)
+    product = get_scoped_object_or_404(request, Product.objects.prefetch_related('images'), slug=slug)
     return save_product(request, product)
+
+
+@brand_manager_required
+@require_GET
+def brand_products(request):
+    products = Product.objects.filter(brand=request.brand_manager.brand).order_by('is_deleted', '-created_at')
+    return render(request, 'shop/dashboard_products.html', {
+        'products': products,
+        'brand_cabinet': True,
+        'can_change_products': True,
+        'can_delete_products': True,
+    })

@@ -13,7 +13,7 @@
     <div>
       <div class="form-section">
         <h2>Состав заказа</h2>
-        {% for item in order.items.all %}
+        {% for item in order_items %}
           <div class="order-line">
             <div>
               <strong>{{ item.product_title }}</strong>
@@ -49,15 +49,20 @@
     <aside class="summary-box">
       <div class="eyebrow"><span class="tiny-dot"></span> ИТОГО</div>
       <h2>ЗАКАЗ #{{ order.pk }}</h2>
-      <div class="summary-row"><span>Товары</span><strong>{{ order.subtotal|floatformat:0 }} ₽</strong></div>
-      <div class="summary-row"><span>Доставка</span><strong>{{ order.delivery_price|floatformat:0 }} ₽</strong></div>
-      <div class="summary-total"><span>Всего</span><strong>{{ order.total|floatformat:0 }} ₽</strong></div>
-      <p class="summary-note">
-        Онлайн-оплата не подключена. Магазин свяжется для подтверждения.
-        Если заказ оформлен без аккаунта, сохрани номер: доступ к этой странице есть в текущем браузере.
-      </p>
-      <a class="back-catalog" href="{% if can_view_any_order %}{% url 'dashboard_orders' %}{% elif user.is_authenticated and order.user_id %}{% url 'my_orders' %}{% else %}{% url 'catalog' %}{% endif %}">
-        ← {% if can_view_any_order or order.user_id %}К списку заказов{% else %}В каталог{% endif %}
+      {% if brand_order_view %}
+        <div class="summary-total"><span>Товары вашего бренда</span><strong>{{ brand_subtotal|floatformat:0 }} ₽</strong></div>
+        <p class="summary-note">Показаны только позиции вашего бренда. Доставка и товары других брендов скрыты. Статус общего заказа изменяет администратор.</p>
+      {% else %}
+        <div class="summary-row"><span>Товары</span><strong>{{ order.subtotal|floatformat:0 }} ₽</strong></div>
+        <div class="summary-row"><span>Доставка</span><strong>{{ order.delivery_price|floatformat:0 }} ₽</strong></div>
+        <div class="summary-total"><span>Всего</span><strong>{{ order.total|floatformat:0 }} ₽</strong></div>
+        <p class="summary-note">
+          Онлайн-оплата не подключена. Магазин свяжется для подтверждения.
+          Если заказ оформлен без аккаунта, сохрани номер: доступ к этой странице есть в текущем браузере.
+        </p>
+      {% endif %}
+      <a class="back-catalog" href="{% if brand_order_view %}{% url 'brand_orders' %}{% elif can_view_any_order %}{% url 'dashboard_orders' %}{% elif user.is_authenticated and order.user_id %}{% url 'my_orders' %}{% else %}{% url 'catalog' %}{% endif %}">
+        ← {% if brand_order_view or can_view_any_order or order.user_id %}К списку заказов{% else %}В каталог{% endif %}
       </a>
     </aside>
   </div>

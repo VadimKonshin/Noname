@@ -1,7 +1,8 @@
 from django import forms
-from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
 from django.contrib.auth.models import User
-from .models import Brand, Product
+from django.db import transaction
+from .models import Brand, BrandManager, Product
 
 
 class RegisterForm(UserCreationForm):
@@ -26,12 +27,44 @@ class RegisterForm(UserCreationForm):
         return user
 
 
+class BrandManagerRegisterForm(RegisterForm):
+    brand = forms.ModelChoiceField(
+        label='Бренд',
+        queryset=Brand.objects.filter(is_active=True),
+        empty_label='Выберите бренд',
+    )
+
+    class Meta(RegisterForm.Meta):
+        fields = ('username', 'email', 'brand', 'password1', 'password2')
+
+    @transaction.atomic
+    def save(self, commit=True):
+        user = super().save(commit=commit)
+        if commit:
+            BrandManager.objects.create(user=user, brand=self.cleaned_data['brand'])
+        return user
+
+
+class BrandAuthenticationForm(AuthenticationForm):
+    def clean(self):
+        data = super().clean()
+        user = self.user_cache
+        if user and not user.is_superuser and not BrandManager.objects.filter(user=user).exists():
+            raise forms.ValidationError('Этот аккаунт не зарегистрирован как менеджер бренда.', code='not_brand_manager')
+        return data
+
+
 class ProductForm(forms.ModelForm):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, managed_brand=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['brand'].queryset = Brand.objects.filter(is_active=True) | Brand.objects.filter(pk=self.instance.brand_id)
-        self.fields['brand'].required = True
-        self.fields['brand'].empty_label = 'Выберите бренд'
+        self.managed_brand = managed_brand
+        if managed_brand:
+            self.fields.pop('brand')
+            self.fields.pop('is_featured')
+        else:
+            self.fields['brand'].queryset = Brand.objects.filter(is_active=True) | Brand.objects.filter(pk=self.instance.brand_id)
+            self.fields['brand'].required = True
+            self.fields['brand'].empty_label = 'Выберите бренд'
 
     class Meta:
         model = Product

@@ -31,15 +31,22 @@
           Корзина <span class="cart-counter">{{ cart_count }}</span>
         </a>
         {% if user.is_authenticated %}
-          {% if perms.shop.view_order %}<a href="{% url 'dashboard' %}">Панель</a>{% endif %}
-          {% if perms.shop.add_product %}<a href="{% url 'product_create' %}" class="nav-add">+ Товар</a>{% endif %}
-          <a href="{% url 'my_orders' %}">Мои заказы</a>
+          {% if brand_manager %}
+            <a href="{% url 'brand_dashboard' %}">Кабинет бренда</a>
+            <a href="{% url 'product_create' %}" class="nav-add">+ Товар</a>
+          {% else %}
+            {% if brand_manager_application %}<a href="{% url 'brand_pending' %}">Заявка бренда</a>{% endif %}
+            {% if perms.shop.view_order %}<a href="{% url 'dashboard' %}">Панель</a>{% endif %}
+            {% if perms.shop.add_product %}<a href="{% url 'product_create' %}" class="nav-add">+ Товар</a>{% endif %}
+            <a href="{% url 'my_orders' %}">Мои заказы</a>
+          {% endif %}
           <span class="nav-user">{{ user.username }}</span>
           <form method="post" action="{% url 'logout' %}" class="logout-form">
             {% csrf_token %}
             <button type="submit" class="nav-text-btn">Выйти</button>
           </form>
         {% else %}
+          <a href="{% url 'brand_login' %}">Для брендов</a>
           <a href="{% url 'login' %}">Войти</a>
           <a href="{% url 'register' %}" class="nav-register">Создать аккаунт ↗</a>
         {% endif %}
@@ -70,11 +77,13 @@
         <div>
           <span>Аккаунт</span>
           {% if user.is_authenticated %}
+            {% if brand_manager %}<a href="{% url 'brand_dashboard' %}">Кабинет бренда</a>{% endif %}
             <a href="{% url 'my_orders' %}">Мои заказы</a>
           {% else %}
             <a href="{% url 'login' %}">Вход</a>
             <a href="{% url 'register' %}">Регистрация</a>
           {% endif %}
+          <a href="{% url 'brand_login' %}">Для брендов</a>
           <small>Заказ возможен без регистрации.</small>
         </div>
       </div>

@@ -1,0 +1,6 @@
+<div class="dash-nav">
+  <a href="{% url 'brand_dashboard' %}" {% if active_page == 'dashboard' %}class="active"{% endif %}>Статистика</a>
+  <a href="{% url 'brand_orders' %}" {% if active_page == 'orders' %}class="active"{% endif %}>Заказы</a>
+  <a href="{% url 'brand_products' %}" {% if active_page == 'products' %}class="active"{% endif %}>Товары</a>
+  <a href="{% url 'product_create' %}">+ Создать товар</a>
+</div>

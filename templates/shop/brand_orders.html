@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block title %}Заказы {{ brand.name }} — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page">
+  <div class="eyebrow"><span class="tiny-dot"></span> BRAND / ЗАКАЗЫ</div>
+  <h1 class="commerce-heading">ИСТОРИЯ ЗАКАЗОВ<span class="heading-period">.</span></h1>
+  <p class="page-lead">В списке только заказы, содержащие товары {{ brand.name }}.</p>
+  {% include 'includes/brand_nav.html' with active_page='orders' %}
+
+  <form method="get" class="order-filter">
+    <label for="product-filter">Товар</label>
+    <select id="product-filter" name="product" data-auto-submit>
+      <option value="">Все товары бренда</option>
+      {% for product in products %}
+        <option value="{{ product.pk }}" {% if selected_product_id == product.pk %}selected{% endif %}>{{ product.title }}</option>
+      {% endfor %}
+    </select>
+    <label for="status-filter">Статус</label>
+    <select id="status-filter" name="status" data-auto-submit>
+      <option value="">Все статусы</option>
+      {% for code, name in statuses %}
+        <option value="{{ code }}" {% if selected_status == code %}selected{% endif %}>{{ name }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="small-action">Показать</button>
+  </form>
+
+  <div class="table-scroll">
+    <table class="store-table">
+      <thead>
+        <tr><th>№</th><th>Дата</th><th>Покупатель</th><th>Состав бренда</th><th>Сумма бренда</th><th>Статус</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for order in page %}
+          <tr>
+            <td><strong>#{{ order.pk }}</strong></td>
+            <td>{{ order.created_at|date:'d.m.Y H:i' }}</td>
+            <td>{{ order.full_name }}<small class="table-muted">{{ order.email }}</small></td>
+            <td>
+              {% for item in order.brand_items %}
+                {{ item.product_title }} / {{ item.size }} × {{ item.quantity }}{% if not forloop.last %}<span class="item-separator">, </span>{% endif %}
+              {% endfor %}
+            </td>
+            <td><strong>{{ order.brand_total|floatformat:0 }} ₽</strong></td>
+            <td><span class="status-pill status-{{ order.status }}">{{ order.get_status_display }}</span></td>
+            <td><a class="table-link" href="{{ order.get_absolute_url }}">Открыть ↗</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7">Заказов с такими фильтрами пока нет.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include 'includes/pagination.html' %}
+</section>
+{% endblock %}

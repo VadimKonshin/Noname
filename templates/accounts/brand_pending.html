@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% block title %}Заявка на проверке — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page narrow-page">
+  <div class="eyebrow"><span class="tiny-dot"></span> КАБИНЕТ БРЕНДА / ПРОВЕРКА</div>
+  <h1 class="commerce-heading">ЗАЯВКА НА ПРОВЕРКЕ<span class="heading-period">.</span></h1>
+  <div class="empty-state">
+    <span class="empty-symbol">◌</span>
+    <h2>{{ manager.brand.name }}</h2>
+    <p>Аккаунт <strong>{{ manager.user.username }}</strong> зарегистрирован. Администратор должен подтвердить, что вы представляете этот бренд. После подтверждения войдите снова или обновите страницу.</p>
+    <a href="{% url 'home' %}" class="btn btn-dark">Вернуться на главную ↗</a>
+  </div>
+</section>
+{% endblock %}

@@ -9,6 +9,7 @@
   <p class="page-lead">
     Заполни описание, цену и загрузи фотографии. После сохранения товар появится в каталоге, если включена публикация.
   </p>
+  {% if managed_brand %}{% include 'includes/brand_nav.html' with active_page='products' %}{% endif %}
 
   <form class="editor-form" method="post" enctype="multipart/form-data" novalidate>
     {% csrf_token %}
@@ -17,6 +18,9 @@
       <div class="editor-main">
         <div class="form-section">
           <h2>01 / Бренд и товар</h2>
+          {% if managed_brand %}
+            <div class="form-field"><label>Бренд</label><strong>{{ managed_brand.name }}</strong><small>Товар будет опубликован от имени вашего бренда.</small></div>
+          {% endif %}
           {% for field in form %}
             {% if field.name == 'brand' or field.name == 'title' or field.name == 'description' or field.name == 'price' or field.name == 'sizes' or field.name == 'color' %}
               <div class="form-field">
@@ -70,7 +74,7 @@
           <div class="publication-note">Товар увидят покупатели только при включённом пункте «Показывать в каталоге».</div>
         </div>
         <button class="btn btn-dark btn-wide" type="submit">Сохранить товар <span>↗</span></button>
-        <a class="cancel-link" href="{% if product and product.is_published %}{{ product.get_absolute_url }}{% else %}{% url 'catalog' %}{% endif %}">Отмена</a>
+        <a class="cancel-link" href="{% if managed_brand %}{% url 'brand_products' %}{% elif product and product.is_published %}{{ product.get_absolute_url }}{% else %}{% url 'catalog' %}{% endif %}">Отмена</a>
       </aside>
     </div>
   </form>

@@ -6,9 +6,18 @@ from . import views, commerce_views
 login_view = ratelimit(group='login', key='ip', rate='10/5m', method='POST')(
     auth_views.LoginView.as_view(template_name='accounts/login.html', redirect_authenticated_user=True)
 )
+brand_login_view = ratelimit(group='brand_login', key='ip', rate='10/5m', method='POST')(
+    views.BrandLoginView.as_view()
+)
 
 urlpatterns = [
     path('', views.home, name='home'),
+    path('brand/register/', views.brand_register, name='brand_register'),
+    path('brand/login/', brand_login_view, name='brand_login'),
+    path('brand/pending/', views.brand_pending, name='brand_pending'),
+    path('brand/', commerce_views.brand_dashboard, name='brand_dashboard'),
+    path('brand/orders/', commerce_views.brand_orders, name='brand_orders'),
+    path('brand/products/', views.brand_products, name='brand_products'),
     path('catalog/', views.catalog, name='catalog'),
     path('cart/', commerce_views.cart, name='cart'),
     path('cart/add/<str:slug>/', commerce_views.cart_add, name='cart_add'),

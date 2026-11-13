@@ -12,7 +12,7 @@
     <div class="auth-box">
       <div class="eyebrow"><span class="tiny-dot"></span> ЛИЧНЫЙ КАБИНЕТ / РЕГИСТРАЦИЯ</div>
       <h1>СОЗДАТЬ АККАУНТ<span class="heading-period">.</span></h1>
-      <p>Зарегистрируйся, чтобы стать частью ПУСТОТЫ.</p>
+      <p>Зарегистрируйся, чтобы сохранять историю своих заказов.</p>
       <form method="post" class="auth-form" novalidate>
         {% csrf_token %}
         {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
@@ -22,7 +22,7 @@
             {{ field }}
             {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
             {% if field.name == 'password1' %}
-              <small>Минимум 8 символов. Не используй простой или часто встречающийся пароль.</small>
+              <small>Минимум 10 символов. Не используй простой или часто встречающийся пароль.</small>
             {% endif %}
           </div>
         {% endfor %}

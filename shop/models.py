@@ -36,6 +36,21 @@ class Brand(models.Model):
         super().save(*args, **kwargs)
 
 
+class BrandManager(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='brand_manager', verbose_name='Пользователь')
+    brand = models.ForeignKey(Brand, on_delete=models.PROTECT, related_name='managers', verbose_name='Бренд')
+    is_approved = models.BooleanField('Подтверждён администратором', default=False)
+    created_at = models.DateTimeField('Заявка создана', auto_now_add=True)
+
+    class Meta:
+        ordering = ['brand__sort_order', 'brand__name', 'user__username']
+        verbose_name = 'Менеджер бренда'
+        verbose_name_plural = 'Менеджеры брендов'
+
+    def __str__(self):
+        return f'{self.user.username} — {self.brand.name}'
+
+
 SIZE_ORDER = ('XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL')
 
 

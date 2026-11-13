@@ -95,12 +95,12 @@
       <span>✳</span>
       <p>Заказ можно оформить без регистрации. Оплата онлайн пока не подключена — магазин свяжется для подтверждения.</p>
     </div>
-    {% if perms.shop.change_product or perms.shop.delete_product %}
+    {% if can_change_product or can_delete_product %}
       <div class="product-admin-actions">
-        {% if perms.shop.change_product %}
+        {% if can_change_product %}
           <a href="{% url 'product_edit' slug=product.slug %}" class="btn btn-dark">Редактировать ↗</a>
         {% endif %}
-        {% if perms.shop.delete_product %}
+        {% if can_delete_product %}
           <a href="{% url 'product_delete' slug=product.slug %}" class="btn btn-outline-danger">Удалить товар</a>
         {% endif %}
       </div>

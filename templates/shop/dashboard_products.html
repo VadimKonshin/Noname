@@ -2,9 +2,13 @@
 {% block title %}Управление товарами — NoName{% endblock %}
 {% block content %}
 <section class="container commerce-page">
-  <div class="eyebrow"><span class="tiny-dot"></span> STAFF / КАТАЛОГ</div>
-  <h1 class="commerce-heading">УПРАВЛЕНИЕ ТОВАРАМИ<span class="heading-period">.</span></h1>
-  {% include 'includes/dashboard_nav.html' with active_page='products' %}
+  <div class="eyebrow"><span class="tiny-dot"></span> {% if brand_cabinet %}BRAND{% else %}STAFF{% endif %} / КАТАЛОГ</div>
+  <h1 class="commerce-heading">{% if brand_cabinet %}ТОВАРЫ БРЕНДА{% else %}УПРАВЛЕНИЕ ТОВАРАМИ{% endif %}<span class="heading-period">.</span></h1>
+  {% if brand_cabinet %}
+    {% include 'includes/brand_nav.html' with active_page='products' %}
+  {% else %}
+    {% include 'includes/dashboard_nav.html' with active_page='products' %}
+  {% endif %}
 
   <p class="page-lead">
     Удаление убирает товар из магазина и корзин покупателей, но сохраняет историю заказов и аналитику.
@@ -37,17 +41,17 @@
             <td>
               <div class="table-actions">
                 {% if product.is_deleted %}
-                  {% if perms.shop.change_product %}
+                  {% if can_change_products %}
                     <form method="post" action="{% url 'product_restore' slug=product.slug %}">
                       {% csrf_token %}
                       <button class="small-action" type="submit">Восстановить</button>
                     </form>
                   {% endif %}
                 {% else %}
-                  {% if perms.shop.change_product %}
+                  {% if can_change_products %}
                     <a class="table-link" href="{% url 'product_edit' slug=product.slug %}">Изменить</a>
                   {% endif %}
-                  {% if perms.shop.delete_product %}
+                  {% if can_delete_products %}
                     <a class="table-link danger-link" href="{% url 'product_delete' slug=product.slug %}">Удалить</a>
                   {% endif %}
                 {% endif %}

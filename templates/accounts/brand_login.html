@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block title %}Вход для бренда — NoName{% endblock %}
+{% block content %}
+<section class="auth-section">
+  <div class="auth-art">
+    <span class="auth-art-top">NoName® / BRAND AREA</span>
+    <div class="auth-art-symbol">◌</div>
+    <p>YOUR BRAND.<br>YOUR RULES.</p>
+    <span class="auth-art-bottom">INDEPENDENT TOGETHER.</span>
+  </div>
+  <div class="auth-content">
+    <div class="auth-box">
+      <div class="eyebrow"><span class="tiny-dot"></span> КАБИНЕТ БРЕНДА / ВХОД</div>
+      <h1>ВОЙТИ ОТ ИМЕНИ БРЕНДА<span class="heading-period">.</span></h1>
+      <p>Управление товарами, заказами и статистикой вашего бренда.</p>
+      <form method="post" class="auth-form">
+        {% csrf_token %}
+        {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+        <div class="form-field">
+          <label for="id_username">Логин</label>
+          <input type="text" name="username" id="id_username" autocomplete="username" required autofocus value="{{ form.username.value|default_if_none:'' }}">
+        </div>
+        <div class="form-field">
+          <label for="id_password">Пароль</label>
+          <input type="password" name="password" id="id_password" autocomplete="current-password" required>
+        </div>
+        <input type="hidden" name="next" value="{{ next }}">
+        <button type="submit" class="btn btn-dark btn-wide">Войти в кабинет <span>↗</span></button>
+      </form>
+      <div class="auth-bottom">Нет аккаунта менеджера? <a href="{% url 'brand_register' %}">Подать заявку ↗</a></div>
+      <div class="auth-bottom"><a href="{% url 'login' %}">Вход для покупателей ↗</a></div>
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,103 @@
+{% extends 'base.html' %}
+{% block title %}Кабинет {{ brand.name }} — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page">
+  <div class="eyebrow"><span class="tiny-dot"></span> BRAND / АНАЛИТИКА</div>
+  <h1 class="commerce-heading">{{ brand.name|upper }}<span class="heading-period">.</span></h1>
+  <p class="page-lead">Кабинет менеджера бренда. Здесь отображаются только ваши товары и позиции заказов.</p>
+  {% include 'includes/brand_nav.html' with active_page='dashboard' %}
+
+  <div class="metric-grid">
+    <div class="metric">
+      <span>ЗАКАЗЫ С ТОВАРАМИ БРЕНДА</span>
+      <strong>{{ orders_count }}</strong>
+      <small>Включая отменённые</small>
+    </div>
+    <div class="metric">
+      <span>НОВЫЕ ЗАКАЗЫ</span>
+      <strong>{{ new_count }}</strong>
+      <small>Ожидают обработки</small>
+    </div>
+    <div class="metric">
+      <span>ПРОДАНО ЕДИНИЦ</span>
+      <strong>{{ sold_units }}</strong>
+      <small>Без отменённых заказов</small>
+    </div>
+    <div class="metric">
+      <span>ТОВАРОВ НА СУММУ</span>
+      <strong>{{ items_total|floatformat:0 }} ₽</strong>
+      <small>Без доставки и отменённых</small>
+    </div>
+  </div>
+
+  <div class="analytics-note">
+    Это статистика <strong>оформленных заказов</strong>, а не полученных платежей. В суммах учитываются только позиции {{ brand.name }}; доставка и товары других брендов не включены.
+  </div>
+
+  <div class="dash-section-heading">
+    <h2>СТАТУСЫ ЗАКАЗОВ</h2>
+    <span>Заказы, в которых есть товары бренда</span>
+  </div>
+  <div class="table-scroll">
+    <table class="store-table">
+      <thead><tr><th>Статус</th><th>Количество заказов</th></tr></thead>
+      <tbody>
+        <tr><td>Новые</td><td>{{ status_counts.new|default:0 }}</td></tr>
+        <tr><td>Подтверждены</td><td>{{ status_counts.confirmed|default:0 }}</td></tr>
+        <tr><td>Собираются</td><td>{{ status_counts.processing|default:0 }}</td></tr>
+        <tr><td>Отправлены</td><td>{{ status_counts.shipped|default:0 }}</td></tr>
+        <tr><td>Завершены</td><td>{{ status_counts.completed|default:0 }}</td></tr>
+        <tr><td>Отменены</td><td>{{ cancelled_count }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="dash-section-heading">
+    <h2>СТАТИСТИКА ПО МОДЕЛЯМ</h2>
+    <span>Количество единиц и стоимость товаров в неотменённых заказах</span>
+  </div>
+  <div class="table-scroll">
+    <table class="store-table">
+      <thead><tr><th>Модель</th><th>Заказов</th><th>Штук</th><th>Сумма товаров</th></tr></thead>
+      <tbody>
+        {% for model in sold_models %}
+          <tr>
+            <td>
+              <strong>{{ model.display_title }}</strong>
+              {% if model.product__is_deleted %}<small class="table-muted">Снята с продажи</small>{% endif %}
+            </td>
+            <td>{{ model.order_count }}</td>
+            <td>{{ model.units }}</td>
+            <td><strong>{{ model.value|floatformat:0 }} ₽</strong></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4">Заказов пока нет. После первой покупки появится статистика по каждой модели.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="dash-section-heading">
+    <h2>ПОСЛЕДНИЕ ЗАКАЗЫ</h2>
+    <a class="table-link" href="{% url 'brand_orders' %}">Все заказы ↗</a>
+  </div>
+  <div class="table-scroll">
+    <table class="store-table">
+      <thead><tr><th>Заказ</th><th>Покупатель</th><th>Статус</th><th>Товары бренда</th><th>Дата</th></tr></thead>
+      <tbody>
+        {% for order in recent_orders %}
+          <tr>
+            <td><a class="table-link" href="{{ order.get_absolute_url }}">#{{ order.pk }} ↗</a></td>
+            <td>{{ order.full_name }}</td>
+            <td><span class="status-pill status-{{ order.status }}">{{ order.get_status_display }}</span></td>
+            <td>{{ order.brand_total|floatformat:0 }} ₽</td>
+            <td>{{ order.created_at|date:'d.m.Y H:i' }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5">Пока нет заказов.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -14,7 +14,7 @@
       {% csrf_token %}
       <button type="submit" class="btn btn-danger btn-wide">Да, удалить из магазина ↗</button>
     </form>
-    <a class="back-catalog" href="{% url 'dashboard_products' %}">← Отмена</a>
+    <a class="back-catalog" href="{% if brand_cabinet %}{% url 'brand_products' %}{% else %}{% url 'dashboard_products' %}{% endif %}">← Отмена</a>
   </div>
 </section>
 {% endblock %}

@@ -7,7 +7,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from .commerce import get_cart
-from .models import Brand, DeliveryMethod, Order, OrderItem, Product
+from .models import Brand, BrandManager, DeliveryMethod, Order, OrderItem, Product
 
 User = get_user_model()
 
@@ -274,3 +274,132 @@ class CommerceTests(TestCase):
         self.assertEqual(self.client.get(order.get_absolute_url()).status_code, 404)
         response = self.client.post(reverse('change_order_status', args=[order.pk]), {'status': Order.CANCELLED})
         self.assertEqual(response.status_code, 403)
+
+
+@override_settings(RATELIMIT_ENABLE=False)
+class BrandOrderTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.password = 'SecurePass813!'
+        cls.customer = User.objects.create_user('brand_customer', password=cls.password)
+        cls.other_customer = User.objects.create_user('other_brand_customer', password=cls.password)
+        cls.brand = Brand.objects.create(name='ALPHA', slug='alpha')
+        cls.other_brand = Brand.objects.create(name='BETA', slug='beta')
+        cls.manager_user = User.objects.create_user('alpha_manager', password=cls.password)
+        cls.other_manager_user = User.objects.create_user('beta_manager', password=cls.password)
+        BrandManager.objects.create(user=cls.manager_user, brand=cls.brand, is_approved=True)
+        BrandManager.objects.create(user=cls.other_manager_user, brand=cls.other_brand, is_approved=True)
+        cls.shirt = Product.objects.create(brand=cls.brand, title='Alpha shirt', description='Alpha', price=Decimal('1000.00'))
+        cls.second_shirt = Product.objects.create(brand=cls.brand, title='Alpha second', description='Alpha 2', price=Decimal('1500.00'))
+        cls.other_shirt = Product.objects.create(brand=cls.other_brand, title='Beta shirt', description='Beta', price=Decimal('3000.00'))
+
+        def create_order(token, status, subtotal):
+            return Order.objects.create(
+                user=cls.customer, checkout_token=token, full_name='Тестовый покупатель',
+                email='customer@example.com', phone='+79991234567', delivery_name='Самовывоз',
+                delivery_price=Decimal('0.00'), subtotal=subtotal, total=subtotal, status=status,
+            )
+
+        cls.mixed_order = create_order('mixed-token', Order.NEW, Decimal('5000.00'))
+        OrderItem.objects.create(
+            order=cls.mixed_order, product=cls.shirt, product_title=cls.shirt.title,
+            brand_name=cls.brand.name, size='M', quantity=2,
+            unit_price=Decimal('1000.00'), line_total=Decimal('2000.00'),
+        )
+        OrderItem.objects.create(
+            order=cls.mixed_order, product=cls.other_shirt, product_title=cls.other_shirt.title,
+            brand_name=cls.other_brand.name, size='L', quantity=1,
+            unit_price=Decimal('3000.00'), line_total=Decimal('3000.00'),
+        )
+        cls.alpha_order = create_order('alpha-token', Order.COMPLETED, Decimal('1500.00'))
+        OrderItem.objects.create(
+            order=cls.alpha_order, product=cls.second_shirt, product_title=cls.second_shirt.title,
+            brand_name=cls.brand.name, size='S', quantity=1,
+            unit_price=Decimal('1500.00'), line_total=Decimal('1500.00'),
+        )
+        cls.cancelled_order = create_order('cancelled-token', Order.CANCELLED, Decimal('3000.00'))
+        OrderItem.objects.create(
+            order=cls.cancelled_order, product=cls.shirt, product_title=cls.shirt.title,
+            brand_name=cls.brand.name, size='M', quantity=3,
+            unit_price=Decimal('1000.00'), line_total=Decimal('3000.00'),
+        )
+        cls.foreign_order = Order.objects.create(
+            user=cls.other_customer, checkout_token='foreign-token', full_name='Другой покупатель',
+            email='other@example.com', phone='+79990000000', delivery_name='Самовывоз',
+            delivery_price=Decimal('0.00'), subtotal=Decimal('3000.00'), total=Decimal('3000.00'),
+        )
+        OrderItem.objects.create(
+            order=cls.foreign_order, product=cls.other_shirt, product_title=cls.other_shirt.title,
+            brand_name=cls.other_brand.name, size='L', quantity=1,
+            unit_price=Decimal('3000.00'), line_total=Decimal('3000.00'),
+        )
+
+    def test_brand_dashboard_uses_only_own_active_items(self):
+        self.client.force_login(self.manager_user)
+        response = self.client.get(reverse('brand_dashboard'))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['orders_count'], 3)
+        self.assertEqual(response.context['new_count'], 1)
+        self.assertEqual(response.context['cancelled_count'], 1)
+        self.assertEqual(response.context['sold_units'], 3)
+        self.assertEqual(response.context['items_total'], Decimal('3500.00'))
+        titles = {entry['display_title'] for entry in response.context['sold_models']}
+        self.assertEqual(titles, {'Alpha shirt', 'Alpha second'})
+        recent = {order.pk: order.brand_total for order in response.context['recent_orders']}
+        self.assertEqual(recent[self.mixed_order.pk], Decimal('2000.00'))
+
+    def test_brand_order_history_and_product_filter(self):
+        self.client.force_login(self.manager_user)
+        response = self.client.get(reverse('brand_orders'))
+        self.assertEqual(
+            {order.pk for order in response.context['page']},
+            {self.mixed_order.pk, self.alpha_order.pk, self.cancelled_order.pk},
+        )
+        response = self.client.get(reverse('brand_orders'), {'product': self.second_shirt.pk})
+        self.assertEqual([order.pk for order in response.context['page']], [self.alpha_order.pk])
+        response = self.client.get(reverse('brand_orders'), {'status': Order.CANCELLED})
+        self.assertEqual([order.pk for order in response.context['page']], [self.cancelled_order.pk])
+
+    def test_mixed_order_detail_hides_other_brand_items_and_total(self):
+        self.client.force_login(self.manager_user)
+        response = self.client.get(self.mixed_order.get_absolute_url())
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context['brand_order_view'])
+        self.assertEqual(response.context['brand_subtotal'], Decimal('2000.00'))
+        self.assertEqual([item.product_title for item in response.context['order_items']], ['Alpha shirt'])
+        self.assertContains(response, 'Alpha shirt')
+        self.assertNotContains(response, 'Beta shirt')
+        self.assertFalse(response.context['can_change_order'])
+        self.assertEqual(self.client.post(reverse('change_order_status', args=[self.mixed_order.pk]), {
+            'status': Order.SHIPPED,
+        }).status_code, 403)
+
+    def test_manager_cannot_view_order_without_own_items(self):
+        self.client.force_login(self.manager_user)
+        self.assertEqual(self.client.get(self.foreign_order.get_absolute_url()).status_code, 404)
+        self.assertEqual(self.client.get(reverse('dashboard')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('dashboard_orders')).status_code, 403)
+
+    def test_other_manager_sees_own_part_of_mixed_order(self):
+        self.client.force_login(self.other_manager_user)
+        response = self.client.get(self.mixed_order.get_absolute_url())
+        self.assertEqual(response.context['brand_subtotal'], Decimal('3000.00'))
+        self.assertEqual([item.product_title for item in response.context['order_items']], ['Beta shirt'])
+        self.assertNotContains(response, 'Alpha shirt')
+
+    def test_customer_history_contains_only_own_orders(self):
+        self.client.force_login(self.customer)
+        response = self.client.get(reverse('my_orders'))
+        self.assertEqual(
+            {order.pk for order in response.context['page']},
+            {self.mixed_order.pk, self.alpha_order.pk, self.cancelled_order.pk},
+        )
+        self.client.force_login(self.other_customer)
+        response = self.client.get(reverse('my_orders'))
+        self.assertEqual([order.pk for order in response.context['page']], [self.foreign_order.pk])
+        self.assertEqual(self.client.get(self.alpha_order.get_absolute_url()).status_code, 404)
+
+    def test_customer_cannot_open_brand_cabinet(self):
+        self.client.force_login(self.customer)
+        self.assertEqual(self.client.get(reverse('brand_dashboard')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('brand_orders')).status_code, 403)

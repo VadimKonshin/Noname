@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block title %}Регистрация менеджера — NoName{% endblock %}
+{% block content %}
+<section class="auth-section">
+  <div class="auth-art">
+    <span class="auth-art-top">NoName® / NEW BRAND MANAGER</span>
+    <div class="auth-art-symbol">◌</div>
+    <p>MAKE YOUR<br>OWN MARK.</p>
+    <span class="auth-art-bottom">ONE PLATFORM. MANY VOICES.</span>
+  </div>
+  <div class="auth-content">
+    <div class="auth-box">
+      <div class="eyebrow"><span class="tiny-dot"></span> КАБИНЕТ БРЕНДА / РЕГИСТРАЦИЯ</div>
+      <h1>СТАТЬ МЕНЕДЖЕРОМ<span class="heading-period">.</span></h1>
+      <p>Выберите существующий бренд. Доступ откроется после подтверждения администратором.</p>
+      <form method="post" class="auth-form" novalidate>
+        {% csrf_token %}
+        {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+        {% for field in form %}
+          <div class="form-field">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
+            {% if field.name == 'password1' %}<small>Минимум 10 символов. Не используйте простой или часто встречающийся пароль.</small>{% endif %}
+          </div>
+        {% endfor %}
+        <button type="submit" class="btn btn-dark btn-wide">Отправить заявку <span>↗</span></button>
+      </form>
+      <div class="auth-bottom">Уже есть аккаунт менеджера? <a href="{% url 'brand_login' %}">Войти ↗</a></div>
+    </div>
+  </div>
+</section>
+{% endblock %}
