@@ -6,3 +6,4 @@ media/
 staticfiles/
 .env
 .DS_Store
+improvements.local.md

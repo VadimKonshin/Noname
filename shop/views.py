@@ -5,13 +5,14 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Q
+from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.views.decorators.http import require_GET, require_http_methods
 from django_ratelimit.decorators import ratelimit
 from .access import brand_manager_required, get_brand_manager, get_scoped_object_or_404, product_permission_required
 from .forms import (
-    BrandAuthenticationForm, BrandCreateForm, BrandDeleteForm,
+    BrandAuthenticationForm, BrandCreateForm, BrandDeleteForm, BrandProfileForm,
     BrandManagerRegisterForm, ProductForm, ProductVariantFormSet, RegisterForm,
 )
 from .commerce import MAX_OPEN_PREORDER_PER_VARIANT
@@ -24,6 +25,12 @@ GALLERY_MAX_COUNT = 8
 
 def public_products():
     return Product.objects.public()
+
+
+def info_page(request, page):
+    if page not in {'delivery', 'returns', 'contacts'}:
+        raise Http404
+    return render(request, 'shop/info_page.html', {'page': page})
 
 
 def brand_storefront(request, slug):
@@ -164,6 +171,18 @@ def brand_deleted(request):
     if manager is None or manager.brand is None or not manager.brand.is_deleted:
         return redirect(brand_account_home(request.user))
     return render(request, 'accounts/brand_deleted.html', {'manager': manager})
+
+
+@brand_manager_required
+@require_http_methods(['GET', 'POST'])
+def brand_edit(request):
+    brand = request.brand_manager.brand
+    form = BrandProfileForm(request.POST if request.method == 'POST' else None, instance=brand)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, 'Описание бренда сохранено. Название по-прежнему меняет администратор.')
+        return redirect('brand_dashboard')
+    return render(request, 'shop/brand_edit.html', {'brand': brand, 'form': form})
 
 
 @brand_manager_required

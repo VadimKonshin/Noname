@@ -29,7 +29,14 @@
         <div class="form-section">
           <h2>02 / ДОСТАВКА</h2>
           <div class="selected-shipping">
-            <div><strong>{{ selected_method.name }}</strong><small>{{ selected_method.description }}</small></div>
+            <div>
+              <strong>{{ selected_method.name }}</strong>
+              <small>
+                {{ selected_method.description }}
+                {% if selected_method.eta %}<br>Срок: {{ selected_method.eta }}{% endif %}
+                {% if selected_method.pickup_address %}<br>Адрес: {{ selected_method.pickup_address }}{% endif %}
+              </small>
+            </div>
             <strong>{{ selected_method.price|floatformat:0 }} ₽</strong>
             <a href="{% url 'cart' %}">ИЗМЕНИТЬ ↗</a>
           </div>
@@ -59,8 +66,10 @@
         </div>
 
         <p class="checkout-terms">
-          Нажимая «Отправить заказ», ты передаёшь контактные данные магазину для обработки заказа.
-          Онлайн-списания средств нет. Для гостевого заказа сохрани номер подтверждения.
+          Нажимая «Отправить заказ», ты передаёшь контакты для обработки заказа.
+          Деньги онлайн не списываются: магазин подтвердит заказ по телефону или почте.
+          Если заказываешь без аккаунта, сохрани номер — страница заказа откроется только в этом браузере.
+          <a href="{% url 'info_delivery' %}">Доставка</a> и <a href="{% url 'info_returns' %}">возврат</a>.
         </p>
         <button type="submit" class="btn btn-dark btn-wide">ОТПРАВИТЬ ЗАКАЗ <span>↗</span></button>
       </form>

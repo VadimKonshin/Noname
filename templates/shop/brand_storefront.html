@@ -12,6 +12,12 @@
   {% else %}
     <p>Независимый бренд на NoName. Вещи ниже — то, что сейчас можно смотреть и заказывать.</p>
   {% endif %}
+  {% if brand.size_chart %}
+    <div class="detail-description">
+      <h2>РАЗМЕРЫ</h2>
+      <p>{{ brand.size_chart|linebreaksbr }}</p>
+    </div>
+  {% endif %}
 </section>
 
 <section class="container catalog-content">

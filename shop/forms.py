@@ -49,6 +49,16 @@ class BrandAuthenticationForm(AuthenticationForm):
         return data
 
 
+class BrandProfileForm(forms.ModelForm):
+    class Meta:
+        model = Brand
+        fields = ('description', 'size_chart')
+        widgets = {
+            'description': forms.Textarea(attrs={'rows': 5, 'placeholder': 'Коротко расскажите о бренде'}),
+            'size_chart': forms.Textarea(attrs={'rows': 6, 'placeholder': 'Например: M — грудь 96–100 см, длина 72 см'}),
+        }
+
+
 class BrandCreateForm(forms.ModelForm):
     class Meta:
         model = Brand
@@ -139,9 +149,12 @@ class ProductForm(forms.ModelForm):
 
     class Meta:
         model = Product
-        fields = ('brand', 'title', 'description', 'price', 'cover', 'color', 'is_available', 'allow_preorder', 'preorder_days', 'is_published', 'is_featured')
+        fields = ('brand', 'title', 'description', 'composition', 'fit', 'care', 'price', 'cover', 'color', 'is_available', 'allow_preorder', 'preorder_days', 'is_published', 'is_featured')
         widgets = {
             'description': forms.Textarea(attrs={'rows': 6, 'placeholder': 'Расскажи о ткани, посадке, принте и уходе за вещью…'}),
+            'composition': forms.TextInput(attrs={'placeholder': 'Например, 100% хлопок, 240 г/м²'}),
+            'fit': forms.TextInput(attrs={'placeholder': 'Например, свободная'}),
+            'care': forms.Textarea(attrs={'rows': 3, 'placeholder': 'Стирка, глажка, сушка'}),
             'title': forms.TextInput(attrs={'placeholder': 'Например, ECLIPSE / Oversized Tee'}),
             'price': forms.NumberInput(attrs={'min': '0.01', 'step': '0.01'}),
             'cover': forms.ClearableFileInput(attrs={'accept': 'image/jpeg,image/png,image/webp'}),

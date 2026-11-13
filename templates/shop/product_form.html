@@ -33,7 +33,21 @@
         </div>
 
         <div class="form-section">
-          <h2>02 / Размеры и остатки</h2>
+          <h2>02 / Состав и посадка</h2>
+          <p class="form-hint">Эти поля необязательны. Покупатель видит их на странице вещи. Общая таблица размеров живёт в кабинете бренда.</p>
+          {% for field in form %}
+            {% if field.name == 'composition' or field.name == 'fit' or field.name == 'care' %}
+              <div class="form-field">
+                <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
+              </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+
+        <div class="form-section">
+          <h2>03 / Размеры и остатки</h2>
           <p class="form-hint">Укажи количество каждого размера. Нулевой остаток можно принимать как предзаказ, если эта опция включена ниже.</p>
           {{ variant_formset.management_form }}
           {% if variant_formset.non_form_errors %}<div class="form-errors">{{ variant_formset.non_form_errors }}</div>{% endif %}
@@ -68,7 +82,7 @@
         </div>
 
         <div class="form-section">
-          <h2>03 / Фотографии</h2>
+          <h2>04 / Фотографии</h2>
           <p class="form-hint">JPG, PNG или WebP. До 8 МБ на изображение. Добавь обложку и до {{ max_gallery }} дополнительных фотографий.</p>
           <div class="form-field">
             <label for="{{ form.cover.id_for_label }}">Главная фотография</label>
@@ -99,7 +113,7 @@
 
       <aside class="editor-sidebar">
         <div class="form-section">
-          <h2>04 / Публикация и предзаказ</h2>
+          <h2>05 / Публикация и предзаказ</h2>
           {% for field in form %}
             {% if field.name == 'is_available' or field.name == 'allow_preorder' or field.name == 'is_published' or field.name == 'is_featured' %}
               <label class="check-field">{{ field }}<span>{{ field.label }}</span></label>

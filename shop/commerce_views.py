@@ -181,6 +181,7 @@ def checkout(request):
                         checkout_token=token,
                         full_name=data['full_name'], email=data['email'], phone=data['phone'],
                         delivery_method=current_method, delivery_name=current_method.name,
+                        delivery_eta=current_method.eta, pickup_address=current_method.pickup_address,
                         delivery_price=current_method.price, subtotal=subtotal,
                         total=subtotal + current_method.price,
                         city=data['city'], address=data['address'], postal_code=data['postal_code'],
@@ -211,7 +212,7 @@ def checkout(request):
                 request.session.pop(DELIVERY_SESSION_KEY, None)
                 request.session.pop('checkout_token', None)
                 request.session.modified = True
-                messages.success(request, f'Заказ №{order.pk} оформлен! Мы свяжемся с вами для подтверждения.')
+                messages.success(request, f'Заказ №{order.pk} принят. Оплата онлайн не списывалась: мы свяжемся по телефону или почте, чтобы подтвердить его. Сохраните номер.')
                 return redirect(order.get_absolute_url())
 
     return render(request, 'shop/checkout.html', {

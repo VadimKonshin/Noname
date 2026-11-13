@@ -311,6 +311,21 @@ class CommerceTests(TestCase):
         self._add(quantity=4, order_type='preorder')
         self.assertEqual(get_cart(self.client)['count'], 4)
 
+    def test_checkout_snapshots_delivery_window_and_pickup(self):
+        self.pickup.eta = 'в согласованный день'
+        self.pickup.pickup_address = 'ул. Мастерская, 1'
+        self.pickup.save(update_fields=['eta', 'pickup_address'])
+        self._add()
+        self._choose_delivery(self.pickup)
+        self.client.get(reverse('checkout'))
+        result = self.client.post(reverse('checkout'), self._checkout_payload(method=self.pickup))
+        self.assertEqual(result.status_code, 302)
+        order = Order.objects.get()
+        self.assertEqual(order.delivery_eta, 'в согласованный день')
+        self.assertEqual(order.pickup_address, 'ул. Мастерская, 1')
+        self.assertContains(self.client.get(order.get_absolute_url()), 'ул. Мастерская, 1')
+        self.assertContains(self.client.get(order.get_absolute_url()), 'Сохраните номер')
+
     def test_checkout_rejects_phone_without_enough_digits(self):
         self._add()
         self._choose_delivery()

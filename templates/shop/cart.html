@@ -53,7 +53,14 @@
           <label class="shipping-option">
             <input type="radio" name="delivery_method" value="{{ method.pk }}" data-method-price="{{ method.price }}" {% if selected_method.pk == method.pk %}checked{% endif %} required>
             <span class="shipping-option-mark" aria-hidden="true"></span>
-            <span class="shipping-option-copy"><strong>{{ method.name }}</strong><small>{{ method.description }}</small></span>
+            <span class="shipping-option-copy">
+              <strong>{{ method.name }}</strong>
+              <small>
+                {{ method.description }}
+                {% if method.eta %}<br>Срок: {{ method.eta }}{% endif %}
+                {% if method.pickup_address %}<br>Адрес: {{ method.pickup_address }}{% endif %}
+              </small>
+            </span>
             <strong class="shipping-option-price">
               {% if method.price %}{{ method.price|floatformat:0 }} ₽{% else %}БЕСПЛАТНО{% endif %}
             </strong>
