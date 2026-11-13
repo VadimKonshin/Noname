@@ -9,7 +9,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from PIL import Image
-from .models import Brand, BrandManager, Product, ProductImage, ProductVariant
+from .models import Brand, BrandManager, BrandMessage, Product, ProductImage, ProductVariant
 
 
 User = get_user_model()
@@ -480,3 +480,58 @@ class BrandAccountTests(TestCase):
         self.assertIn('96–100', self.brand.size_chart)
         self.client.force_login(self.customer)
         self.assertEqual(self.client.get(reverse('brand_edit')).status_code, 403)
+
+    def test_customer_message_stays_with_own_brand(self):
+        self.customer.email = 'buyer@example.com'
+        self.customer.save(update_fields=['email'])
+        self.client.force_login(self.customer)
+        response = self.client.post(reverse('brand_message', args=[self.brand.slug]), {
+            'sender_name': 'Покупатель',
+            'sender_email': 'thief@example.com',
+            'body': 'Есть ли размер M на следующей неделе?',
+            'product': self.other_product.slug,
+        })
+        self.assertRedirects(response, reverse('brand_storefront', args=[self.brand.slug]))
+        note = BrandMessage.objects.get()
+        self.assertEqual(note.brand, self.brand)
+        self.assertEqual(note.sender_email, 'buyer@example.com')
+        self.assertEqual(note.user, self.customer)
+        self.assertIsNone(note.product)
+        self.client.force_login(self.manager_user)
+        inbox = self.client.get(reverse('brand_messages'))
+        self.assertContains(inbox, 'Покупатель')
+        self.assertContains(inbox, 'Новое')
+        detail = self.client.get(reverse('brand_message_detail', args=[note.pk]))
+        self.assertContains(detail, 'Есть ли размер M')
+        self.assertContains(detail, 'buyer@example.com')
+        note.refresh_from_db()
+        self.assertIsNotNone(note.read_at)
+        self.client.force_login(self.other_user)
+        self.assertNotContains(self.client.get(reverse('brand_messages')), 'Покупатель')
+        self.assertEqual(self.client.get(reverse('brand_message_detail', args=[note.pk])).status_code, 404)
+
+    def test_guest_writes_about_product_and_html_is_escaped(self):
+        response = self.client.get(self.product.get_absolute_url())
+        self.assertContains(response, reverse('brand_message', args=[self.brand.slug]))
+        response = self.client.post(reverse('brand_message', args=[self.brand.slug]), {
+            'sender_name': 'Гость',
+            'sender_email': 'guest@example.com',
+            'body': 'Подскажите размер <script>alert(1)</script>',
+            'product': self.product.slug,
+        })
+        self.assertRedirects(response, reverse('brand_storefront', args=[self.brand.slug]))
+        note = BrandMessage.objects.get(sender_email='guest@example.com')
+        self.assertEqual(note.product, self.product)
+        self.assertIsNone(note.user)
+        self.client.force_login(self.manager_user)
+        detail = self.client.get(reverse('brand_message_detail', args=[note.pk]))
+        self.assertContains(detail, '&lt;script&gt;')
+        self.assertNotContains(detail, '<script>')
+        self.assertEqual(self.client.post(reverse('brand_message', args=[self.brand.slug]), {
+            'sender_name': 'Гость',
+            'sender_email': 'guest@example.com',
+            'body': 'коротко',
+        }).status_code, 200)
+        self.brand.is_active = False
+        self.brand.save(update_fields=['is_active'])
+        self.assertEqual(self.client.get(reverse('brand_message', args=[self.brand.slug])).status_code, 404)

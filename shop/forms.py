@@ -72,6 +72,37 @@ class BrandCreateForm(forms.ModelForm):
         return self.cleaned_data['name'].strip()
 
 
+class BrandMessageForm(forms.Form):
+    sender_name = forms.CharField(label='Имя', max_length=120)
+    sender_email = forms.EmailField(label='Почта для ответа')
+    body = forms.CharField(
+        label='Сообщение',
+        max_length=2000,
+        widget=forms.Textarea(attrs={'rows': 6, 'placeholder': 'Вопрос о размере, наличии или заказе'}),
+    )
+
+    def __init__(self, *args, lock_email=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        if lock_email:
+            self.fields['sender_email'].disabled = True
+            self.fields['sender_email'].help_text = 'Ответ придёт на почту аккаунта. Подменить её в письме нельзя.'
+
+    def clean_sender_name(self):
+        name = ' '.join(self.cleaned_data['sender_name'].split())
+        if len(name) < 2:
+            raise forms.ValidationError('Напишите имя, чтобы менеджер понял, кто пишет.')
+        return name
+
+    def clean_sender_email(self):
+        return self.cleaned_data['sender_email'].strip().lower()
+
+    def clean_body(self):
+        body = self.cleaned_data['body'].strip()
+        if len(body) < 10:
+            raise forms.ValidationError('Напишите вопрос чуть подробнее, хотя бы пару слов.')
+        return body
+
+
 class BrandDeleteForm(forms.Form):
     brand_name = forms.CharField(label='Название бренда', max_length=120)
     password = forms.CharField(label='Пароль аккаунта', widget=forms.PasswordInput)

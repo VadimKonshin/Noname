@@ -183,6 +183,7 @@ a,button {transition:color .18s,background .18s,border-color .18s}
 .store-table tr:hover td {background:#202025}
 .store-table td strong {color:#ececf0}
 .table-muted {color:#84848d}
+.message-body {white-space:pre-wrap;overflow-wrap:anywhere;color:#e6e6ea;line-height:1.55}
 .table-link {color:#e7e7e9}
 .order-filter select {background:#1d1d21;color:#f0efeb;border-color:#47474b}
 /* Cart is one vertical sequence: products -> subtotal -> delivery -> total */

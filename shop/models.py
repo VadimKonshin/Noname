@@ -296,3 +296,22 @@ class OrderItem(models.Model):
 
     def __str__(self):
         return f'{self.product_title} / {self.size} × {self.quantity}'
+
+
+class BrandMessage(models.Model):
+    brand = models.ForeignKey(Brand, on_delete=models.PROTECT, related_name='messages', verbose_name='Бренд')
+    product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, blank=True, related_name='messages', verbose_name='Вещь')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='brand_messages', verbose_name='Аккаунт')
+    sender_name = models.CharField('Имя', max_length=120)
+    sender_email = models.EmailField('Почта')
+    body = models.TextField('Сообщение')
+    created_at = models.DateTimeField('Отправлено', auto_now_add=True)
+    read_at = models.DateTimeField('Прочитано', null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Сообщение бренду'
+        verbose_name_plural = 'Сообщения брендам'
+
+    def __str__(self):
+        return f'{self.sender_name} → {self.brand}'

@@ -12,6 +12,7 @@
   {% else %}
     <p>Независимый бренд на NoName. Вещи ниже — то, что сейчас можно смотреть и заказывать.</p>
   {% endif %}
+  <p><a class="btn btn-dark" href="{% url 'brand_message' brand.slug %}">Написать бренду ↗</a></p>
   {% if brand.size_chart %}
     <div class="detail-description">
       <h2>РАЗМЕРЫ</h2>

@@ -6,7 +6,7 @@ from django.utils.html import format_html
 
 from .commerce import update_order_status
 from .commerce_forms import OrderStatusForm
-from .models import Brand, BrandManager, DeliveryMethod, Order, OrderItem, Product, ProductImage, ProductVariant
+from .models import Brand, BrandManager, BrandMessage, DeliveryMethod, Order, OrderItem, Product, ProductImage, ProductVariant
 
 
 class ProductImageInline(admin.TabularInline):
@@ -37,6 +37,21 @@ class BrandAdmin(admin.ModelAdmin):
     readonly_fields = ('slug', 'deleted_at', 'is_deleted')
 
     def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(BrandMessage)
+class BrandMessageAdmin(admin.ModelAdmin):
+    list_display = ('created_at', 'brand', 'sender_name', 'sender_email', 'product', 'read_at')
+    list_filter = ('brand',)
+    search_fields = ('sender_name', 'sender_email', 'body', 'brand__name')
+    readonly_fields = ('brand', 'product', 'user', 'sender_name', 'sender_email', 'body', 'created_at', 'read_at')
+    list_select_related = ('brand', 'product')
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
         return False
 
 

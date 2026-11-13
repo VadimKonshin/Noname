@@ -2,6 +2,7 @@
   <a href="{% url 'brand_dashboard' %}" {% if active_page == 'dashboard' %}class="active"{% endif %}>Статистика</a>
   <a href="{% url 'brand_orders' %}" {% if active_page == 'orders' %}class="active"{% endif %}>Заказы</a>
   <a href="{% url 'brand_products' %}" {% if active_page == 'products' %}class="active"{% endif %}>Товары</a>
+  <a href="{% url 'brand_messages' %}" {% if active_page == 'messages' %}class="active"{% endif %}>Сообщения{% if brand_unread_count %} {{ brand_unread_count }}{% endif %}</a>
   <a href="{% url 'brand_edit' %}" {% if active_page == 'profile' %}class="active"{% endif %}>О бренде</a>
   <a href="{% url 'product_create' %}">+ Создать товар</a>
   <a href="{% url 'brand_delete' %}" class="danger-link">Удалить бренд</a>

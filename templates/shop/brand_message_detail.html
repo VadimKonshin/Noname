@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block title %}Сообщение от {{ note.sender_name }} — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page">
+  <div class="eyebrow"><span class="tiny-dot"></span> КАБИНЕТ / {{ brand.name }}</div>
+  <h1 class="commerce-heading">{{ note.sender_name }}<span class="heading-period">.</span></h1>
+  <p class="page-lead">{{ note.created_at|date:'d.m.Y H:i' }} · {{ note.sender_email }}</p>
+  {% include 'includes/brand_nav.html' with active_page='messages' %}
+  <div class="form-section">
+    {% if note.product %}
+      <p class="form-hint">Вещь: <a href="{{ note.product.get_absolute_url }}">{{ note.product.title }}</a></p>
+    {% endif %}
+    <p class="message-body">{{ note.body|linebreaksbr }}</p>
+    <p class="form-hint">Ответ напишите сами на {{ note.sender_email }}. Сайт это письмо не отправит.</p>
+  </div>
+  <a class="back-catalog" href="{% url 'brand_messages' %}">← К сообщениям</a>
+</section>
+{% endblock %}

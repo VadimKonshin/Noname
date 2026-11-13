@@ -1,6 +1,6 @@
 from .access import get_brand_manager
 from .commerce import cart_count
-from .models import Brand
+from .models import Brand, BrandMessage
 
 
 def store_context(request):
@@ -8,9 +8,13 @@ def store_context(request):
                                   products__is_deleted=False).distinct().order_by('sort_order', 'name')
     application = get_brand_manager(request.user, approved_only=False)
     active_manager = application if application and application.is_approved and application.brand and not application.brand.is_deleted else None
+    unread = 0
+    if active_manager:
+        unread = BrandMessage.objects.filter(brand=active_manager.brand, read_at__isnull=True).count()
     return {
         'cart_count': cart_count(request),
         'ticker_brands': brands,
         'brand_manager': active_manager,
         'brand_manager_application': application,
+        'brand_unread_count': unread,
     }
