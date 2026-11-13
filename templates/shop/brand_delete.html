@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block title %}Удаление бренда — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page narrow-page">
+  <div class="eyebrow"><span class="tiny-dot"></span> КАБИНЕТ БРЕНДА / УДАЛЕНИЕ</div>
+  <h1 class="commerce-heading">УДАЛИТЬ {{ brand.name|upper }}?<span class="heading-period"></span></h1>
+  <p class="page-lead">Бренд и все его товары будут скрыты из магазина. Доступ к кабинету будет закрыт для всех менеджеров бренда. Старые заказы и статистика сохранятся.</p>
+  <form method="post" class="auth-form" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    {% for field in form %}
+      <div class="form-field">
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
+      </div>
+    {% endfor %}
+    <button type="submit" class="btn btn-outline-danger">Подтвердить удаление бренда</button>
+    <a class="cancel-link" href="{% url 'brand_dashboard' %}">Отмена</a>
+  </form>
+</section>
+{% endblock %}

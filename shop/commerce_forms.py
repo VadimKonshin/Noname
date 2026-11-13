@@ -36,3 +36,9 @@ class OrderStatusForm(forms.ModelForm):
     class Meta:
         model = Order
         fields = ('status',)
+
+    def clean_status(self):
+        status = self.cleaned_data['status']
+        if self.instance.pk and self.instance.status == Order.CANCELLED and status != Order.CANCELLED:
+            raise forms.ValidationError('Отменённый заказ нельзя открыть повторно.')
+        return status

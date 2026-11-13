@@ -7,7 +7,7 @@
     {% if product %}ИЗМЕНИТЬ ТОВАР{% else %}НОВЫЙ ТОВАР{% endif %}<span class="heading-period">.</span>
   </h1>
   <p class="page-lead">
-    Заполни описание, цену и загрузи фотографии. После сохранения товар появится в каталоге, если включена публикация.
+    Заполни описание, цену, размеры и остатки. После сохранения товар появится в каталоге, если включена публикация.
   </p>
   {% if managed_brand %}{% include 'includes/brand_nav.html' with active_page='products' %}{% endif %}
 
@@ -19,10 +19,10 @@
         <div class="form-section">
           <h2>01 / Бренд и товар</h2>
           {% if managed_brand %}
-            <div class="form-field"><label>Бренд</label><strong>{{ managed_brand.name }}</strong><small>Товар будет опубликован от имени вашего бренда.</small></div>
+            <div class="form-field"><label>Бренд</label><strong>{{ managed_brand.name }}</strong><small>Товар будет опубликован от имени вашего бренда. Изменить бренд нельзя.</small></div>
           {% endif %}
           {% for field in form %}
-            {% if field.name == 'brand' or field.name == 'title' or field.name == 'description' or field.name == 'price' or field.name == 'sizes' or field.name == 'color' %}
+            {% if field.name == 'brand' or field.name == 'title' or field.name == 'description' or field.name == 'price' or field.name == 'color' %}
               <div class="form-field">
                 <label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} *{% endif %}</label>
                 {{ field }}
@@ -33,7 +33,42 @@
         </div>
 
         <div class="form-section">
-          <h2>02 / Фотографии</h2>
+          <h2>02 / Размеры и остатки</h2>
+          <p class="form-hint">Укажи количество каждого размера. Нулевой остаток можно принимать как предзаказ, если эта опция включена ниже.</p>
+          {{ variant_formset.management_form }}
+          {% if variant_formset.non_form_errors %}<div class="form-errors">{{ variant_formset.non_form_errors }}</div>{% endif %}
+          <div data-variant-forms>
+            {% for variant_form in variant_formset %}
+              <div class="form-field variant-form-row" data-variant-row>
+                {{ variant_form.id }}
+                <div>
+                  <label for="{{ variant_form.size.id_for_label }}">Размер</label>
+                  {{ variant_form.size }}
+                  {% if variant_form.size.errors %}<div class="field-error">{{ variant_form.size.errors }}</div>{% endif %}
+                </div>
+                <div>
+                  <label for="{{ variant_form.stock_quantity.id_for_label }}">Остаток</label>
+                  {{ variant_form.stock_quantity }}
+                  {% if variant_form.stock_quantity.errors %}<div class="field-error">{{ variant_form.stock_quantity.errors }}</div>{% endif %}
+                </div>
+                {% if variant_form.instance.pk %}
+                  <label class="check-field">{{ variant_form.DELETE }}<span>Удалить размер</span></label>
+                {% endif %}
+              </div>
+            {% endfor %}
+          </div>
+          <template data-variant-template>
+            <div class="form-field variant-form-row" data-variant-row>
+              {{ variant_formset.empty_form.id }}
+              <div><label>Размер</label>{{ variant_formset.empty_form.size }}</div>
+              <div><label>Остаток</label>{{ variant_formset.empty_form.stock_quantity }}</div>
+            </div>
+          </template>
+          <button type="button" class="small-action" data-add-variant>+ Добавить размер</button>
+        </div>
+
+        <div class="form-section">
+          <h2>03 / Фотографии</h2>
           <p class="form-hint">JPG, PNG или WebP. До 8 МБ на изображение. Добавь обложку и до {{ max_gallery }} дополнительных фотографий.</p>
           <div class="form-field">
             <label for="{{ form.cover.id_for_label }}">Главная фотография</label>
@@ -64,13 +99,19 @@
 
       <aside class="editor-sidebar">
         <div class="form-section">
-          <h2>03 / Публикация</h2>
+          <h2>04 / Публикация и предзаказ</h2>
           {% for field in form %}
-            {% if field.name == 'is_available' or field.name == 'is_published' or field.name == 'is_featured' %}
+            {% if field.name == 'is_available' or field.name == 'allow_preorder' or field.name == 'is_published' or field.name == 'is_featured' %}
               <label class="check-field">{{ field }}<span>{{ field.label }}</span></label>
               {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
             {% endif %}
           {% endfor %}
+          <div class="form-field">
+            <label for="{{ form.preorder_days.id_for_label }}">{{ form.preorder_days.label }}</label>
+            {{ form.preorder_days }}
+            {% if form.preorder_days.errors %}<div class="field-error">{{ form.preorder_days.errors }}</div>{% endif %}
+            <small>Срок показывается покупателю при оформлении предзаказа.</small>
+          </div>
           <div class="publication-note">Товар увидят покупатели только при включённом пункте «Показывать в каталоге».</div>
         </div>
         <button class="btn btn-dark btn-wide" type="submit">Сохранить товар <span>↗</span></button>

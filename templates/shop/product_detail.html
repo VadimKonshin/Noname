@@ -65,13 +65,14 @@
     {% if product.is_available %}
       <form method="post" action="{% url 'cart_add' slug=product.slug %}" class="buy-form" data-size-picker>
         {% csrf_token %}
+        <input type="hidden" name="order_type" value="stock">
         <fieldset class="sizes-fieldset detail-sizes">
           <legend>ВЫБЕРИ РАЗМЕР <small>— НЕАКТИВНЫЕ РАЗМЕРЫ ОТСУТСТВУЮТ</small></legend>
           <div class="size-grid">
             {% for option in product.all_size_options %}
               <label class="size-choice">
-                <input type="radio" name="size" value="{{ option.name }}" {% if not option.available %}disabled{% endif %}>
-                <span>{{ option.name }}</span>
+                <input type="radio" name="size" value="{{ option.name }}" data-preorder="{% if option.is_preorder %}1{% else %}0{% endif %}" {% if not option.available %}disabled{% endif %}>
+                <span>{{ option.name }}{% if option.is_preorder %}<small> под заказ</small>{% endif %}</span>
               </label>
             {% endfor %}
           </div>

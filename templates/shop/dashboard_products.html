@@ -24,7 +24,8 @@
           <tr>
             <td>
               <strong>{{ product.title }}</strong>
-              <small class="table-muted">{{ product.color }} · {{ product.sizes }}</small>
+              <small class="table-muted">{{ product.color }} · {% for variant in product.variants.all %}{{ variant.size }}: {{ variant.stock_quantity }} шт.{% if not forloop.last %} · {% endif %}{% endfor %}</small>
+              <small class="table-muted">Всего на складе: {{ product.total_stock }}{% if product.allow_preorder %} · предзаказ разрешён{% endif %}</small>
             </td>
             <td>{{ product.price|floatformat:0 }} ₽</td>
             <td>

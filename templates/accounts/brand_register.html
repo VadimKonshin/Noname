@@ -12,7 +12,7 @@
     <div class="auth-box">
       <div class="eyebrow"><span class="tiny-dot"></span> КАБИНЕТ БРЕНДА / РЕГИСТРАЦИЯ</div>
       <h1>СТАТЬ МЕНЕДЖЕРОМ<span class="heading-period">.</span></h1>
-      <p>Выберите существующий бренд. Доступ откроется после подтверждения администратором.</p>
+      <p>Зарегистрируйте аккаунт менеджера без бренда. После подтверждения администратором вы сможете создать один бренд в кабинете.</p>
       <form method="post" class="auth-form" novalidate>
         {% csrf_token %}
         {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}

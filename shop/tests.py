@@ -9,7 +9,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from PIL import Image
-from .models import Brand, BrandManager, Product, ProductImage
+from .models import Brand, BrandManager, Product, ProductImage, ProductVariant
 
 
 User = get_user_model()
@@ -21,6 +21,22 @@ def sample_png(name='test.png'):
     return SimpleUploadedFile(name, output.getvalue(), content_type='image/png')
 
 
+def variant_payload(product=None):
+    variants = list(product.variants.all()) if product else [None]
+    data = {
+        'variants-TOTAL_FORMS': str(len(variants)),
+        'variants-INITIAL_FORMS': str(len(variants) if product else 0),
+        'variants-MIN_NUM_FORMS': '0',
+        'variants-MAX_NUM_FORMS': '1000',
+    }
+    for index, variant in enumerate(variants):
+        if variant:
+            data[f'variants-{index}-id'] = str(variant.pk)
+        data[f'variants-{index}-size'] = variant.size if variant else 'M'
+        data[f'variants-{index}-stock_quantity'] = str(variant.stock_quantity if variant else 5)
+    return data
+
+
 @override_settings(RATELIMIT_ENABLE=False)
 class StoreTests(TestCase):
     @classmethod
@@ -29,6 +45,10 @@ class StoreTests(TestCase):
         cls.customer = User.objects.create_user(username='buyer', password='SecurePass813!')
         cls.brand = Brand.objects.create(name='ПУСТОТА', slug='pustota')
         cls.product = Product.objects.create(brand=cls.brand, title='Тестовая футболка', description='Мягкий хлопок', price=Decimal('2990.00'), is_featured=True)
+        ProductVariant.objects.bulk_create([
+            ProductVariant(product=cls.product, size=size, stock_quantity=5)
+            for size in ('S', 'M', 'L', 'XL')
+        ])
 
     def test_home_and_catalog(self):
         self.assertContains(self.client.get(reverse('home')), self.product.title)
@@ -73,9 +93,10 @@ class StoreTests(TestCase):
                 self.client.force_login(self.staff)
                 response = self.client.post(reverse('product_create'), {
                     'brand': self.brand.pk, 'title': 'Новая футболка', 'description': 'Описание вещи', 'price': '3990',
-                    'sizes': 'M, L, XL', 'color': 'Чёрный', 'is_published': 'on',
+                    'color': 'Чёрный', 'is_published': 'on',
                     'cover': sample_png('cover.png'),
                     'gallery_images': [sample_png('a.png'), sample_png('b.png')],
+                    **variant_payload(),
                 })
                 item = Product.objects.get(title='Новая футболка')
                 self.assertRedirects(response, item.get_absolute_url())
@@ -86,8 +107,9 @@ class StoreTests(TestCase):
         self.client.force_login(self.staff)
         response = self.client.post(reverse('product_create'), {
             'brand': self.brand.pk, 'title': 'С плохим фото', 'description': 'Описание', 'price': '1000',
-            'sizes': 'M', 'color': 'Чёрный', 'is_published': 'on',
+            'color': 'Чёрный', 'is_published': 'on',
             'gallery_images': SimpleUploadedFile('wrong.png', b'not a real picture', content_type='image/png'),
+            **variant_payload(),
         })
         self.assertEqual(response.status_code, 200)
         self.assertFalse(Product.objects.filter(title='С плохим фото').exists())
@@ -99,8 +121,9 @@ class StoreTests(TestCase):
                 self.client.force_login(self.staff)
                 response = self.client.post(reverse('product_edit', kwargs={'slug': self.product.slug}), {
                     'brand': self.brand.pk, 'title': 'Изменённое название', 'description': 'Новый текст', 'price': '3490',
-                    'sizes': 'S, M', 'color': 'Белый', 'is_published': 'on',
+                    'color': 'Белый', 'is_published': 'on',
                     'delete_images': [str(image.pk)],
+                    **variant_payload(self.product),
                 })
                 self.assertEqual(response.status_code, 302)
                 self.product.refresh_from_db()
@@ -122,11 +145,14 @@ class StoreTests(TestCase):
         self.assertContains(self.client.get(reverse('home')), other.name)
 
     def test_size_buttons_start_unselected_and_missing_are_disabled(self):
-        self.product.sizes = 'M, XL'
-        self.product.save()
+        self.product.variants.all().delete()
+        ProductVariant.objects.bulk_create([
+            ProductVariant(product=self.product, size='M', stock_quantity=2),
+            ProductVariant(product=self.product, size='XL', stock_quantity=3),
+        ])
         detail = self.client.get(self.product.get_absolute_url())
         self.assertContains(detail, 'data-size-picker')
-        self.assertContains(detail, 'value="S" disabled')
+        self.assertContains(detail, 'value="S" data-preorder="0" disabled')
         self.assertContains(detail, 'value="M"')
         self.assertNotContains(detail, 'name="size" value="M" checked')
         self.assertContains(detail, 'ВЫБЕРИ РАЗМЕР')
@@ -215,19 +241,57 @@ class BrandAccountTests(TestCase):
         )
 
     def test_brand_registration_requires_admin_approval(self):
+        brand_count = Brand.objects.count()
         response = self.client.post(reverse('brand_register'), {
             'username': 'new_brand_manager',
             'email': 'manager@example.com',
-            'brand': self.brand.pk,
             'password1': 'AnotherSecurePass#831',
             'password2': 'AnotherSecurePass#831',
         })
         self.assertRedirects(response, reverse('brand_pending'))
         manager = BrandManager.objects.get(user__username='new_brand_manager')
         self.assertFalse(manager.is_approved)
-        self.assertEqual(manager.brand, self.brand)
+        self.assertIsNone(manager.brand)
+        self.assertEqual(Brand.objects.count(), brand_count)
         self.assertEqual(self.client.get(reverse('brand_dashboard')).status_code, 403)
         self.assertEqual(self.client.get(reverse('brand_products')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('brand_create')).status_code, 403)
+
+    def test_approved_manager_creates_only_one_brand(self):
+        user = User.objects.create_user(username='approved_without_brand', password=self.password)
+        manager = BrandManager.objects.create(user=user, is_approved=True)
+        response = self.client.post(reverse('brand_login'), {
+            'username': user.username, 'password': self.password,
+        })
+        self.assertRedirects(response, reverse('brand_create'))
+        response = self.client.post(reverse('brand_create'), {
+            'name': 'CREATED BRAND', 'description': 'Created after approval',
+        })
+        self.assertRedirects(response, reverse('brand_dashboard'))
+        manager.refresh_from_db()
+        self.assertEqual(manager.brand.name, 'CREATED BRAND')
+        response = self.client.post(reverse('brand_create'), {
+            'name': 'SECOND BRAND', 'description': 'Not allowed',
+        })
+        self.assertRedirects(response, reverse('brand_dashboard'))
+        self.assertFalse(Brand.objects.filter(name='SECOND BRAND').exists())
+        self.assertEqual(Brand.objects.filter(managers__user=user).count(), 1)
+
+    def test_brand_can_have_multiple_managers(self):
+        second_user = User.objects.create_user(username='second_brand_manager', password=self.password)
+        BrandManager.objects.create(user=second_user, brand=self.brand, is_approved=True)
+        self.assertEqual(self.brand.managers.count(), 2)
+        self.client.force_login(second_user)
+        response = self.client.get(reverse('brand_products'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.product.title)
+
+    def test_manager_account_is_marked_in_user_admin(self):
+        admin = User.objects.create_superuser(username='admin_marker', password=self.password, email='admin@example.com')
+        self.client.force_login(admin)
+        response = self.client.get('/admin/auth/user/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Менеджер')
 
     def test_brand_login_redirects_approved_and_pending_managers(self):
         response = self.client.post(reverse('brand_login'), {
@@ -260,11 +324,11 @@ class BrandAccountTests(TestCase):
             'title': 'Manager product',
             'description': 'Created by manager',
             'price': '4500',
-            'sizes': 'S, M',
             'color': 'Чёрный',
             'is_available': 'on',
             'is_published': 'on',
             'is_featured': 'on',
+            **variant_payload(),
         })
         product = Product.objects.get(title='Manager product')
         self.assertRedirects(response, product.get_absolute_url())
@@ -298,3 +362,29 @@ class BrandAccountTests(TestCase):
         self.product.refresh_from_db()
         self.assertFalse(self.product.is_deleted)
         self.assertFalse(self.product.is_published)
+
+    def test_brand_deletion_requires_manager_password(self):
+        self.client.force_login(self.manager_user)
+        response = self.client.post(reverse('brand_delete'), {
+            'brand_name': self.brand.name,
+            'password': 'WrongPassword#831',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.brand.refresh_from_db()
+        self.assertFalse(self.brand.is_deleted)
+
+    def test_manager_soft_deletes_brand_and_products(self):
+        self.client.force_login(self.manager_user)
+        response = self.client.post(reverse('brand_delete'), {
+            'brand_name': self.brand.name,
+            'password': self.password,
+        })
+        self.assertRedirects(response, reverse('brand_deleted'))
+        self.brand.refresh_from_db()
+        self.product.refresh_from_db()
+        self.assertTrue(self.brand.is_deleted)
+        self.assertFalse(self.brand.is_active)
+        self.assertTrue(self.product.is_deleted)
+        self.assertEqual(self.client.get(self.product.get_absolute_url()).status_code, 404)
+        self.assertEqual(self.client.get(reverse('brand_products')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('brand_deleted')).status_code, 200)

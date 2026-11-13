@@ -19,6 +19,7 @@
               <strong>{{ item.product_title }}</strong>
               {% if item.brand_name %}<small>{{ item.brand_name }}</small>{% endif %}
               <small>Размер {{ item.size }} · {{ item.unit_price|floatformat:0 }} ₽ × {{ item.quantity }}</small>
+              {% if item.is_preorder %}<small><strong>Предзаказ</strong> · изготовление до {{ item.preorder_days }} дн.</small>{% endif %}
             </div>
             <strong>{{ item.line_total|floatformat:0 }} ₽</strong>
           </div>

@@ -4,9 +4,10 @@ from decimal import Decimal
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
+from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Prefetch, Sum
+from django.db.models import Count, F, Prefetch, Q, Sum
 from django.db.models.functions import Coalesce
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
@@ -17,9 +18,12 @@ from .access import (
     brand_manager_required, get_brand_manager, get_scoped_object_or_404,
     product_permission_required, scoped_order_items,
 )
-from .commerce import CART_SESSION_KEY, DELIVERY_SESSION_KEY, MAX_PER_VARIANT, get_cart, put, set_quantity
+from .commerce import (
+    CART_SESSION_KEY, DELIVERY_SESSION_KEY, MAX_PER_VARIANT,
+    get_cart, put, set_quantity, update_order_status,
+)
 from .commerce_forms import CheckoutForm, OrderStatusForm
-from .models import DeliveryMethod, Order, OrderItem, Product
+from .models import DeliveryMethod, Order, OrderItem, Product, ProductVariant
 
 
 def selected_delivery(request):
@@ -68,17 +72,27 @@ def _integer(raw):
 
 @require_POST
 def cart_add(request, slug):
-    product = get_object_or_404(Product, slug=slug, price__gt=0, is_published=True, is_available=True, is_deleted=False)
+    product = get_object_or_404(
+        Product.objects.prefetch_related('variants'),
+        Q(brand__isnull=True) | Q(brand__is_deleted=False),
+        slug=slug,
+        price__gt=0,
+        is_published=True,
+        is_available=True,
+        is_deleted=False,
+    )
     size = request.POST.get('size', '').strip()
     quantity = _integer(request.POST.get('quantity', '1'))
+    is_preorder = request.POST.get('order_type') == 'preorder'
     if len(size) > 40 or ':' in size or size not in product.size_list:
         messages.error(request, 'Выберите доступный размер футболки.')
     elif quantity is None or not 1 <= quantity <= MAX_PER_VARIANT:
         messages.error(request, 'Выберите количество от 1 до 10.')
-    elif not put(request, product, size, quantity):
-        messages.error(request, 'Лимит: 10 штук одного размера и 50 штук в корзине.')
+    elif not put(request, product, size, quantity, is_preorder):
+        messages.error(request, 'Выбранный размер недоступен в этом количестве. Обновите остаток или режим заказа.')
     else:
-        messages.success(request, f'«{product.title}», размер {size}, добавлен в корзину.')
+        mode = 'под заказ' if is_preorder else 'в корзину'
+        messages.success(request, f'«{product.title}», размер {size}, добавлен {mode}.')
         if request.POST.get('go_to_cart') == '1':
             return redirect('cart')
     return redirect(product.get_absolute_url())
@@ -89,8 +103,10 @@ def cart_update(request):
     product_id = _integer(request.POST.get('product_id'))
     size = request.POST.get('size', '')
     quantity = _integer(request.POST.get('quantity'))
+    is_preorder = request.POST.get('order_type') == 'preorder'
     if (product_id is None or product_id < 1 or quantity is None
-            or not 0 <= quantity <= MAX_PER_VARIANT or not set_quantity(request, product_id, size, quantity)):
+            or not 0 <= quantity <= MAX_PER_VARIANT
+            or not set_quantity(request, product_id, size, quantity, is_preorder)):
         messages.error(request, 'Не удалось изменить количество. Обновите корзину.')
     else:
         messages.success(request, 'Корзина обновлена.')
@@ -137,10 +153,22 @@ def checkout(request):
                     verified_cart = get_cart(request)
                     if not verified_cart['lines']:
                         raise ValueError('Выбранные товары больше недоступны.')
-                    # A fresh DB lookup prevents trusting a stale/forged price from the client.
+                    submitted_lines = {line['key']: line['quantity'] for line in current_cart['lines']}
+                    verified_lines = {line['key']: line['quantity'] for line in verified_cart['lines']}
+                    if verified_lines != submitted_lines:
+                        raise ValueError('Остатки или доступность предзаказа изменились. Проверьте корзину перед оформлением.')
                     current_method = DeliveryMethod.objects.filter(pk=method.pk, is_active=True).first()
                     if not current_method or current_method.price < 0:
                         raise ValueError('Способ доставки недоступен. Выберите другой в корзине.')
+                    for item in verified_cart['lines']:
+                        if item['is_preorder']:
+                            continue
+                        reserved = ProductVariant.objects.filter(
+                            pk=item['variant'].pk,
+                            stock_quantity__gte=item['quantity'],
+                        ).update(stock_quantity=F('stock_quantity') - item['quantity'])
+                        if reserved != 1:
+                            raise ValueError(f'Недостаточно товара «{item["product"].title}», размер {item["size"]}.')
                     subtotal = verified_cart['subtotal']
                     order = Order.objects.create(
                         user=request.user if request.user.is_authenticated else None,
@@ -157,7 +185,8 @@ def checkout(request):
                                   product_title=item['product'].title,
                                   brand_name=item['product'].brand.name if item['product'].brand else '',
                                   size=item['size'], quantity=item['quantity'],
-                                  unit_price=item['unit_price'], line_total=item['line_total'])
+                                  unit_price=item['unit_price'], line_total=item['line_total'],
+                                  is_preorder=item['is_preorder'], preorder_days=item['preorder_days'])
                         for item in verified_cart['lines']
                     ])
             except IntegrityError:
@@ -348,9 +377,12 @@ def change_order_status(request, pk):
     order = get_object_or_404(Order, pk=pk)
     form = OrderStatusForm(request.POST, instance=order)
     if form.is_valid():
-        changed = form.save(commit=False)
-        changed.save(update_fields=['status', 'updated_at'])
-        messages.success(request, f'Статус заказа №{order.pk} обновлён.')
+        try:
+            update_order_status(order.pk, form.cleaned_data['status'])
+        except ValidationError as exc:
+            messages.error(request, exc.message)
+        else:
+            messages.success(request, f'Статус заказа №{order.pk} обновлён.')
     else:
         messages.error(request, 'Выбран недопустимый статус заказа.')
     return redirect(order.get_absolute_url())
@@ -360,7 +392,7 @@ def change_order_status(request, pk):
 @permission_required('shop.view_product', raise_exception=True)
 @require_GET
 def dashboard_products(request):
-    products = Product.objects.all().order_by('is_deleted', '-created_at')
+    products = Product.objects.all().order_by('is_deleted', '-created_at').prefetch_related('variants')
     return render(request, 'shop/dashboard_products.html', {
         'products': products,
         'can_change_products': request.user.has_perm('shop.change_product'),

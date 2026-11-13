@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% block title %}Бренд удалён — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page narrow-page">
+  <div class="eyebrow"><span class="tiny-dot"></span> КАБИНЕТ МЕНЕДЖЕРА</div>
+  <h1 class="commerce-heading">БРЕНД УДАЛЁН<span class="heading-period">.</span></h1>
+  <div class="empty-state">
+    <span class="empty-symbol">∅</span>
+    <h2>{{ manager.brand.name }}</h2>
+    <p>Бренд и его товары скрыты из магазина. История заказов сохранена. Повторное создание бренда для этого аккаунта недоступно.</p>
+    <a href="{% url 'home' %}" class="btn btn-dark">Вернуться на главную ↗</a>
+  </div>
+</section>
+{% endblock %}

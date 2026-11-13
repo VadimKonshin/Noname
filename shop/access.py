@@ -17,6 +17,8 @@ def get_brand_manager(user, approved_only=True):
         return None
     if approved_only and not manager.is_approved:
         return None
+    if approved_only and manager.brand and manager.brand.is_deleted:
+        return None
     return manager
 
 

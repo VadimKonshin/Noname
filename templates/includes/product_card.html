@@ -29,13 +29,14 @@
         <div class="size-grid">
           {% for option in product.all_size_options %}
             <label class="size-choice">
-              <input type="radio" name="size" value="{{ option.name }}" {% if not option.available %}disabled{% endif %}>
-              <span>{{ option.name }}</span>
+              <input type="radio" name="size" value="{{ option.name }}" data-preorder="{% if option.is_preorder %}1{% else %}0{% endif %}" {% if not option.available %}disabled{% endif %}>
+              <span>{{ option.name }}{% if option.is_preorder %}<small> под заказ</small>{% endif %}</span>
             </label>
           {% endfor %}
         </div>
       </fieldset>
       <input type="hidden" name="quantity" value="1">
+      <input type="hidden" name="order_type" value="stock">
       <input type="hidden" name="go_to_cart" value="1">
       <button type="submit" class="quick-add-btn" disabled>ВЫБЕРИ РАЗМЕР <span>＋</span></button>
     </form>

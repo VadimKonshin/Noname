@@ -73,7 +73,7 @@
         <div class="checkout-line">
           <span>
             {{ item.product.title }}
-            <small>{{ item.product.brand.name|default:'NO LABEL' }} / {{ item.size }} × {{ item.quantity }}</small>
+            <small>{{ item.product.brand.name|default:'NO LABEL' }} / {{ item.size }} × {{ item.quantity }}{% if item.is_preorder %} · под заказ, до {{ item.preorder_days }} дн.{% endif %}</small>
           </span>
           <strong>{{ item.line_total|floatformat:0 }} ₽</strong>
         </div>

@@ -30,28 +30,49 @@
   }
 })();
 
-// NoName: no size is preselected; unavailable sizes are truly disabled.
+// NoName: no size is preselected; stock and preorder modes come from the server-rendered variants.
 (() => {
   document.querySelectorAll('[data-size-picker]').forEach(form => {
     const button = form.querySelector('button[type="submit"]');
     const status = form.querySelector('[data-size-status]');
+    const orderType = form.querySelector('input[name="order_type"]');
     const update = () => {
       const chosen = form.querySelector('input[name="size"]:checked:not(:disabled)');
+      const preorder = chosen?.dataset.preorder === '1';
+      if (orderType) orderType.value = preorder ? 'preorder' : 'stock';
       if (button) {
         button.disabled = !chosen;
-        if (button.classList.contains('quick-add-btn')) {
-          button.firstChild.textContent = chosen ? `ДОБАВИТЬ ${chosen.value} ` : 'ВЫБЕРИ РАЗМЕР ';
-        } else {
-          button.firstChild.textContent = chosen ? `ДОБАВИТЬ / ${chosen.value} ` : 'ВЫБЕРИ РАЗМЕР ';
-        }
+        const action = preorder ? 'ПОД ЗАКАЗ' : 'ДОБАВИТЬ';
+        button.firstChild.textContent = chosen ? `${action} / ${chosen.value} ` : 'ВЫБЕРИ РАЗМЕР ';
       }
-      if (status) status.textContent = chosen ? `Выбран размер ${chosen.value}` : 'Размер пока не выбран';
+      if (status) {
+        status.textContent = chosen
+          ? (preorder ? `Размер ${chosen.value}: изготовление под заказ` : `Выбран размер ${chosen.value}`)
+          : 'Размер пока не выбран';
+      }
     };
     form.addEventListener('change', update);
     form.addEventListener('submit', event => {
       if (!form.querySelector('input[name="size"]:checked:not(:disabled)')) event.preventDefault();
     });
     update();
+  });
+})();
+
+(() => {
+  const addButton = document.querySelector('[data-add-variant]');
+  const container = document.querySelector('[data-variant-forms]');
+  const template = document.querySelector('[data-variant-template]');
+  const totalForms = document.querySelector('#id_variants-TOTAL_FORMS');
+  if (!addButton || !container || !template || !totalForms) return;
+  addButton.addEventListener('click', () => {
+    const index = Number(totalForms.value);
+    container.insertAdjacentHTML('beforeend', template.innerHTML.replaceAll('__prefix__', index));
+    totalForms.value = index + 1;
+  });
+  container.addEventListener('click', event => {
+    const removeButton = event.target.closest('[data-remove-variant]');
+    if (removeButton) removeButton.closest('[data-variant-row]').remove();
   });
 })();
 

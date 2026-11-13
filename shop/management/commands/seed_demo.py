@@ -2,7 +2,7 @@
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand
-from shop.models import Brand, Product
+from shop.models import Brand, Product, ProductVariant
 
 
 SAMPLES = [
@@ -50,5 +50,9 @@ class Command(BaseCommand):
                 continue
             picture = settings.BASE_DIR / 'static' / 'img' / 'demo' / sample['filename']
             obj.cover.save(sample['filename'], ContentFile(picture.read_bytes()), save=True)
+            ProductVariant.objects.bulk_create([
+                ProductVariant(product=obj, size=size, stock_quantity=5)
+                for size in ('S', 'M', 'L', 'XL')
+            ])
             created_count += 1
         self.stdout.write(self.style.SUCCESS(f'Готово. Создано товаров: {created_count}.'))

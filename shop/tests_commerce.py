@@ -7,7 +7,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from .commerce import get_cart
-from .models import Brand, BrandManager, DeliveryMethod, Order, OrderItem, Product
+from .models import Brand, BrandManager, DeliveryMethod, Order, OrderItem, Product, ProductVariant
 
 User = get_user_model()
 
@@ -19,12 +19,18 @@ class CommerceTests(TestCase):
         cls.member = User.objects.create_user('customer', email='client@example.org', password='PassWithLength#178')
         cls.staff = User.objects.create_user('store_admin', email='admin@example.org', password='PassWithLength#178', is_staff=True, is_superuser=True)
         cls.brand = Brand.objects.create(name='ПУСТОТА', slug='pustota')
-        cls.shirt = Product.objects.create(brand=cls.brand, title='MOON / Черная футболка', description='Хлопок', price=Decimal('3000.00'), sizes='M, L', is_published=True, is_available=True)
+        cls.shirt = Product.objects.create(brand=cls.brand, title='MOON / Черная футболка', description='Хлопок', price=Decimal('3000.00'), is_published=True, is_available=True)
+        ProductVariant.objects.bulk_create([
+            ProductVariant(product=cls.shirt, size='M', stock_quantity=10),
+            ProductVariant(product=cls.shirt, size='L', stock_quantity=10),
+        ])
         cls.delivery = DeliveryMethod.objects.create(name='Пункт выдачи', price=Decimal('350.00'), requires_address=True)
         cls.pickup = DeliveryMethod.objects.create(name='Самовывоз', price=Decimal('0.00'), requires_address=False)
 
-    def _add(self, size='M', quantity=2):
-        return self.client.post(reverse('cart_add', args=[self.shirt.slug]), {'size': size, 'quantity': quantity, 'go_to_cart': '1'})
+    def _add(self, size='M', quantity=2, order_type='stock'):
+        return self.client.post(reverse('cart_add', args=[self.shirt.slug]), {
+            'size': size, 'quantity': quantity, 'order_type': order_type, 'go_to_cart': '1',
+        })
 
     def _choose_delivery(self, method=None):
         return self.client.post(reverse('cart_delivery'), {'delivery_method': (method or self.delivery).pk, 'next': '1'})
@@ -61,6 +67,22 @@ class CommerceTests(TestCase):
 
     def test_invalid_quantity_not_added(self):
         self._add(quantity=10000)
+        self.assertEqual(self.client.get(reverse('cart')).context['cart']['count'], 0)
+
+    def test_cannot_add_more_than_stock(self):
+        ProductVariant.objects.filter(product=self.shirt, size='M').update(stock_quantity=1)
+        self._add(quantity=2)
+        self.assertEqual(self.client.get(reverse('cart')).context['cart']['count'], 0)
+
+    def test_preorder_cannot_be_forced_for_stock_item(self):
+        self.shirt.allow_preorder = True
+        self.shirt.save(update_fields=['allow_preorder'])
+        self._add(order_type='preorder')
+        self.assertEqual(self.client.get(reverse('cart')).context['cart']['count'], 0)
+
+    def test_preorder_requires_manager_permission(self):
+        ProductVariant.objects.filter(product=self.shirt, size='M').update(stock_quantity=0)
+        self._add(order_type='preorder')
         self.assertEqual(self.client.get(reverse('cart')).context['cart']['count'], 0)
 
     def test_product_price_must_be_positive(self):
@@ -147,6 +169,31 @@ class CommerceTests(TestCase):
         item.refresh_from_db()
         self.assertEqual(order.total, Decimal('6350.00'))
         self.assertEqual(item.unit_price, Decimal('3000.00'))
+        self.assertEqual(ProductVariant.objects.get(product=self.shirt, size='M').stock_quantity, 8)
+
+    def test_preorder_checkout_preserves_mode_and_stock(self):
+        self.shirt.allow_preorder = True
+        self.shirt.preorder_days = 21
+        self.shirt.save(update_fields=['allow_preorder', 'preorder_days'])
+        ProductVariant.objects.filter(product=self.shirt, size='M').update(stock_quantity=0)
+        self._add(order_type='preorder')
+        self._choose_delivery()
+        self.client.get(reverse('checkout'))
+        response = self.client.post(reverse('checkout'), self._checkout_payload())
+        self.assertEqual(response.status_code, 302)
+        item = OrderItem.objects.get()
+        self.assertTrue(item.is_preorder)
+        self.assertEqual(item.preorder_days, 21)
+        self.assertEqual(ProductVariant.objects.get(product=self.shirt, size='M').stock_quantity, 0)
+
+    def test_stock_change_before_checkout_does_not_reduce_order_silently(self):
+        self._add()
+        self._choose_delivery()
+        self.client.get(reverse('checkout'))
+        ProductVariant.objects.filter(product=self.shirt, size='M').update(stock_quantity=1)
+        response = self.client.post(reverse('checkout'), self._checkout_payload())
+        self.assertRedirects(response, reverse('cart'))
+        self.assertEqual(Order.objects.count(), 0)
 
     def test_checkout_requires_address_for_delivery(self):
         self.client.force_login(self.member)
@@ -234,6 +281,14 @@ class CommerceTests(TestCase):
         dashboard = self.client.get(reverse('dashboard'))
         self.assertEqual(dashboard.context['orders_total'], Decimal('0.00'))
         self.assertEqual(len(dashboard.context['sold_models']), 0)
+        variant = ProductVariant.objects.get(product=self.shirt, size='M')
+        self.assertEqual(variant.stock_quantity, 10)
+        self.client.post(reverse('change_order_status', args=[order.pk]), {'status': Order.CANCELLED})
+        variant.refresh_from_db()
+        self.assertEqual(variant.stock_quantity, 10)
+        self.client.post(reverse('change_order_status', args=[order.pk]), {'status': Order.NEW})
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.CANCELLED)
 
     def test_customer_cannot_change_status(self):
         order = self._create_order()

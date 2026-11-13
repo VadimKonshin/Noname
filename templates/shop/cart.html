@@ -25,11 +25,13 @@
             <div class="eyebrow">{{ item.product.brand.name|default:'INDEPENDENT'|upper }}</div>
             <h2><a href="{{ item.product.get_absolute_url }}">{{ item.product.title }}</a></h2>
             <p>РАЗМЕР <strong>{{ item.size }}</strong> / {{ item.product.color }}</p>
+            {% if item.is_preorder %}<p><strong>ПОД ЗАКАЗ</strong> · изготовление до {{ item.preorder_days }} дн.</p>{% endif %}
             <p>{{ item.unit_price|floatformat:0 }} ₽ / ШТ</p>
             <form method="post" action="{% url 'cart_update' %}" class="basket-actions">
               {% csrf_token %}
               <input type="hidden" name="product_id" value="{{ item.product.pk }}">
               <input type="hidden" name="size" value="{{ item.size }}">
+              <input type="hidden" name="order_type" value="{% if item.is_preorder %}preorder{% else %}stock{% endif %}">
               <label>КОЛ-ВО <input type="number" name="quantity" min="0" max="10" value="{{ item.quantity }}" required></label>
               <button type="submit" class="small-action">ОБНОВИТЬ</button>
               <button type="submit" name="quantity" value="0" class="small-action muted-action" formnovalidate>УДАЛИТЬ ×</button>
