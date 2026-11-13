@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block title %}О бренде — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page">
+  <div class="eyebrow"><span class="tiny-dot"></span> КАБИНЕТ / {{ brand.name }}</div>
+  <h1 class="commerce-heading">О БРЕНДЕ<span class="heading-period">.</span></h1>
+  <p class="page-lead">Название «{{ brand.name }}» меняет администратор. Здесь можно обновить текст о бренде и таблицу размеров.</p>
+  {% include 'includes/brand_nav.html' with active_page='profile' %}
+  <form method="post" class="checkout-form" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    <div class="form-section">
+      {% for field in form %}
+        <div class="form-field">
+          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+          {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
+        </div>
+      {% endfor %}
+    </div>
+    <button type="submit" class="btn btn-dark">Сохранить <span>↗</span></button>
+  </form>
+</section>
+{% endblock %}

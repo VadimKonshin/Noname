@@ -178,6 +178,36 @@ class StoreTests(TestCase):
         with self.assertRaises(ValidationError):
             spoof.full_clean()
 
+    def test_product_shows_material_and_brand_chart(self):
+        self.product.composition = '100% хлопок'
+        self.product.fit = 'свободная'
+        self.product.care = 'стирка при 30'
+        self.product.save()
+        self.brand.size_chart = 'M: 96–100'
+        self.brand.save()
+        response = self.client.get(self.product.get_absolute_url())
+        self.assertContains(response, '100% хлопок')
+        self.assertContains(response, 'свободная')
+        self.assertContains(response, 'стирка при 30')
+        self.assertContains(response, '96–100')
+
+    def test_store_info_pages_are_linked(self):
+        for name in ('info_delivery', 'info_returns', 'info_contacts'):
+            self.assertEqual(self.client.get(reverse(name)).status_code, 200)
+        self.assertContains(self.client.get(reverse('home')), reverse('info_delivery'))
+        self.assertContains(self.client.get(reverse('info_delivery')), 'не расчёт')
+
+    def test_demo_carriers_disabled_and_local_zones_active(self):
+        from .models import DeliveryMethod
+        self.assertFalse(DeliveryMethod.objects.filter(name__contains='(демо)', is_active=True).exists())
+        city = DeliveryMethod.objects.get(name='Доставка по городу')
+        self.assertTrue(city.is_active)
+        self.assertTrue(city.requires_address)
+        self.assertEqual(city.eta, '1–3 дня')
+        pickup = DeliveryMethod.objects.get(name='Самовывоз из мастерской')
+        self.assertFalse(pickup.requires_address)
+        self.assertTrue(pickup.pickup_address)
+
     def test_brand_page_lists_its_products(self):
         response = self.client.get(reverse('brand_storefront', args=[self.brand.slug]))
         self.assertContains(response, self.product.title)
@@ -435,3 +465,18 @@ class BrandAccountTests(TestCase):
         })
         product = Product.objects.get(title='Scoped product')
         self.assertEqual(product.brand, self.brand)
+
+    def test_manager_edits_brand_text_not_name(self):
+        self.client.force_login(self.manager_user)
+        response = self.client.post(reverse('brand_edit'), {
+            'name': 'HIJACKED',
+            'description': 'Новое описание мастерской',
+            'size_chart': 'M — грудь 96–100',
+        })
+        self.assertRedirects(response, reverse('brand_dashboard'))
+        self.brand.refresh_from_db()
+        self.assertEqual(self.brand.name, 'FIRST BRAND')
+        self.assertEqual(self.brand.description, 'Новое описание мастерской')
+        self.assertIn('96–100', self.brand.size_chart)
+        self.client.force_login(self.customer)
+        self.assertEqual(self.client.get(reverse('brand_edit')).status_code, 403)

@@ -118,10 +118,11 @@ class ProductImageAdmin(admin.ModelAdmin):
 
 @admin.register(DeliveryMethod)
 class DeliveryMethodAdmin(admin.ModelAdmin):
-    list_display = ('name', 'price', 'is_active', 'requires_address', 'sort_order')
-    list_editable = ('price', 'requires_address', 'is_active', 'sort_order')
+    list_display = ('name', 'price', 'eta', 'is_active', 'requires_address', 'sort_order')
+    list_editable = ('price', 'is_active', 'requires_address', 'sort_order')
     list_filter = ('is_active', 'requires_address')
-    search_fields = ('name', 'description')
+    search_fields = ('name', 'description', 'pickup_address')
+    fields = ('name', 'description', 'eta', 'price', 'requires_address', 'pickup_address', 'is_active', 'sort_order')
 
 
 class OrderItemInline(admin.TabularInline):
@@ -143,10 +144,10 @@ class OrderAdmin(admin.ModelAdmin):
     list_select_related = ('user', 'delivery_method')
     readonly_fields = (
         'user', 'checkout_token', 'full_name', 'email', 'phone', 'city', 'address',
-        'postal_code', 'comment', 'delivery_method', 'delivery_name', 'delivery_price',
+        'postal_code', 'comment', 'delivery_method', 'delivery_name', 'delivery_eta', 'pickup_address', 'delivery_price',
         'subtotal', 'total', 'created_at', 'updated_at',
     )
-    fields = ('status', 'created_at', 'updated_at', 'full_name', 'phone', 'user', 'delivery_method', 'delivery_name', 'city', 'address', 'postal_code', 'comment', 'subtotal', 'delivery_price', 'total', 'checkout_token')
+    fields = ('status', 'created_at', 'updated_at', 'full_name', 'phone', 'user', 'delivery_method', 'delivery_name', 'delivery_eta', 'pickup_address', 'city', 'address', 'postal_code', 'comment', 'subtotal', 'delivery_price', 'total', 'checkout_token')
     inlines = [OrderItemInline]
     form = OrderStatusForm
 

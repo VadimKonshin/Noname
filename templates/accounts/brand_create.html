@@ -12,7 +12,7 @@
     <div class="auth-box">
       <div class="eyebrow"><span class="tiny-dot"></span> КАБИНЕТ МЕНЕДЖЕРА / БРЕНД</div>
       <h1>СОЗДАЙТЕ БРЕНД<span class="heading-period">.</span></h1>
-      <p>Администратор подтвердил ваш аккаунт. Создайте один бренд — после сохранения изменить его через кабинет будет нельзя.</p>
+      <p>Администратор подтвердил ваш аккаунт. Создайте один бренд. Название потом меняет администратор, описание и таблицу размеров можно поправить в кабинете.</p>
       <form method="post" class="auth-form" novalidate>
         {% csrf_token %}
         {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}

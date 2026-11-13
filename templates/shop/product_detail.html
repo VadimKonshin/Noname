@@ -95,9 +95,22 @@
       <h2>О ВЕЩИ</h2>
       <p>{{ product.description|linebreaksbr }}</p>
     </div>
+    {% if product.composition or product.fit or product.care %}
+      <div class="detail-facts">
+        {% if product.composition %}<div class="detail-stat"><span>СОСТАВ</span><strong>{{ product.composition }}</strong></div>{% endif %}
+        {% if product.fit %}<div class="detail-stat"><span>ПОСАДКА</span><strong>{{ product.fit }}</strong></div>{% endif %}
+        {% if product.care %}<div class="detail-stat"><span>УХОД</span><strong>{{ product.care|linebreaksbr }}</strong></div>{% endif %}
+      </div>
+    {% endif %}
+    {% if product.brand and product.brand.size_chart %}
+      <div class="detail-description">
+        <h2>РАЗМЕРЫ БРЕНДА</h2>
+        <p>{{ product.brand.size_chart|linebreaksbr }}</p>
+      </div>
+    {% endif %}
     <div class="detail-notice">
       <span>✳</span>
-      <p>Заказ можно оформить без регистрации. Оплата онлайн пока не подключена — магазин свяжется для подтверждения.</p>
+      <p>Заказ можно оформить без регистрации. Оплата онлайн не списывается: магазин свяжется по телефону или почте и подтвердит заказ. Условия доставки и возврата — внизу страницы.</p>
     </div>
     {% if can_change_product or can_delete_product %}
       <div class="product-admin-actions">

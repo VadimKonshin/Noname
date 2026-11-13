@@ -140,7 +140,8 @@ a,button {transition:color .18s,background .18s,border-color .18s}
 .auth-art>p,.auth-box>p,.auth-bottom {color:#99999f}
 .form-section,.checkout-panel,.editor-sidebar .form-section {background:#16161a;border:1px solid #34343a;color:#e9e9ed}
 .form-field label {color:#aeafb5}
-.form-field small,.form-hint,.publication-note,.summary-note,.checkout-terms {color:#888891}
+.form-field small,.form-hint,.publication-note,.summary-note,.checkout-terms,.form-section p {color:#b7b7be}
+.checkout-terms a,.form-section a {color:#e76b60}
 .form-field input:focus,.form-field textarea:focus,.auth-form input:focus {border-color:#de5c51!important}
 .form-errors,.field-error {color:#e4aaaa}
 .check-field {color:#c9c9ce}
