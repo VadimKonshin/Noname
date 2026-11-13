@@ -30,7 +30,7 @@
   <div class="ticker-track">
     <div class="ticker-run">
       {% for brand in ticker_brands %}
-        <a href="{% url 'catalog' %}?brand={{ brand.slug|urlencode }}">{{ brand.name }} <span aria-hidden="true">✳</span></a>
+        <a href="{% url 'brand_storefront' brand.slug %}">{{ brand.name }} <span aria-hidden="true">✳</span></a>
       {% empty %}
         <span>СКОРО ЗДЕСЬ ПОЯВЯТСЯ НЕЗАВИСИМЫЕ БРЕНДЫ ✳</span>
       {% endfor %}

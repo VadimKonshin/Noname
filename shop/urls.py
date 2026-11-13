@@ -22,6 +22,7 @@ urlpatterns = [
     path('brand/orders/', commerce_views.brand_orders, name='brand_orders'),
     path('brand/products/', views.brand_products, name='brand_products'),
     path('catalog/', views.catalog, name='catalog'),
+    path('brands/<str:slug>/', views.brand_storefront, name='brand_storefront'),
     path('cart/', commerce_views.cart, name='cart'),
     path('cart/add/<str:slug>/', commerce_views.cart_add, name='cart_add'),
     path('cart/update/', commerce_views.cart_update, name='cart_update'),

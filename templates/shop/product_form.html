@@ -110,7 +110,7 @@
             <label for="{{ form.preorder_days.id_for_label }}">{{ form.preorder_days.label }}</label>
             {{ form.preorder_days }}
             {% if form.preorder_days.errors %}<div class="field-error">{{ form.preorder_days.errors }}</div>{% endif %}
-            <small>Срок показывается покупателю при оформлении предзаказа.</small>
+            <small>Срок показывается покупателю. Одновременно можно принять не больше {{ preorder_cap }} штук одного размера под заказ.</small>
           </div>
           <div class="publication-note">Товар увидят покупатели только при включённом пункте «Показывать в каталоге».</div>
         </div>

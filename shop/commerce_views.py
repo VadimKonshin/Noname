@@ -7,7 +7,7 @@ from django.contrib.auth.decorators import login_required, permission_required
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
-from django.db.models import Count, F, Prefetch, Q, Sum
+from django.db.models import Count, F, Prefetch, Sum
 from django.db.models.functions import Coalesce
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
@@ -19,8 +19,8 @@ from .access import (
     product_permission_required, scoped_order_items,
 )
 from .commerce import (
-    CART_SESSION_KEY, DELIVERY_SESSION_KEY, MAX_PER_VARIANT,
-    get_cart, put, set_quantity, update_order_status,
+    CART_SESSION_KEY, DELIVERY_SESSION_KEY, MAX_OPEN_PREORDER_PER_VARIANT, MAX_PER_VARIANT,
+    get_cart, open_preorder_map, put, set_quantity, update_order_status,
 )
 from .commerce_forms import CheckoutForm, OrderStatusForm
 from .models import DeliveryMethod, Order, OrderItem, Product, ProductVariant
@@ -73,13 +73,8 @@ def _integer(raw):
 @require_POST
 def cart_add(request, slug):
     product = get_object_or_404(
-        Product.objects.prefetch_related('variants'),
-        Q(brand__isnull=True) | Q(brand__is_deleted=False),
+        Product.objects.public().filter(price__gt=0, is_available=True).prefetch_related('variants'),
         slug=slug,
-        price__gt=0,
-        is_published=True,
-        is_available=True,
-        is_deleted=False,
     )
     size = request.POST.get('size', '').strip()
     quantity = _integer(request.POST.get('quantity', '1'))
@@ -160,6 +155,17 @@ def checkout(request):
                     current_method = DeliveryMethod.objects.filter(pk=method.pk, is_active=True).first()
                     if not current_method or current_method.price < 0:
                         raise ValueError('Способ доставки недоступен. Выберите другой в корзине.')
+                    preorder_lines = [item for item in verified_cart['lines'] if item['is_preorder']]
+                    if preorder_lines:
+                        variant_ids = sorted({item['variant'].pk for item in preorder_lines})
+                        list(ProductVariant.objects.select_for_update().filter(pk__in=variant_ids).order_by('pk'))
+                        taken = open_preorder_map({item['product'].pk for item in preorder_lines})
+                        for item in preorder_lines:
+                            already = taken.get((item['product'].pk, item['size']), 0)
+                            if already + item['quantity'] > MAX_OPEN_PREORDER_PER_VARIANT:
+                                raise ValueError(
+                                    f'Предзаказ «{item["product"].title}», размер {item["size"]}, уже набран. Уменьшите количество.'
+                                )
                     for item in verified_cart['lines']:
                         if item['is_preorder']:
                             continue

@@ -1,3 +1,4 @@
+import io
 import warnings
 
 from django.core.exceptions import ValidationError
@@ -12,6 +13,35 @@ ALLOWED_IMAGE_TYPES = {
     'PNG': 'image/png',
     'WEBP': 'image/webp',
 }
+
+
+def _encode_clean(image):
+    """Save a new file without the original metadata."""
+    cleaned = io.BytesIO()
+    if image.format == 'JPEG':
+        working = image.convert('RGB') if image.mode != 'RGB' else image
+        working.save(cleaned, format='JPEG', quality=88, optimize=True)
+        return cleaned.getvalue(), '.jpg', 'image/jpeg'
+    if image.format == 'PNG':
+        working = image if image.mode in ('RGB', 'RGBA', 'P') else image.convert('RGBA')
+        working.save(cleaned, format='PNG', optimize=True)
+        return cleaned.getvalue(), '.png', 'image/png'
+    if image.format == 'WEBP':
+        working = image if image.mode in ('RGB', 'RGBA') else image.convert('RGB')
+        working.save(cleaned, format='WEBP', quality=88, method=4)
+        return cleaned.getvalue(), '.webp', 'image/webp'
+    raise ValidationError('Поддерживаются только JPG, PNG и WebP.')
+
+
+def _replace_upload(uploaded, payload, suffix, content_type):
+    original_name = getattr(uploaded, 'name', 'image') or 'image'
+    stem = original_name.rsplit('/', 1)[-1].rsplit('.', 1)[0] or 'image'
+    uploaded.file = io.BytesIO(payload)
+    uploaded.size = len(payload)
+    uploaded.name = f'{stem}{suffix}'
+    if hasattr(uploaded, 'content_type'):
+        uploaded.content_type = content_type
+    uploaded.seek(0)
 
 
 def validate_product_image(uploaded):
@@ -35,9 +65,14 @@ def validate_product_image(uploaded):
                 if image.width * image.height > MAX_IMAGE_PIXELS:
                     raise ValidationError('Изображение не должно содержать более 24 мегапикселей.')
                 image.verify()
+        uploaded.seek(0)
+        with Image.open(uploaded) as image:
+            image.load()
+            payload, suffix, cleaned_type = _encode_clean(image)
     except ValidationError:
         raise
     except (Image.DecompressionBombError, Image.DecompressionBombWarning, UnidentifiedImageError, OSError, ValueError) as exc:
         raise ValidationError('Загрузите корректное изображение JPG, PNG или WebP.') from exc
     finally:
         uploaded.seek(0)
+    _replace_upload(uploaded, payload, suffix, cleaned_type)

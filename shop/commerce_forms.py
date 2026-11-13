@@ -1,3 +1,5 @@
+import re
+
 from django import forms
 from .models import Order
 
@@ -18,8 +20,9 @@ class CheckoutForm(forms.Form):
 
     def clean_phone(self):
         value = self.cleaned_data['phone'].strip()
-        if len(value) < 6:
-            raise forms.ValidationError('Введите телефон для подтверждения заказа.')
+        digits = re.sub(r'\D', '', value)
+        if not 10 <= len(digits) <= 15:
+            raise forms.ValidationError('Введите телефон: от 10 до 15 цифр, можно с +, пробелами и скобками.')
         return value
 
     def clean(self):

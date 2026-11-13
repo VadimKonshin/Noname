@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% block title %}{{ brand.name }} — NoName{% endblock %}
+{% block content %}
+<section class="catalog-intro container">
+  <div class="eyebrow"><span class="tiny-dot"></span> BRAND / NONAME</div>
+  <div class="catalog-title-row">
+    <h1>{{ brand.name }}<span class="heading-period">.</span></h1>
+    <span class="count-label">{{ products|length }} ПРЕДМ.</span>
+  </div>
+  {% if brand.description %}
+    <p>{{ brand.description|linebreaksbr }}</p>
+  {% else %}
+    <p>Независимый бренд на NoName. Вещи ниже — то, что сейчас можно смотреть и заказывать.</p>
+  {% endif %}
+</section>
+
+<section class="container catalog-content">
+  {% if products %}
+    <div class="product-grid catalog-grid">
+      {% for product in products %}{% include 'includes/product_card.html' %}{% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-panel">
+      <span class="empty-symbol">∅</span>
+      <h3>Пока без опубликованных вещей.</h3>
+      <p>Когда бренд выложит модели, они появятся здесь.</p>
+      <a href="{% url 'catalog' %}" class="btn btn-dark">В каталог ↗</a>
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

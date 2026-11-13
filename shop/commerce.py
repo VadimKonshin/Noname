@@ -2,14 +2,34 @@
 from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import F, Q
-from .models import Order, Product, ProductVariant
+from django.db.models import F, Sum
+from .models import Order, OrderItem, Product, ProductVariant
 
 CART_SESSION_KEY = 'pustota_cart'
 DELIVERY_SESSION_KEY = 'noname_delivery_id'
 MAX_PER_VARIANT = 10
 MAX_TOTAL_ITEMS = 50
+MAX_OPEN_PREORDER_PER_VARIANT = 10
 PREORDER_SUFFIX = ':preorder'
+
+
+def open_preorder_map(product_ids):
+    """Units already accepted for open preorders, keyed by product and size."""
+    if not product_ids:
+        return {}
+    rows = (
+        OrderItem.objects.filter(product_id__in=product_ids, is_preorder=True)
+        .exclude(order__status=Order.CANCELLED)
+        .values('product_id', 'size')
+        .annotate(total=Sum('quantity'))
+    )
+    return {(row['product_id'], row['size']): row['total'] or 0 for row in rows}
+
+
+def preorder_room(product_id, size, taken=None):
+    if taken is None:
+        taken = open_preorder_map([product_id])
+    return MAX_OPEN_PREORDER_PER_VARIANT - taken.get((product_id, size), 0)
 
 
 def _key(product_id, size, is_preorder=False):
@@ -37,15 +57,13 @@ def get_cart(request):
     if not isinstance(raw, dict):
         raw = {}
     identifiers = {parsed[0] for key in raw if (parsed := _parse_key(key))}
-    products = Product.objects.filter(
-        Q(brand__isnull=True) | Q(brand__is_deleted=False),
+    products = Product.objects.public().filter(
         pk__in=identifiers,
         price__gt=0,
-        is_published=True,
         is_available=True,
-        is_deleted=False,
     ).select_related('brand').prefetch_related('images', 'variants')
     available = {product.pk: product for product in products}
+    preorder_taken = open_preorder_map(available)
     cleaned = {}
     lines = []
     subtotal = Decimal('0.00')
@@ -64,7 +82,10 @@ def get_cart(request):
         if is_preorder:
             if not product.allow_preorder or variant.stock_quantity != 0:
                 continue
-            qty = raw_qty
+            room = preorder_room(product.pk, size, preorder_taken)
+            if room <= 0:
+                continue
+            qty = min(raw_qty, room)
         else:
             if variant.stock_quantity <= 0 or raw_qty > variant.stock_quantity:
                 continue
@@ -118,6 +139,8 @@ def put(request, product, size, qty, is_preorder=False):
     new_quantity = qty + previous
     if new_quantity > MAX_PER_VARIANT or cart['count'] + qty > MAX_TOTAL_ITEMS:
         return False
+    if is_preorder and new_quantity > preorder_room(product.pk, size):
+        return False
     if not is_preorder and new_quantity > variant.stock_quantity:
         return False
     raw[key] = new_quantity
@@ -140,6 +163,8 @@ def set_quantity(request, product_id, size, qty, is_preorder=False):
         line = next((item for item in cart['lines'] if item['key'] == key), None)
         if line is None or qty > line['variant'].stock_quantity:
             return False
+    if qty and is_preorder and qty > preorder_room(product_id, size):
+        return False
     if qty == 0:
         raw.pop(key, None)
     else:
@@ -158,16 +183,12 @@ def update_order_status(order_id, status):
             raise ValidationError('Отменённый заказ нельзя открыть повторно.')
         if status == Order.CANCELLED and order.status != Order.CANCELLED:
             for item in order.items.all():
-                if item.is_preorder or item.product is None:
+                if item.is_preorder or item.product_id is None:
                     continue
-                variant, _ = ProductVariant.objects.get_or_create(
-                    product=item.product,
+                ProductVariant.objects.filter(
+                    product_id=item.product_id,
                     size=item.size,
-                    defaults={'stock_quantity': 0},
-                )
-                ProductVariant.objects.filter(pk=variant.pk).update(
-                    stock_quantity=F('stock_quantity') + item.quantity,
-                )
+                ).update(stock_quantity=F('stock_quantity') + item.quantity)
         order.status = status
         order.save(update_fields=['status', 'updated_at'])
     return order

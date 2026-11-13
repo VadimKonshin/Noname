@@ -290,6 +290,36 @@ class CommerceTests(TestCase):
         order.refresh_from_db()
         self.assertEqual(order.status, Order.CANCELLED)
 
+    def test_cancel_does_not_recreate_deleted_variant(self):
+        order = self._create_order()
+        ProductVariant.objects.filter(product=self.shirt, size='M').delete()
+        self.client.force_login(self.staff)
+        self.client.post(reverse('change_order_status', args=[order.pk]), {'status': Order.CANCELLED})
+        self.assertFalse(ProductVariant.objects.filter(product=self.shirt, size='M').exists())
+
+    def test_preorder_quantity_is_capped_across_orders(self):
+        self.shirt.allow_preorder = True
+        self.shirt.save(update_fields=['allow_preorder'])
+        ProductVariant.objects.filter(product=self.shirt, size='M').update(stock_quantity=0)
+        self._add(quantity=6, order_type='preorder')
+        self._choose_delivery()
+        self.client.get(reverse('checkout'))
+        result = self.client.post(reverse('checkout'), self._checkout_payload())
+        self.assertEqual(result.status_code, 302)
+        self._add(quantity=5, order_type='preorder')
+        self.assertEqual(get_cart(self.client)['count'], 0)
+        self._add(quantity=4, order_type='preorder')
+        self.assertEqual(get_cart(self.client)['count'], 4)
+
+    def test_checkout_rejects_phone_without_enough_digits(self):
+        self._add()
+        self._choose_delivery()
+        self.client.get(reverse('checkout'))
+        response = self.client.post(reverse('checkout'), self._checkout_payload(phone='aaaaaa'))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Order.objects.count(), 0)
+        self.assertContains(response, 'цифр')
+
     def test_customer_cannot_change_status(self):
         order = self._create_order()
         response = self.client.post(reverse('change_order_status', args=[order.pk]), {'status': Order.CANCELLED})

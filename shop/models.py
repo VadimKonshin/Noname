@@ -1,11 +1,14 @@
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.db.models import Q
 from django.utils import timezone
 from django.urls import reverse
 from django.utils.text import slugify
+from .brand_names import brand_name_key
 from .validators import validate_product_image
 
 
@@ -25,6 +28,18 @@ class Brand(models.Model):
 
     def __str__(self):
         return self.name
+
+    def clean(self):
+        super().clean()
+        key = brand_name_key(self.name)
+        if not key:
+            return
+        clash = next((
+            other.name for other in Brand.objects.exclude(pk=self.pk).only('name')
+            if brand_name_key(other.name) == key
+        ), None)
+        if clash:
+            raise ValidationError({'name': 'Бренд с таким или очень похожим названием уже есть.'})
 
     def save(self, *args, **kwargs):
         if not self.slug:
@@ -65,6 +80,15 @@ class BrandManager(models.Model):
 SIZE_ORDER = ('XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL')
 
 
+class ProductQuerySet(models.QuerySet):
+    def public(self):
+        return self.filter(
+            Q(brand__isnull=True) | Q(brand__is_deleted=False, brand__is_active=True),
+            is_published=True,
+            is_deleted=False,
+        )
+
+
 class Product(models.Model):
     brand = models.ForeignKey(Brand, on_delete=models.PROTECT, related_name='products', verbose_name='Бренд', null=True, blank=True)
     title = models.CharField('Название', max_length=160)
@@ -82,6 +106,8 @@ class Product(models.Model):
     deleted_at = models.DateTimeField('Дата удаления', null=True, blank=True)
     created_at = models.DateTimeField('Добавлен', auto_now_add=True)
     updated_at = models.DateTimeField('Изменён', auto_now=True)
+
+    objects = ProductQuerySet.as_manager()
 
     class Meta:
         ordering = ['-created_at']
@@ -128,22 +154,22 @@ class Product(models.Model):
 
     @property
     def all_size_options(self):
-        variants = {variant.size: variant for variant in self.variants.all()}
-        ladder = list(SIZE_ORDER)
-        for size in variants:
-            if size not in ladder:
-                ladder.append(size)
+        def sort_key(variant):
+            try:
+                return (0, SIZE_ORDER.index(variant.size))
+            except ValueError:
+                return (1, variant.size.casefold())
+
         options = []
-        for size in ladder:
-            variant = variants.get(size)
-            in_stock = bool(variant and variant.stock_quantity > 0)
-            is_preorder = bool(variant and not in_stock and self.allow_preorder)
+        for variant in sorted(self.variants.all(), key=sort_key):
+            in_stock = variant.stock_quantity > 0
+            is_preorder = not in_stock and self.allow_preorder
             options.append({
-                'name': size,
+                'name': variant.size,
                 'available': bool(self.is_available and not self.is_deleted and (in_stock or is_preorder)),
                 'in_stock': in_stock,
                 'is_preorder': is_preorder,
-                'stock_quantity': variant.stock_quantity if variant else 0,
+                'stock_quantity': variant.stock_quantity,
             })
         return options
 

@@ -39,13 +39,13 @@ def product_permission_required(permission):
         @login_required
         @wraps(view)
         def wrapped(request, *args, **kwargs):
-            if request.user.has_perm(permission):
+            manager = get_brand_manager(request.user)
+            if manager is not None and not request.user.is_superuser:
+                request.brand_manager = manager
+            elif request.user.has_perm(permission):
                 request.brand_manager = None
             else:
-                manager = get_brand_manager(request.user)
-                if manager is None:
-                    raise PermissionDenied
-                request.brand_manager = manager
+                raise PermissionDenied
             return view(request, *args, **kwargs)
         return wrapped
     return decorator
