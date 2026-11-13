@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block title %}Сообщения {{ brand.name }} — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page">
+  <div class="eyebrow"><span class="tiny-dot"></span> КАБИНЕТ / {{ brand.name }}</div>
+  <h1 class="commerce-heading">СООБЩЕНИЯ<span class="heading-period">.</span></h1>
+  <p class="page-lead">Письма покупателям с сайта не уходят. Ответьте сами на почту из сообщения.</p>
+  {% include 'includes/brand_nav.html' with active_page='messages' %}
+  <div class="table-scroll">
+    <table class="store-table">
+      <thead>
+        <tr><th>Дата</th><th>От кого</th><th>Вещь</th><th>Текст</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for note in page %}
+          <tr>
+            <td>{{ note.created_at|date:'d.m.Y H:i' }}</td>
+            <td>
+              <strong>{{ note.sender_name }}</strong>
+              <small class="table-muted">{{ note.sender_email }}</small>
+            </td>
+            <td>{% if note.product %}{{ note.product.title }}{% else %}—{% endif %}</td>
+            <td>{{ note.body|truncatechars:80 }}</td>
+            <td>
+              <a class="table-link" href="{% url 'brand_message_detail' note.pk %}">
+                {% if note.read_at %}Открыть{% else %}Новое{% endif %} ↗
+              </a>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5">Пока никто не писал.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include 'includes/pagination.html' %}
+</section>
+{% endblock %}

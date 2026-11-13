@@ -8,15 +8,16 @@ from django.db.models import Q
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
+from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods
 from django_ratelimit.decorators import ratelimit
 from .access import brand_manager_required, get_brand_manager, get_scoped_object_or_404, product_permission_required
 from .forms import (
-    BrandAuthenticationForm, BrandCreateForm, BrandDeleteForm, BrandProfileForm,
+    BrandAuthenticationForm, BrandCreateForm, BrandDeleteForm, BrandMessageForm, BrandProfileForm,
     BrandManagerRegisterForm, ProductForm, ProductVariantFormSet, RegisterForm,
 )
 from .commerce import MAX_OPEN_PREORDER_PER_VARIANT
-from .models import Brand, BrandManager, Product, ProductImage
+from .models import Brand, BrandManager, BrandMessage, Product, ProductImage
 from .validators import validate_product_image
 
 
@@ -33,10 +34,82 @@ def info_page(request, page):
     return render(request, 'shop/info_page.html', {'page': page})
 
 
+def public_brand(slug):
+    return get_object_or_404(Brand, slug=slug, is_active=True, is_deleted=False)
+
+
+def message_product(brand, slug):
+    slug = (slug or '').strip()[:180]
+    if not slug:
+        return None
+    return public_products().filter(brand=brand, slug=slug).first()
+
+
 def brand_storefront(request, slug):
-    brand = get_object_or_404(Brand, slug=slug, is_active=True, is_deleted=False)
+    brand = public_brand(slug)
     products = public_products().filter(brand=brand).select_related('brand').prefetch_related('images', 'variants')
     return render(request, 'shop/brand_storefront.html', {'brand': brand, 'products': products})
+
+
+@ratelimit(group='brand_message', key='ip', rate='8/h', method='POST')
+@require_http_methods(['GET', 'POST'])
+def brand_message(request, slug):
+    brand = public_brand(slug)
+    posted_product = request.POST.get('product') if request.method == 'POST' else request.GET.get('product')
+    product = message_product(brand, posted_product)
+    user = request.user if request.user.is_authenticated else None
+    lock_email = bool(user and user.email)
+    initial = {}
+    if user:
+        initial['sender_name'] = (user.get_full_name() or user.username)[:120]
+        if lock_email:
+            initial['sender_email'] = user.email
+    form = BrandMessageForm(
+        request.POST if request.method == 'POST' else None,
+        initial=initial,
+        lock_email=lock_email,
+    )
+    if request.method == 'POST' and form.is_valid():
+        BrandMessage.objects.create(
+            brand=brand,
+            product=product,
+            user=user,
+            sender_name=form.cleaned_data['sender_name'],
+            sender_email=user.email.lower() if lock_email else form.cleaned_data['sender_email'],
+            body=form.cleaned_data['body'],
+        )
+        messages.success(
+            request,
+            'Сообщение у менеджера бренда. Письмо само не отправляется: ответ придёт на указанную почту, когда менеджер его прочитает.',
+        )
+        return redirect('brand_storefront', slug=brand.slug)
+    return render(request, 'shop/brand_message.html', {'brand': brand, 'product': product, 'form': form})
+
+
+@brand_manager_required
+@require_GET
+def brand_messages(request):
+    brand = request.brand_manager.brand
+    if brand is None:
+        return redirect('brand_create')
+    page = Paginator(
+        brand.messages.select_related('product'),
+        20,
+    ).get_page(request.GET.get('page'))
+    return render(request, 'shop/brand_messages.html', {'brand': brand, 'page': page})
+
+
+@brand_manager_required
+@require_GET
+def brand_message_detail(request, pk):
+    brand = request.brand_manager.brand
+    if brand is None:
+        return redirect('brand_create')
+    note = get_object_or_404(BrandMessage.objects.select_related('product'), pk=pk, brand=brand)
+    if note.read_at is None:
+        note.read_at = timezone.now()
+        note.save(update_fields=['read_at'])
+    return render(request, 'shop/brand_message_detail.html', {'brand': brand, 'note': note})
 
 
 def home(request):

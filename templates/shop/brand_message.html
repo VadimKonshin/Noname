@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% block title %}Написать {{ brand.name }} — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page">
+  <div class="eyebrow"><span class="tiny-dot"></span> BRAND / СООБЩЕНИЕ</div>
+  <h1 class="commerce-heading">НАПИСАТЬ {{ brand.name }}<span class="heading-period">.</span></h1>
+  <p class="page-lead">Сообщение увидит менеджер этого бренда. Сайт письмо не отправляет: ответ придёт на почту, которую вы оставите.</p>
+  <form method="post" class="checkout-form" novalidate>
+    {% csrf_token %}
+    {% if product %}<input type="hidden" name="product" value="{{ product.slug }}">{% endif %}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    <div class="form-section">
+      {% if product %}
+        <p class="form-hint">Вопрос про вещь «{{ product.title }}».</p>
+      {% endif %}
+      {% for field in form %}
+        <div class="form-field">
+          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+          {% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}
+          {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
+        </div>
+      {% endfor %}
+    </div>
+    <button type="submit" class="btn btn-dark">Отправить менеджеру <span>↗</span></button>
+  </form>
+  <a class="back-catalog" href="{% url 'brand_storefront' brand.slug %}">← К бренду</a>
+</section>
+{% endblock %}
