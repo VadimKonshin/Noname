@@ -102,6 +102,8 @@ class StoreTests(TestCase):
                 self.assertRedirects(response, item.get_absolute_url())
                 self.assertEqual(item.images.count(), 2)
                 self.assertTrue(item.cover.name)
+                with Image.open(item.cover.path) as cover:
+                    cover.load()
 
     def test_bad_gallery_image_rejected(self):
         self.client.force_login(self.staff)
@@ -144,7 +146,7 @@ class StoreTests(TestCase):
         self.assertNotContains(selected, self.product.title)
         self.assertContains(self.client.get(reverse('home')), other.name)
 
-    def test_size_buttons_start_unselected_and_missing_are_disabled(self):
+    def test_size_buttons_start_unselected_and_only_real_sizes_show(self):
         self.product.variants.all().delete()
         ProductVariant.objects.bulk_create([
             ProductVariant(product=self.product, size='M', stock_quantity=2),
@@ -152,13 +154,34 @@ class StoreTests(TestCase):
         ])
         detail = self.client.get(self.product.get_absolute_url())
         self.assertContains(detail, 'data-size-picker')
-        self.assertContains(detail, 'value="S" data-preorder="0" disabled')
         self.assertContains(detail, 'value="M"')
+        self.assertContains(detail, 'value="XL"')
+        self.assertNotContains(detail, 'value="S"')
         self.assertNotContains(detail, 'name="size" value="M" checked')
         self.assertContains(detail, 'ВЫБЕРИ РАЗМЕР')
         catalog = self.client.get(reverse('catalog'))
-        self.assertContains(catalog, 'data-size-picker')
-        self.assertContains(catalog, 'name="go_to_cart" value="1"')
+        self.assertNotContains(catalog, 'data-size-picker')
+        self.assertContains(catalog, 'СМОТРЕТЬ')
+        self.assertContains(catalog, reverse('brand_storefront', args=[self.brand.slug]))
+
+    def test_inactive_brand_hides_products(self):
+        self.brand.is_active = False
+        self.brand.save(update_fields=['is_active'])
+        self.assertEqual(self.client.get(self.product.get_absolute_url()).status_code, 404)
+        self.assertNotContains(self.client.get(reverse('catalog')), self.product.title)
+        self.assertNotContains(self.client.get(reverse('home')), self.product.title)
+        self.assertEqual(self.client.get(reverse('brand_storefront', args=[self.brand.slug])).status_code, 404)
+        self.assertEqual(self.client.post(reverse('cart_add', args=[self.product.slug]), {'size': 'M', 'quantity': 1}).status_code, 404)
+
+    def test_similar_brand_name_is_rejected(self):
+        spoof = Brand(name='ПУСТ' + 'O' + 'ТА', slug='lookalike-brand')
+        with self.assertRaises(ValidationError):
+            spoof.full_clean()
+
+    def test_brand_page_lists_its_products(self):
+        response = self.client.get(reverse('brand_storefront', args=[self.brand.slug]))
+        self.assertContains(response, self.product.title)
+        self.assertContains(response, self.brand.name)
 
 
 class SecurityTests(TestCase):
@@ -219,6 +242,11 @@ class SecurityTests(TestCase):
         for _ in range(10):
             self.client.post(reverse('checkout'), {})
         self.assertEqual(self.client.post(reverse('checkout'), {}).status_code, 429)
+
+    def test_storefront_sets_content_security_policy(self):
+        response = self.client.get(reverse('home'))
+        self.assertIn("default-src 'self'", response['Content-Security-Policy'])
+        self.assertFalse(self.client.get('/admin/login/').has_header('Content-Security-Policy'))
 
 
 @override_settings(RATELIMIT_ENABLE=False)
@@ -388,3 +416,22 @@ class BrandAccountTests(TestCase):
         self.assertEqual(self.client.get(self.product.get_absolute_url()).status_code, 404)
         self.assertEqual(self.client.get(reverse('brand_products')).status_code, 403)
         self.assertEqual(self.client.get(reverse('brand_deleted')).status_code, 200)
+
+    def test_product_permission_does_not_unlock_other_brands(self):
+        from django.contrib.auth.models import Permission
+        permission = Permission.objects.get(codename='add_product', content_type__app_label='shop')
+        self.manager_user.user_permissions.add(permission)
+        self.client.force_login(self.manager_user)
+        self.assertNotIn('brand', self.client.get(reverse('product_create')).context['form'].fields)
+        self.client.post(reverse('product_create'), {
+            'brand': self.other_brand.pk,
+            'title': 'Scoped product',
+            'description': 'Still own brand',
+            'price': '4500',
+            'color': 'Чёрный',
+            'is_available': 'on',
+            'is_published': 'on',
+            **variant_payload(),
+        })
+        product = Product.objects.get(title='Scoped product')
+        self.assertEqual(product.brand, self.brand)

@@ -59,10 +59,7 @@ class BrandCreateForm(forms.ModelForm):
         }
 
     def clean_name(self):
-        name = self.cleaned_data['name'].strip()
-        if Brand.objects.filter(name__iexact=name).exists():
-            raise forms.ValidationError('Бренд с таким названием уже существует.')
-        return name
+        return self.cleaned_data['name'].strip()
 
 
 class BrandDeleteForm(forms.Form):

@@ -5,7 +5,7 @@
 <div class="container detail-breadcrumb">
   <a href="{% url 'home' %}">Главная</a><span>/</span>
   <a href="{% url 'catalog' %}">Каталог</a><span>/</span>
-  {{ product.brand.name|default:'Бренд' }}<span>/</span><span>{{ product.title }}</span>
+  {% if product.brand %}<a href="{% url 'brand_storefront' product.brand.slug %}">{{ product.brand.name }}</a>{% else %}Бренд{% endif %}<span>/</span><span>{{ product.title }}</span>
 </div>
 <section class="container detail-layout">
   <div class="detail-gallery">
@@ -54,7 +54,7 @@
       <span>БРЕНД</span>
       <strong>
         {% if product.brand %}
-          <a href="{% url 'catalog' %}?brand={{ product.brand.slug|urlencode }}">{{ product.brand.name }} ↗</a>
+          <a href="{% url 'brand_storefront' product.brand.slug %}">{{ product.brand.name }} ↗</a>
         {% else %}
           Не указан
         {% endif %}
@@ -67,15 +67,18 @@
         {% csrf_token %}
         <input type="hidden" name="order_type" value="stock">
         <fieldset class="sizes-fieldset detail-sizes">
-          <legend>ВЫБЕРИ РАЗМЕР <small>— НЕАКТИВНЫЕ РАЗМЕРЫ ОТСУТСТВУЮТ</small></legend>
+          <legend>ВЫБЕРИ РАЗМЕР <small>— ТОЛЬКО РАЗМЕРЫ ЭТОЙ ВЕЩИ</small></legend>
           <div class="size-grid">
             {% for option in product.all_size_options %}
               <label class="size-choice">
                 <input type="radio" name="size" value="{{ option.name }}" data-preorder="{% if option.is_preorder %}1{% else %}0{% endif %}" {% if not option.available %}disabled{% endif %}>
-                <span>{{ option.name }}{% if option.is_preorder %}<small> под заказ</small>{% endif %}</span>
+                <span>{{ option.name }}{% if option.is_preorder %}*{% endif %}</span>
               </label>
+            {% empty %}
+              <p class="size-help">Размеры пока не заданы.</p>
             {% endfor %}
           </div>
+          {% if product.allow_preorder %}<p class="size-help">Звёздочка — размер шьётся под заказ и не списывает склад.</p>{% endif %}
           <p class="size-help" data-size-status aria-live="polite">Размер пока не выбран</p>
         </fieldset>
         <div class="quantity-line">

@@ -14,6 +14,7 @@ from .forms import (
     BrandAuthenticationForm, BrandCreateForm, BrandDeleteForm,
     BrandManagerRegisterForm, ProductForm, ProductVariantFormSet, RegisterForm,
 )
+from .commerce import MAX_OPEN_PREORDER_PER_VARIANT
 from .models import Brand, BrandManager, Product, ProductImage
 from .validators import validate_product_image
 
@@ -22,11 +23,13 @@ GALLERY_MAX_COUNT = 8
 
 
 def public_products():
-    return Product.objects.filter(
-        Q(brand__isnull=True) | Q(brand__is_deleted=False),
-        is_published=True,
-        is_deleted=False,
-    )
+    return Product.objects.public()
+
+
+def brand_storefront(request, slug):
+    brand = get_object_or_404(Brand, slug=slug, is_active=True, is_deleted=False)
+    products = public_products().filter(brand=brand).select_related('brand').prefetch_related('images', 'variants')
+    return render(request, 'shop/brand_storefront.html', {'brand': brand, 'products': products})
 
 
 def home(request):
@@ -229,6 +232,7 @@ def save_product(request, product=None):
     return render(request, 'shop/product_form.html', {
         'form': form, 'variant_formset': variant_formset, 'product': product, 'max_gallery': GALLERY_MAX_COUNT,
         'managed_brand': manager.brand if manager else None,
+        'preorder_cap': MAX_OPEN_PREORDER_PER_VARIANT,
     })
 
 

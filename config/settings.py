@@ -35,6 +35,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django_ratelimit.middleware.RatelimitMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'shop.middleware.ContentSecurityPolicyMiddleware',
 ]
 ROOT_URLCONF = 'config.urls'
 TEMPLATES = [
