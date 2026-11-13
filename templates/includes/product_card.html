@@ -1,10 +1,10 @@
-{% load static %}
+{% load shop_images static %}
 <article class="product-card">
   <a class="product-image-link" href="{{ product.get_absolute_url }}" aria-label="Открыть {{ product.title }}">
     <div class="product-visual">
       {% with photo=product.photo %}
         {% if photo %}
-          <img src="{{ photo.url }}" alt="{{ product.title }}" loading="lazy">
+          <img src="{{ photo|listing_src }}" alt="{{ product.title }}" loading="lazy" decoding="async">
         {% else %}
           <img src="{% static 'img/placeholder.svg' %}" alt="Фото скоро появится" loading="lazy">
         {% endif %}

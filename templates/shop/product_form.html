@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load shop_images %}
 {% block title %}{% if product %}Редактирование товара{% else %}Новый товар{% endif %} — NoName{% endblock %}
 {% block content %}
 <section class="container admin-section">
@@ -83,7 +84,7 @@
 
         <div class="form-section">
           <h2>04 / Фотографии</h2>
-          <p class="form-hint">JPG, PNG или WebP. До 8 МБ на изображение. Добавь обложку и до {{ max_gallery }} дополнительных фотографий.</p>
+          <p class="form-hint">JPG, PNG или WebP, до 8 МБ. Сайт сохранит уменьшенную WebP-копию без данных камеры. Добавь обложку и до {{ max_gallery }} дополнительных фотографий.</p>
           <div class="form-field">
             <label for="{{ form.cover.id_for_label }}">Главная фотография</label>
             {{ form.cover }}
@@ -94,14 +95,14 @@
             <input type="file" id="gallery_images" name="gallery_images" accept="image/jpeg,image/png,image/webp" multiple>
             <small id="gallery-file-count">Можно выбрать сразу несколько файлов.</small>
           </div>
-          {% if product and product.images.exists %}
+          {% if product and product.images.all %}
             <div class="current-photos">
               <h3>Загруженные фотографии</h3>
               <p class="form-hint">Отметь изображения, которые хочешь удалить при сохранении.</p>
               <div class="existing-images">
                 {% for photo in product.images.all %}
                   <label class="existing-image">
-                    <img src="{{ photo.image.url }}" alt="Дополнительное фото">
+                    <img src="{{ photo.image|listing_src }}" alt="Дополнительное фото" loading="lazy" decoding="async">
                     <span><input type="checkbox" name="delete_images" value="{{ photo.pk }}"> Удалить</span>
                   </label>
                 {% endfor %}

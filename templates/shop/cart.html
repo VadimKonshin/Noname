@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% load static %}
+{% load shop_images static %}
 {% block title %}Корзина — NoName{% endblock %}
 {% block content %}
 <section class="container commerce-page noname-cart">
@@ -15,7 +15,7 @@
           <a href="{{ item.product.get_absolute_url }}" class="basket-photo">
             {% with photo=item.product.photo %}
               {% if photo %}
-                <img src="{{ photo.url }}" alt="{{ item.product.title }}">
+                <img src="{{ photo|listing_src }}" alt="{{ item.product.title }}" loading="lazy" decoding="async">
               {% else %}
                 <img src="{% static 'img/placeholder.svg' %}" alt="Фото отсутствует">
               {% endif %}

@@ -2,13 +2,18 @@
 import io
 import tempfile
 from decimal import Decimal
+from pathlib import Path
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from PIL import Image
+from .images import card_storage_name
 from .models import Brand, BrandManager, BrandMessage, Product, ProductImage, ProductVariant
 
 
@@ -19,6 +24,18 @@ def sample_png(name='test.png'):
     output = io.BytesIO()
     Image.new('RGB', (30, 30), color='#333333').save(output, format='PNG')
     return SimpleUploadedFile(name, output.getvalue(), content_type='image/png')
+
+
+def sample_jpeg(name='wide.jpg', size=(2000, 1400), exif_orientation=None):
+    output = io.BytesIO()
+    image = Image.new('RGB', size, color='#445566')
+    kwargs = {'format': 'JPEG', 'quality': 90}
+    if exif_orientation:
+        exif = Image.Exif()
+        exif[274] = exif_orientation
+        kwargs['exif'] = exif.tobytes()
+    image.save(output, **kwargs)
+    return SimpleUploadedFile(name, output.getvalue(), content_type='image/jpeg')
 
 
 def variant_payload(product=None):
@@ -131,6 +148,67 @@ class StoreTests(TestCase):
                 self.product.refresh_from_db()
                 self.assertEqual(self.product.title, 'Изменённое название')
                 self.assertFalse(self.product.images.exists())
+
+    def test_large_upload_is_display_webp_and_lists_use_the_card(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with override_settings(MEDIA_ROOT=temp):
+                item = Product.objects.create(
+                    brand=self.brand, title='Широкая фотография', description='Тест размера', price=Decimal('1500.00'),
+                )
+                item.cover.save('camera.jpg', sample_jpeg(), save=True)
+                with Image.open(item.cover.path) as cover:
+                    self.assertEqual(cover.format, 'WEBP')
+                    self.assertLessEqual(max(cover.size), 1600)
+                    self.assertGreater(max(cover.size), 720)
+                card_name = card_storage_name(item.cover.name)
+                self.assertTrue(default_storage.exists(card_name))
+                with Image.open(default_storage.path(card_name)) as card:
+                    self.assertLessEqual(max(card.size), 720)
+                catalog = self.client.get(reverse('catalog'))
+                self.assertContains(catalog, Path(card_name).name)
+                self.assertNotContains(catalog, Path(item.cover.name).name)
+                detail = self.client.get(item.get_absolute_url())
+                self.assertContains(detail, Path(item.cover.name).name)
+                self.assertContains(detail, 'fetchpriority="high"')
+                ProductVariant.objects.create(product=item, size='M', stock_quantity=3)
+                self.client.post(reverse('cart_add', args=[item.slug]), {'size': 'M', 'quantity': 1})
+                cart = self.client.get(reverse('cart'))
+                self.assertContains(cart, Path(card_name).name)
+                item.cover.delete(save=True)
+                self.assertFalse(default_storage.exists(card_name))
+
+    def test_upload_applies_exif_orientation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with override_settings(MEDIA_ROOT=temp):
+                item = Product.objects.create(
+                    brand=self.brand, title='Повёрнутое фото', description='Тест', price=Decimal('1500.00'),
+                )
+                item.cover.save('turned.jpg', sample_jpeg('turned.jpg', size=(120, 40), exif_orientation=6), save=True)
+                with Image.open(item.cover.path) as cover:
+                    self.assertGreater(cover.size[1], cover.size[0])
+
+    def test_optimize_command_rewrites_legacy_jpeg_once(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with override_settings(MEDIA_ROOT=temp):
+                item = Product.objects.create(
+                    brand=self.brand, title='Старое фото', description='Тест', price=Decimal('1500.00'),
+                )
+                blob = io.BytesIO()
+                Image.new('RGB', (1800, 1000), '#223344').save(blob, format='JPEG', quality=90)
+                saved = default_storage.save('products/covers/legacy.jpg', ContentFile(blob.getvalue()))
+                Product.objects.filter(pk=item.pk).update(cover=saved)
+                call_command('optimize_product_images', stdout=io.StringIO())
+                item.refresh_from_db()
+                self.assertTrue(item.cover.name.endswith('.webp'))
+                self.assertFalse(default_storage.exists(saved))
+                with Image.open(item.cover.path) as cover:
+                    self.assertEqual(cover.format, 'WEBP')
+                    self.assertLessEqual(max(cover.size), 1600)
+                self.assertTrue(default_storage.exists(card_storage_name(item.cover.name)))
+                stored = item.cover.name
+                call_command('optimize_product_images', stdout=io.StringIO())
+                item.refresh_from_db()
+                self.assertEqual(item.cover.name, stored)
 
     def test_unique_slugs(self):
         another = Product.objects.create(title=self.product.title, description='Другая', price=2000)

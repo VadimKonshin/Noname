@@ -9,6 +9,7 @@ from django.utils import timezone
 from django.urls import reverse
 from django.utils.text import slugify
 from .brand_names import brand_name_key
+from .images import PreparedImageField
 from .validators import validate_product_image
 
 
@@ -99,7 +100,7 @@ class Product(models.Model):
     fit = models.CharField('Посадка', max_length=120, blank=True)
     care = models.TextField('Уход', blank=True)
     price = models.DecimalField('Цена, ₽', max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
-    cover = models.ImageField('Главное фото', upload_to='products/covers/', blank=True, validators=[validate_product_image])
+    cover = PreparedImageField('Главное фото', upload_to='products/covers/', blank=True, validators=[validate_product_image])
     color = models.CharField('Цвет', max_length=80, default='Чёрный')
     is_available = models.BooleanField('Доступен к заказу', default=True)
     allow_preorder = models.BooleanField('Разрешить предзаказ', default=False)
@@ -202,7 +203,7 @@ class ProductVariant(models.Model):
 
 class ProductImage(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='images', verbose_name='Товар')
-    image = models.ImageField('Фото', upload_to='products/gallery/', validators=[validate_product_image])
+    image = PreparedImageField('Фото', upload_to='products/gallery/', validators=[validate_product_image])
     alt_text = models.CharField('Описание фото', max_length=160, blank=True)
     sort_order = models.PositiveSmallIntegerField('Порядок', default=0)
 

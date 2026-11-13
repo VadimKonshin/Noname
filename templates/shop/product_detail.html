@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% load static %}
+{% load shop_images static %}
 {% block title %}{{ product.title }} — NoName{% endblock %}
 {% block content %}
 <div class="container detail-breadcrumb">
@@ -12,23 +12,23 @@
     <div class="detail-main-photo">
       {% with photo=product.photo %}
         {% if photo %}
-          <img id="gallery-main" src="{{ photo.url }}" alt="{{ product.title }}">
+          <img id="gallery-main" src="{{ photo.url }}" alt="{{ product.title }}" fetchpriority="high">
         {% else %}
           <img id="gallery-main" src="{% static 'img/placeholder.svg' %}" alt="Фото товара скоро появится">
         {% endif %}
       {% endwith %}
       <span class="detail-image-label">NONAME / CURATED LABELS</span>
     </div>
-    {% if product.cover or product.images.exists %}
+    {% if product.cover or product.images.all %}
       <div class="thumbnail-grid" aria-label="Фотографии товара">
         {% if product.cover %}
           <button type="button" class="thumb active" data-gallery-src="{{ product.cover.url }}" data-gallery-alt="{{ product.title }} — главное фото">
-            <img src="{{ product.cover.url }}" alt="Главное фото">
+            <img src="{{ product.cover|listing_src }}" alt="Главное фото" loading="lazy" decoding="async">
           </button>
         {% endif %}
         {% for photo in product.images.all %}
           <button type="button" class="thumb{% if not product.cover and forloop.first %} active{% endif %}" data-gallery-src="{{ photo.image.url }}" data-gallery-alt="{{ photo.alt_text|default:product.title }}">
-            <img src="{{ photo.image.url }}" alt="{{ photo.alt_text|default:product.title }}">
+            <img src="{{ photo.image|listing_src }}" alt="{{ photo.alt_text|default:product.title }}" loading="lazy" decoding="async">
           </button>
         {% endfor %}
       </div>

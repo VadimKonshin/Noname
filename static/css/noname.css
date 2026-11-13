@@ -1,6 +1,6 @@
 /* NoName v3 / dark underground design. Original site.css stays for layout compatibility. */
-@font-face {font-family:Oswald;src:url('../fonts/oswald.ttf') format('truetype');font-weight:200 700;font-style:normal;font-display:swap}
-@font-face {font-family:Manrope;src:url('../fonts/manrope.ttf') format('truetype');font-weight:200 800;font-style:normal;font-display:swap}
+@font-face {font-family:Oswald;src:url('../fonts/oswald.woff2') format('woff2');font-weight:200 700;font-style:normal;font-display:swap;unicode-range:U+0000-00FF,U+0100-024F,U+0400-04FF,U+2000-206F,U+20BD,U+2116}
+@font-face {font-family:Manrope;src:url('../fonts/manrope.woff2') format('woff2');font-weight:200 800;font-style:normal;font-display:swap;unicode-range:U+0000-00FF,U+0100-024F,U+0400-04FF,U+2000-206F,U+20BD,U+2116}
 :root {--paper:#0b0b0e;--ink:#e9e7e2;--dark:#161619;--line:#343438;--muted:#85858a;--red:#da5147;--font:Manrope,'Helvetica Neue',Arial,sans-serif;--display:Oswald,Manrope,'Arial Black',sans-serif}
 html,body {background:var(--paper);color:var(--ink)}
 body {letter-spacing:.005em}
