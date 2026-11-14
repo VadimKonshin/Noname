@@ -4,6 +4,7 @@ from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.core import mail
+from django.db import IntegrityError
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -31,7 +32,7 @@ class AccountEmailTests(TestCase):
         accepted = self.client.post(reverse('login'), {'username': 'buyer', 'password': self.password})
         self.assertRedirects(accepted, reverse('home'))
 
-    def test_confirmation_link_is_hashed_and_replaced_by_a_resend(self):
+    def test_confirmation_link_is_hashed_and_waits_for_the_button(self):
         self.client.post(reverse('register'), {
             'username': 'new_person', 'email': 'buyer@example.com',
             'password1': self.password, 'password2': self.password,
@@ -43,8 +44,13 @@ class AccountEmailTests(TestCase):
         self.assertNotEqual(stored.token_hash, raw)
         self.client.post(reverse('account_email_resend'))
         self.assertContains(self.client.get(first), 'недействительна')
-        self.client.get(mail_path(mail.outbox[-1].body))
+        fresh = mail_path(mail.outbox[-1].body)
+        self.assertContains(self.client.get(fresh), 'Подтвердить почту')
         user = User.objects.get(username='new_person')
+        self.assertIsNone(user.profile.email_verified_at)
+        self.assertIsNone(EmailToken.objects.get(user=user).used_at)
+        self.client.post(fresh)
+        user.profile.refresh_from_db()
         self.assertIsNotNone(user.profile.email_verified_at)
 
     def test_confirmation_link_expires(self):
@@ -94,7 +100,11 @@ class AccountEmailTests(TestCase):
         self.client.logout()
         self.client.post(reverse('login'), {'username': 'new@example.com', 'password': self.password})
         self.assertNotIn('_auth_user_id', self.client.session)
-        self.client.get(mail_path(mail.outbox[0].body))
+        link = mail_path(mail.outbox[0].body)
+        self.assertContains(self.client.get(link), 'Сохранить новую почту')
+        user.refresh_from_db()
+        self.assertEqual(user.email, 'buyer@example.com')
+        self.client.post(link)
         user.refresh_from_db()
         self.assertEqual(user.email, 'new@example.com')
         self.assertIsNotNone(user.profile.email_verified_at)
@@ -119,3 +129,38 @@ class AccountEmailTests(TestCase):
         user.profile.email_verified_at = timezone.now()
         user.profile.save(update_fields=['email_verified_at'])
         self.assertEqual(self.client.get(reverse('brand_dashboard')).status_code, 200)
+
+    def test_email_change_retires_an_unused_password_link(self):
+        user = User.objects.create_user('buyer', email='buyer@example.com', password=self.password)
+        self.client.post(reverse('password_reset'), {'email': 'buyer@example.com'})
+        reset_path = mail_path(mail.outbox[0].body)
+        self.client.force_login(user)
+        self.client.post(reverse('account_email'), {'password': self.password, 'email': 'new@example.com'})
+        self.client.post(mail_path(mail.outbox[-1].body))
+        refused = self.client.post(reset_path, {
+            'new_password1': 'AnotherPass#902', 'new_password2': 'AnotherPass#902',
+        })
+        self.assertContains(refused, 'недействительна')
+        self.assertFalse(self.client.login(username='buyer', password='AnotherPass#902'))
+        self.assertTrue(self.client.login(username='buyer', password=self.password))
+
+    def test_the_same_email_cannot_belong_to_two_accounts(self):
+        User.objects.create_user('buyer', email='buyer@example.com', password=self.password)
+        response = self.client.post(reverse('register'), {
+            'username': 'other', 'email': 'Buyer@example.com',
+            'password1': self.password, 'password2': self.password,
+        })
+        self.assertContains(response, 'уже зарегистрирован')
+        self.assertFalse(User.objects.filter(username='other').exists())
+        with self.assertRaises(IntegrityError):
+            User.objects.create_user('third', email='buyer@example.com', password=self.password)
+
+    def test_email_change_stops_when_the_address_is_taken_before_the_button(self):
+        user = User.objects.create_user('buyer', email='buyer@example.com', password=self.password)
+        self.client.force_login(user)
+        self.client.post(reverse('account_email'), {'password': self.password, 'email': 'new@example.com'})
+        User.objects.create_user('other', email='new@example.com', password=self.password)
+        response = self.client.post(mail_path(mail.outbox[0].body), follow=True)
+        user.refresh_from_db()
+        self.assertEqual(user.email, 'buyer@example.com')
+        self.assertContains(response, 'уже занята')

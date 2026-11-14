@@ -56,8 +56,8 @@ def _safe(func, order_id):
 
 
 def _deliver_created(order_id):
-    from .access import scoped_order_items
-    from .models import BrandManager, Order
+    from .access import confirmed_managers, scoped_order_items
+    from .models import Order
     from .telegram import order_brands
 
     order = Order.objects.prefetch_related('items__product__brand').filter(pk=order_id).first()
@@ -81,7 +81,7 @@ def _deliver_created(order_id):
         subtotal = sum((item.line_total for item in brand_items), Decimal('0'))
         recipients = list(dict.fromkeys(
             email.strip()
-            for email in BrandManager.objects.filter(brand=brand, is_approved=True).values_list('user__email', flat=True)
+            for email in confirmed_managers(brand).values_list('user__email', flat=True)
             if email and email.strip()
         ))
         deliver_mail(

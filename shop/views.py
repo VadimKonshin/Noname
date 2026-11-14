@@ -18,7 +18,7 @@ from .access import (
     brand_account_home, brand_manager_required, get_brand_manager, get_scoped_object_or_404,
     product_permission_required, redirect_unverified_manager,
 )
-from .accounts import send_confirmation, user_email_verified
+from .accounts import save_new_account, send_confirmation, user_email_verified
 from .forms import (
     BrandAuthenticationForm, BrandCreateForm, BrandDeleteForm, BrandMessageForm, BrandProfileForm,
     BrandManagerRegisterForm, EmailOrUsernameAuthenticationForm, ProductForm, ProductVariantFormSet, RegisterForm,
@@ -176,8 +176,9 @@ def register(request):
         return redirect('home')
     form = RegisterForm(request.POST if request.method == 'POST' else None)
     if request.method == 'POST' and form.is_valid():
-        user = form.save()
-        return open_new_account(request, user, 'Аккаунт создан. Подтвердите почту по ссылке из письма.')
+        user = save_new_account(form)
+        if user is not None:
+            return open_new_account(request, user, 'Аккаунт создан. Подтвердите почту по ссылке из письма.')
     return render(request, 'accounts/register.html', {'form': form})
 
 
@@ -221,8 +222,9 @@ def brand_register(request):
         return redirect(brand_account_home(request.user))
     form = BrandManagerRegisterForm(request.POST if request.method == 'POST' else None)
     if request.method == 'POST' and form.is_valid():
-        user = form.save()
-        return open_new_account(
+        user = save_new_account(form)
+        if user is not None:
+            return open_new_account(
             request, user,
             'Заявка создана. Подтвердите почту: без этого кабинет не откроется, даже когда администратор одобрит заявку.',
         )

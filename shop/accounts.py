@@ -6,7 +6,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.urls import reverse
 from django.utils import timezone
 
@@ -96,8 +96,13 @@ def apply_email_token(token):
         if User.objects.filter(email__iexact=token.email).exclude(pk=user.pk).exists():
             return 'taken'
         user.email = token.email
-        user.save(update_fields=['email'])
+        try:
+            with transaction.atomic():
+                user.save(update_fields=['email'])
+        except IntegrityError:
+            return 'taken'
         profile.pending_email = ''
+        EmailToken.objects.filter(user=user, purpose=EmailToken.RESET, used_at__isnull=True).delete()
         result = 'changed'
     elif (user.email or '').lower() != token.email.lower():
         return 'mismatch'
@@ -106,6 +111,17 @@ def apply_email_token(token):
     profile.email_verified_at = timezone.now()
     profile.save(update_fields=['email_verified_at', 'pending_email'])
     return result
+
+
+def save_new_account(form):
+    """Save a registration form. A lost race on the mailbox returns None and a field error."""
+    try:
+        return form.save()
+    except IntegrityError as exc:
+        if 'email' not in str(exc).lower():
+            raise
+        form.add_error('email', 'Этот e-mail уже зарегистрирован.')
+        return None
 
 
 def send_confirmation(user):

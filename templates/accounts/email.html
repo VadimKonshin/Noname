@@ -23,7 +23,7 @@
   {% endif %}
 
   <h2>Сменить почту</h2>
-  <p class="page-lead">Нужен текущий пароль. Новая почта начнёт работать после перехода по ссылке из письма на неё.</p>
+  <p class="page-lead">Нужен текущий пароль. Новая почта начнёт работать после кнопки на странице из письма. Само открытие ссылки адрес не меняет.</p>
   <form method="post" class="auth-form" novalidate>
     {% csrf_token %}
     {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}

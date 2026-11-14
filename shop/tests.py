@@ -422,7 +422,7 @@ class BrandAccountTests(TestCase):
         self.assertRedirects(self.client.get(reverse('brand_dashboard')), reverse('account_email'))
         self.assertRedirects(self.client.get(reverse('brand_create')), reverse('account_email'))
         from django.core import mail
-        self.client.get(mail_path(mail.outbox[-1].body))
+        self.client.post(mail_path(mail.outbox[-1].body))
         manager.user.profile.refresh_from_db()
         self.assertIsNotNone(manager.user.profile.email_verified_at)
         self.assertEqual(self.client.get(reverse('brand_dashboard')).status_code, 403)

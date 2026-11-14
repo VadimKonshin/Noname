@@ -5,7 +5,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.shortcuts import redirect, render
-from django.views.decorators.http import require_GET, require_http_methods, require_POST
+from django.views.decorators.http import require_http_methods, require_POST
 from django_ratelimit.decorators import ratelimit
 
 from .access import brand_account_home, get_brand_manager
@@ -42,7 +42,7 @@ def account_email(request):
             logger.exception('Email change mail failed')
             messages.warning(request, 'Новая почта ещё не сохранена, и письмо не ушло. Запросите ссылку ещё раз.')
         else:
-            messages.success(request, 'Ссылка для новой почты отправлена. Прежняя почта работает, пока вы не откроете ссылку.')
+            messages.success(request, 'Ссылка для новой почты отправлена. Прежняя почта работает, пока вы не нажмёте кнопку в письме.')
         return redirect('account_email')
     return render(request, 'accounts/email.html', {
         'form': form,
@@ -73,9 +73,17 @@ def account_email_resend(request):
     return redirect('account_email')
 
 
-@ratelimit(group='email_confirm', key='ip', rate='30/h', method='GET')
-@require_GET
+@ratelimit(group='email_confirm', key='ip', rate='30/h', method=['GET', 'POST'])
+@require_http_methods(['GET', 'POST'])
 def account_email_confirm(request, token):
+    found = find_email_token(token, (EmailToken.CONFIRM, EmailToken.CHANGE))
+    if found is None:
+        return render(request, 'accounts/token_invalid.html', {'purpose': 'почты'})
+    if request.method != 'POST':
+        return render(request, 'accounts/email_confirm.html', {
+            'email': found.email,
+            'changing': found.purpose == EmailToken.CHANGE,
+        })
     with transaction.atomic():
         taken = consume_email_token(token, (EmailToken.CONFIRM, EmailToken.CHANGE))
         if taken is None:
