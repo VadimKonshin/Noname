@@ -24,6 +24,7 @@ from .commerce import (
 )
 from .commerce_forms import CheckoutForm, OrderStatusForm
 from .models import DeliveryMethod, Order, OrderItem, Product, ProductVariant
+from .mail import notify_order_created
 from .telegram import cabinet_context, issue_bind_token, notify_new_order
 
 
@@ -198,6 +199,7 @@ def checkout(request):
                         for item in verified_cart['lines']
                     ])
                     notify_new_order(order.pk)
+                    notify_order_created(order.pk)
             except IntegrityError:
                 previous = Order.objects.filter(checkout_token=token).first()
                 if previous and ((request.user.is_authenticated and previous.user_id == request.user.pk)

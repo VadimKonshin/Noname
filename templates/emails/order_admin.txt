@@ -1,0 +1,11 @@
+Новый заказ №{{ order.pk }}.
+
+Получатель: {{ order.full_name }}
+Почта: {{ order.email }}
+Телефон: {{ order.phone }}
+Доставка: {{ order.delivery_name }} — {{ order.delivery_price }} ₽
+Итого: {{ order.total }} ₽
+
+Позиции:
+{% for item in items %}- {{ item.brand_name }}: {{ item.product_title }}, размер {{ item.size }}, {{ item.quantity }} шт. — {{ item.line_total }} ₽
+{% endfor %}

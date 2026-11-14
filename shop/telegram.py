@@ -45,6 +45,10 @@ def notify_brand_contact(message_id):
     transaction.on_commit(lambda: _safe(_deliver_contact, message_id))
 
 
+def notify_status_change(order_id):
+    transaction.on_commit(lambda: _safe(_deliver_status, order_id))
+
+
 def issue_bind_token(manager):
     """Return a one-time code the manager sends to the bot from a private chat."""
     import secrets
@@ -124,6 +128,7 @@ def order_status(chat_id, order_id, phone):
     order = Order.objects.prefetch_related('items').filter(pk=order_id).first()
     if order is None or not _phones_match(order.phone, phone):
         return 'Заказ с таким номером и телефоном не найден.'
+    Order.objects.filter(pk=order.pk).update(buyer_telegram_chat_id=str(chat_id))
     lines = [
         f'<b>Заказ №{order.pk}</b>',
         f'Статус: {_html(order.get_status_display())}',
@@ -139,6 +144,8 @@ def order_status(chat_id, order_id, phone):
         '',
         f'Доставка: {_html(order.delivery_name)}',
         f'Итого: {_money(order.total)}',
+        '',
+        'Если статус станет «отправлен» или «отменён», бот напишет в этот чат.',
     ])
     return '\n'.join(lines)
 
@@ -209,7 +216,7 @@ def _deliver_order(order_id):
     if order is None:
         return False
     sent = False
-    for brand in _order_brands(order):
+    for brand in order_brands(order):
         items = list(scoped_order_items(brand, order.items.select_related('product')))
         if not items:
             continue
@@ -232,7 +239,27 @@ def _deliver_contact(message_id):
     return sent
 
 
-def _order_brands(order):
+def _deliver_status(order_id):
+    from .access import scoped_order_items
+    from .models import Order
+
+    order = Order.objects.prefetch_related('items__product__brand').filter(pk=order_id).first()
+    if order is None or order.status not in (Order.SHIPPED, Order.CANCELLED):
+        return False
+    sent = False
+    if order.buyer_telegram_chat_id:
+        sent = _send(order.buyer_telegram_chat_id, _buyer_status_text(order)) or sent
+    for brand in order_brands(order):
+        items = list(scoped_order_items(brand, order.items.select_related('product')))
+        if not items:
+            continue
+        text = _brand_status_text(order, brand, items)
+        for chat_id in _manager_chats(brand):
+            sent = _send(chat_id, text) or sent
+    return sent
+
+
+def order_brands(order):
     from .models import Brand
 
     found = {}
@@ -296,6 +323,38 @@ def _brand_order_text(order, brand, items):
     return '\n'.join(lines)
 
 
+def _buyer_status_text(order):
+    lines = [
+        f'<b>Заказ №{order.pk}</b>',
+        f'Статус: {_html(order.get_status_display())}',
+        '',
+    ]
+    for item in order.items.all():
+        lines.append(f'• {_html(item.product_title)}, размер {_html(item.size)}, {item.quantity} шт.')
+    if order.delivery_name:
+        lines.extend(['', f'Доставка: {_html(order.delivery_name)}'])
+    return '\n'.join(lines)
+
+
+def _brand_status_text(order, brand, items):
+    lines = [
+        f'<b>Статус заказа №{order.pk} изменился</b>',
+        f'Бренд: {_html(brand.name)}',
+        f'Статус: {_html(order.get_status_display())}',
+        '',
+        '<b>Ваши позиции</b>',
+    ]
+    subtotal = Decimal('0')
+    for item in items:
+        subtotal += item.line_total
+        lines.append(
+            f'• {_html(item.product_title)}, размер {_html(item.size)}, '
+            f'{item.quantity} шт. = {_money(item.line_total)}'
+        )
+    lines.extend(['', f'<b>Сумма ваших позиций: {_money(subtotal)}</b>'])
+    return '\n'.join(lines)
+
+
 def _contact_text(note):
     product = note.product.title if note.product_id and note.product else 'не выбрана'
     lines = [
@@ -318,7 +377,8 @@ def _help_text():
         'Менеджер бренда подключает уведомления ссылкой из кабинета. '
         'Сюда приходят только заказы и сообщения его бренда.\n\n'
         'Покупатель может проверить статус. Напишите номер заказа и телефон из заказа:\n'
-        '15 +79991234567'
+        '15 +79991234567\n\n'
+        'После успешной проверки бот сам напишет в этот чат, когда заказ отправят или отменят.'
     )
 
 

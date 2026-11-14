@@ -1,28 +1,36 @@
+import logging
+
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth import views as auth_views
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Case, Exists, IntegerField, OuterRef, Q, Value, When
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods
 from django_ratelimit.decorators import ratelimit
-from .access import brand_manager_required, get_brand_manager, get_scoped_object_or_404, product_permission_required
+
+from .access import (
+    brand_account_home, brand_manager_required, get_brand_manager, get_scoped_object_or_404,
+    product_permission_required, redirect_unverified_manager,
+)
+from .accounts import send_confirmation, user_email_verified
 from .forms import (
     BrandAuthenticationForm, BrandCreateForm, BrandDeleteForm, BrandMessageForm, BrandProfileForm,
-    BrandManagerRegisterForm, ProductForm, ProductVariantFormSet, RegisterForm,
+    BrandManagerRegisterForm, EmailOrUsernameAuthenticationForm, ProductForm, ProductVariantFormSet, RegisterForm,
 )
 from .commerce import MAX_OPEN_PREORDER_PER_VARIANT
-from .models import Brand, BrandManager, BrandMessage, Product, ProductImage
+from .models import Brand, BrandManager, BrandMessage, Product, ProductImage, ProductVariant
 from .telegram import notify_brand_contact
 from .validators import validate_product_image
 
 
 GALLERY_MAX_COUNT = 8
+logger = logging.getLogger(__name__)
 
 
 def public_products():
@@ -130,8 +138,18 @@ def catalog(request):
     if query:
         products = products.filter(Q(title__icontains=query) | Q(description__icontains=query) | Q(color__icontains=query) | Q(brand__name__icontains=query))
     sort = request.GET.get('sort', 'new')
-    orders = {'new': '-created_at', 'price_low': 'price', 'price_high': '-price', 'name': 'title'}
-    products = products.order_by(orders.get(sort, '-created_at'), '-pk')
+    if sort == 'stock':
+        in_stock = ProductVariant.objects.filter(product_id=OuterRef('pk'), stock_quantity__gt=0)
+        products = products.annotate(variant_in_stock=Exists(in_stock)).annotate(
+            stock_rank=Case(
+                When(Q(variant_in_stock=True) | Q(allow_preorder=True), then=Value(0)),
+                default=Value(1),
+                output_field=IntegerField(),
+            ),
+        ).order_by('stock_rank', '-created_at', '-pk')
+    else:
+        orders = {'new': '-created_at', 'price_low': 'price', 'price_high': '-price', 'name': 'title'}
+        products = products.order_by(orders.get(sort, '-created_at'), '-pk')
     page = Paginator(products, 9).get_page(request.GET.get('page'))
     return render(request, 'shop/catalog.html', {'page': page, 'query': query, 'sort': sort, 'total': page.paginator.count, 'selected_brand': selected_brand, 'brands': Brand.objects.filter(is_active=True, is_deleted=False).order_by('sort_order', 'name')})
 
@@ -159,23 +177,32 @@ def register(request):
     form = RegisterForm(request.POST if request.method == 'POST' else None)
     if request.method == 'POST' and form.is_valid():
         user = form.save()
-        login(request, user)
-        messages.success(request, 'Аккаунт создан. Добро пожаловать!')
-        return redirect('home')
+        return open_new_account(request, user, 'Аккаунт создан. Подтвердите почту по ссылке из письма.')
     return render(request, 'accounts/register.html', {'form': form})
 
 
-def brand_account_home(user):
-    manager = get_brand_manager(user, approved_only=False)
-    if manager:
-        if not manager.is_approved:
-            return 'brand_pending'
-        if manager.brand is None:
-            return 'brand_create'
-        return 'brand_deleted' if manager.brand.is_deleted else 'brand_dashboard'
-    if user.is_superuser:
-        return 'dashboard'
-    return 'home'
+class StoreLoginView(auth_views.LoginView):
+    template_name = 'accounts/login.html'
+    authentication_form = EmailOrUsernameAuthenticationForm
+    redirect_authenticated_user = True
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        if not user_email_verified(self.request.user):
+            messages.info(self.request, 'Почта ещё не подтверждена. Откройте ссылку из письма или отправьте её ещё раз.')
+        return response
+
+
+def open_new_account(request, user, success_message):
+    login(request, user)
+    try:
+        send_confirmation(user)
+    except Exception:
+        logger.exception('Confirmation mail failed')
+        messages.warning(request, 'Аккаунт создан, но письмо не отправилось. Запросите ссылку ещё раз.')
+    else:
+        messages.success(request, success_message)
+    return redirect('account_email')
 
 
 class BrandLoginView(auth_views.LoginView):
@@ -195,9 +222,10 @@ def brand_register(request):
     form = BrandManagerRegisterForm(request.POST if request.method == 'POST' else None)
     if request.method == 'POST' and form.is_valid():
         user = form.save()
-        login(request, user)
-        messages.success(request, 'Заявка менеджера создана. Доступ откроется после подтверждения администратором.')
-        return redirect('brand_pending')
+        return open_new_account(
+            request, user,
+            'Заявка создана. Подтвердите почту: без этого кабинет не откроется, даже когда администратор одобрит заявку.',
+        )
     return render(request, 'accounts/brand_register.html', {'form': form})
 
 
@@ -205,6 +233,9 @@ def brand_register(request):
 def brand_pending(request):
     if not request.user.is_authenticated:
         return redirect(f'{reverse_lazy("brand_login")}?next={request.path}')
+    blocked = redirect_unverified_manager(request)
+    if blocked:
+        return blocked
     manager = get_brand_manager(request.user, approved_only=False)
     if manager and manager.is_approved:
         return redirect(brand_account_home(request.user))
@@ -219,6 +250,9 @@ def brand_pending(request):
 def brand_create(request):
     if not request.user.is_authenticated:
         return redirect(f'{reverse_lazy("brand_login")}?next={request.path}')
+    blocked = redirect_unverified_manager(request)
+    if blocked:
+        return blocked
     manager = get_brand_manager(request.user)
     if manager is None:
         raise PermissionDenied
@@ -264,11 +298,16 @@ def brand_edit(request):
 @require_http_methods(['GET', 'POST'])
 def brand_delete(request):
     brand = request.brand_manager.brand
+    if brand.deletion_requested_at:
+        messages.info(request, f'Заявка на удаление «{brand.name}» уже ждёт администратора. Бренд по-прежнему виден покупателям.')
+        return redirect('brand_dashboard')
     form = BrandDeleteForm(request.POST if request.method == 'POST' else None, user=request.user, brand=brand)
     if request.method == 'POST' and form.is_valid():
-        brand.soft_delete()
-        messages.success(request, f'Бренд «{brand.name}» удалён. История заказов сохранена.')
-        return redirect('brand_deleted')
+        brand.deletion_requested_at = timezone.now()
+        brand.deletion_requested_by = request.user
+        brand.save(update_fields=['deletion_requested_at', 'deletion_requested_by'])
+        messages.success(request, f'Заявка на удаление «{brand.name}» отправлена. Бренд останется на витрине, пока администратор её не подтвердит.')
+        return redirect('brand_dashboard')
     return render(request, 'shop/brand_delete.html', {'brand': brand, 'form': form})
 
 

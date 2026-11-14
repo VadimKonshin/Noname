@@ -1,0 +1,6 @@
+{% extends 'emails/base.html' %}
+{% block body %}
+<p>Подтвердите почту для аккаунта {{ username }}.</p>
+<p>Ссылка действует {{ hours }} ч. и сгорает после перехода.</p>
+<p><a href="{{ link }}">Подтвердить почту</a></p>
+{% endblock %}

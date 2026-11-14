@@ -233,16 +233,25 @@ class TelegramTests(TestCase):
             quantity=1, unit_price=Decimal('3000'), line_total=Decimal('3000'),
         )
         with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
+            handle_update({'message': {'text': f'{order.pk} +79990000000', 'chat': {'id': 51, 'type': 'private'}}})
+        hidden = sent_payload(urlopen.call_args.args[0])['text']
+        self.assertIn('не найден', hidden)
+        self.assertNotIn('Секретное имя', hidden)
+        order.refresh_from_db()
+        self.assertEqual(order.buyer_telegram_chat_id, '')
+        with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
             handle_update({'message': {'text': f'{order.pk} 89991234567', 'chat': {'id': 50, 'type': 'private'}}})
         text = sent_payload(urlopen.call_args.args[0])['text']
         self.assertIn('Отправлен', text)
         self.assertIn('MOON / Черная футболка', text)
         self.assertNotIn('Секретное имя', text)
+        self.assertIn('этот чат', text)
+        order.refresh_from_db()
+        self.assertEqual(order.buyer_telegram_chat_id, '50')
         with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
             handle_update({'message': {'text': f'{order.pk} +79990000000', 'chat': {'id': 51, 'type': 'private'}}})
-        hidden = sent_payload(urlopen.call_args.args[0])['text']
-        self.assertIn('не найден', hidden)
-        self.assertNotIn('Секретное имя', hidden)
+        order.refresh_from_db()
+        self.assertEqual(order.buyer_telegram_chat_id, '50')
 
     def test_manager_connects_from_private_start_link(self):
         from unittest.mock import patch
@@ -275,3 +284,42 @@ class TelegramTests(TestCase):
         self.client.post(reverse('brand_telegram_disconnect'))
         self.manager.refresh_from_db()
         self.assertIsNone(self.manager.telegram_chat_id)
+
+    def test_shipped_and_cancelled_ping_the_buyer_and_each_brand(self):
+        from unittest.mock import patch
+        from .commerce import update_order_status
+        other = Brand.objects.create(name='ДРУГОЙ', slug='drugoy')
+        other_user = User.objects.create_user('status_manager', email='other-status@example.com', password='PassWithLength#178')
+        BrandManager.objects.create(user=other_user, brand=other, is_approved=True, telegram_chat_id='7777')
+        order = Order.objects.create(
+            checkout_token='status-push', full_name='Секретное имя', email='buyer@example.org',
+            phone='+79991234567', delivery_name='Самовывоз', delivery_price=Decimal('0'),
+            subtotal=Decimal('5000'), total=Decimal('5000'), buyer_telegram_chat_id='50',
+        )
+        OrderItem.objects.create(
+            order=order, product=self.shirt, product_title=self.shirt.title, brand_name=self.brand.name,
+            size='M', quantity=1, unit_price=Decimal('3000'), line_total=Decimal('3000'),
+        )
+        OrderItem.objects.create(
+            order=order, product_title='Чужая вещь', brand_name=other.name, size='S',
+            quantity=1, unit_price=Decimal('2000'), line_total=Decimal('2000'),
+        )
+        with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
+            with self.captureOnCommitCallbacks(execute=True):
+                update_order_status(order.pk, Order.PROCESSING)
+        urlopen.assert_not_called()
+        with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
+            with self.captureOnCommitCallbacks(execute=True):
+                update_order_status(order.pk, Order.SHIPPED)
+        by_chat = {
+            sent_payload(call.args[0])['chat_id']: sent_payload(call.args[0])['text']
+            for call in urlopen.call_args_list
+        }
+        self.assertIn('Отправлен', by_chat['50'])
+        self.assertIn(self.shirt.title, by_chat['50'])
+        self.assertIn('Чужая вещь', by_chat['50'])
+        self.assertNotIn('Секретное имя', by_chat['4242'])
+        self.assertIn(self.shirt.title, by_chat['4242'])
+        self.assertNotIn('Чужая вещь', by_chat['4242'])
+        self.assertIn('Чужая вещь', by_chat['7777'])
+        self.assertNotIn(self.shirt.title, by_chat['7777'])

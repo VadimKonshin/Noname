@@ -1,4 +1,5 @@
 from .access import get_brand_manager
+from .accounts import user_email_verified
 from .commerce import cart_count
 from .models import Brand, BrandMessage
 from .telegram import news_url, public_bot_url
@@ -8,7 +9,8 @@ def store_context(request):
     brands = Brand.objects.filter(is_active=True, is_deleted=False, products__is_published=True,
                                   products__is_deleted=False).distinct().order_by('sort_order', 'name')
     application = get_brand_manager(request.user, approved_only=False)
-    active_manager = application if application and application.is_approved and application.brand and not application.brand.is_deleted else None
+    verified = request.user.is_authenticated and user_email_verified(request.user)
+    active_manager = application if verified and application and application.is_approved and application.brand and not application.brand.is_deleted else None
     unread = 0
     if active_manager:
         unread = BrandMessage.objects.filter(brand=active_manager.brand, read_at__isnull=True).count()
@@ -16,7 +18,8 @@ def store_context(request):
         'cart_count': cart_count(request),
         'ticker_brands': brands,
         'brand_manager': active_manager,
-        'brand_manager_application': application,
+        'brand_manager_application': application if application and verified and not active_manager else None,
+        'email_verified': verified,
         'brand_unread_count': unread,
         'telegram_news_url': news_url(),
         'telegram_bot_url': public_bot_url(),

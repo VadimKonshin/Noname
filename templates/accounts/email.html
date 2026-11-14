@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block title %}Почта аккаунта — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page narrow-page">
+  <div class="eyebrow"><span class="tiny-dot"></span> АККАУНТ / ПОЧТА</div>
+  <h1 class="commerce-heading">ПОЧТА<span class="heading-period">.</span></h1>
+  {% if profile.email_verified_at %}
+    <p class="page-lead">Почта {{ user.email }} подтверждена. Войти можно логином или этой почтой.</p>
+  {% else %}
+    <p class="page-lead">Почта {{ user.email }} ещё не подтверждена. Ссылка в письме действует 24 часа. Пока письмо в пути, входите логином.</p>
+    {% if manager %}
+      <p class="page-lead">Кабинет бренда откроется после подтверждения почты. Одобрение администратора само по себе его не открывает.</p>
+    {% endif %}
+  {% endif %}
+  {% if profile.pending_email %}
+    <p class="page-lead">Новая почта {{ profile.pending_email }} ждёт ссылку из письма. Прежняя пока работает.</p>
+  {% endif %}
+  {% if not profile.email_verified_at or profile.pending_email %}
+    <form method="post" action="{% url 'account_email_resend' %}">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-dark">Отправить ссылку ещё раз</button>
+    </form>
+  {% endif %}
+
+  <h2>Сменить почту</h2>
+  <p class="page-lead">Нужен текущий пароль. Новая почта начнёт работать после перехода по ссылке из письма на неё.</p>
+  <form method="post" class="auth-form" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    {% for field in form %}
+      <div class="form-field">
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
+      </div>
+    {% endfor %}
+    <button type="submit" class="btn btn-dark">Отправить ссылку на новую почту</button>
+  </form>
+  <p class="auth-bottom"><a href="{% url 'password_reset' %}">Забыли пароль?</a></p>
+</section>
+{% endblock %}

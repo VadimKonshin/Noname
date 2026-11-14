@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block title %}Ссылка недействительна — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page narrow-page">
+  <div class="eyebrow"><span class="tiny-dot"></span> АККАУНТ</div>
+  <h1 class="commerce-heading">ССЫЛКА НЕДЕЙСТВИТЕЛЬНА<span class="heading-period">.</span></h1>
+  <p class="page-lead">Ссылка для {{ purpose }} уже использована или её срок истёк. Запросите новую.</p>
+  <a href="{% url 'account_email' %}" class="btn btn-dark">К почте аккаунта ↗</a>
+  <a href="{% url 'password_reset' %}" class="cancel-link">Новый пароль</a>
+</section>
+{% endblock %}

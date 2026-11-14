@@ -23,6 +23,7 @@
       <span>Сортировка</span>
       <select name="sort" data-auto-submit>
         <option value="new" {% if sort == 'new' %}selected{% endif %}>Сначала новые</option>
+        <option value="stock" {% if sort == 'stock' %}selected{% endif %}>Сначала в наличии</option>
         <option value="price_low" {% if sort == 'price_low' %}selected{% endif %}>Сначала дешевле</option>
         <option value="price_high" {% if sort == 'price_high' %}selected{% endif %}>Сначала дороже</option>
         <option value="name" {% if sort == 'name' %}selected{% endif %}>По названию</option>

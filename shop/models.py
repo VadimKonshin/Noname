@@ -22,6 +22,11 @@ class Brand(models.Model):
     sort_order = models.PositiveSmallIntegerField('Порядок в бегущей строке', default=0)
     is_deleted = models.BooleanField('Удалён менеджером', default=False)
     deleted_at = models.DateTimeField('Дата удаления', null=True, blank=True)
+    deletion_requested_at = models.DateTimeField('Заявка на удаление', null=True, blank=True)
+    deletion_requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='+', verbose_name='Кто запросил удаление',
+    )
 
     class Meta:
         ordering = ['sort_order', 'name']
@@ -80,6 +85,45 @@ class BrandManager(models.Model):
     def __str__(self):
         brand_name = self.brand.name if self.brand else 'бренд ещё не создан'
         return f'{self.user.username} — {brand_name}'
+
+
+class UserProfile(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='profile', verbose_name='Пользователь')
+    email_verified_at = models.DateTimeField('Почта подтверждена', null=True, blank=True)
+    pending_email = models.EmailField('Новая почта ждёт подтверждения', blank=True, default='')
+
+    class Meta:
+        verbose_name = 'Почта аккаунта'
+        verbose_name_plural = 'Почты аккаунтов'
+
+    def __str__(self):
+        return self.user.get_username()
+
+
+class EmailToken(models.Model):
+    CONFIRM = 'confirm'
+    RESET = 'reset'
+    CHANGE = 'change'
+    PURPOSE_CHOICES = [
+        (CONFIRM, 'Подтверждение почты'),
+        (RESET, 'Новый пароль'),
+        (CHANGE, 'Смена почты'),
+    ]
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='email_tokens', verbose_name='Пользователь')
+    purpose = models.CharField('Зачем ссылка', max_length=16, choices=PURPOSE_CHOICES)
+    token_hash = models.CharField('Хеш ссылки', max_length=64, unique=True)
+    email = models.EmailField('Почта в ссылке')
+    created_at = models.DateTimeField('Создана', auto_now_add=True)
+    expires_at = models.DateTimeField('Действует до')
+    used_at = models.DateTimeField('Использована', null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'Ссылка из письма'
+        verbose_name_plural = 'Ссылки из писем'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.user_id} — {self.purpose}'
 
 
 SIZE_ORDER = ('XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL')
@@ -267,6 +311,7 @@ class Order(models.Model):
     subtotal = models.DecimalField('Товары, ₽', max_digits=12, decimal_places=2)
     total = models.DecimalField('Итого, ₽', max_digits=12, decimal_places=2)
     status = models.CharField('Статус', max_length=16, choices=STATUS_CHOICES, default=NEW)
+    buyer_telegram_chat_id = models.CharField('Telegram покупателя', max_length=32, blank=True, default='')
     created_at = models.DateTimeField('Создан', auto_now_add=True)
     updated_at = models.DateTimeField('Изменён', auto_now=True)
 

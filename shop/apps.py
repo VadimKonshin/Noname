@@ -7,6 +7,7 @@ class ShopConfig(AppConfig):
     verbose_name = 'Магазин'
 
     def ready(self):
+        from . import signals  # noqa: F401
         from django.db.models.signals import pre_delete
 
         from .images import delete_stored_cards
