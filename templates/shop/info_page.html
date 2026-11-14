@@ -34,6 +34,12 @@
       <h2>Магазин</h2>
       <p>NoName связывает независимые бренды и покупателя. Заказ подтверждает магазин по телефону или почте, которые вы оставили при оформлении.</p>
       <p>Почта для вопросов по заказу: <a href="mailto:hello@noname.local">hello@noname.local</a>. Это локальный адрес для разработки, перед публикацией его нужно заменить на настоящий.</p>
+      {% if telegram_news_url %}
+        <p><a href="{{ telegram_news_url }}" rel="noopener noreferrer" target="_blank">Группа для покупателей</a></p>
+      {% endif %}
+      {% if telegram_bot_url %}
+        <p>Статус заказа можно проверить в <a href="{{ telegram_bot_url }}" rel="noopener noreferrer" target="_blank">Telegram-боте</a>: отправьте номер заказа и телефон, указанный при оформлении.</p>
+      {% endif %}
     </div>
     <div class="form-section">
       <h2>Бренд</h2>

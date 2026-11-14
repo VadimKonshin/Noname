@@ -1,6 +1,7 @@
 from .access import get_brand_manager
 from .commerce import cart_count
 from .models import Brand, BrandMessage
+from .telegram import news_url, public_bot_url
 
 
 def store_context(request):
@@ -17,4 +18,6 @@ def store_context(request):
         'brand_manager': active_manager,
         'brand_manager_application': application,
         'brand_unread_count': unread,
+        'telegram_news_url': news_url(),
+        'telegram_bot_url': public_bot_url(),
     }

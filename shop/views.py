@@ -18,6 +18,7 @@ from .forms import (
 )
 from .commerce import MAX_OPEN_PREORDER_PER_VARIANT
 from .models import Brand, BrandManager, BrandMessage, Product, ProductImage
+from .telegram import notify_brand_contact
 from .validators import validate_product_image
 
 
@@ -70,7 +71,7 @@ def brand_message(request, slug):
         lock_email=lock_email,
     )
     if request.method == 'POST' and form.is_valid():
-        BrandMessage.objects.create(
+        note = BrandMessage.objects.create(
             brand=brand,
             product=product,
             user=user,
@@ -78,6 +79,7 @@ def brand_message(request, slug):
             sender_email=user.email.lower() if lock_email else form.cleaned_data['sender_email'],
             body=form.cleaned_data['body'],
         )
+        notify_brand_contact(note.pk)
         messages.success(
             request,
             'Сообщение у менеджера бренда. Письмо само не отправляется: ответ придёт на указанную почту, когда менеджер его прочитает.',

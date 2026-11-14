@@ -57,11 +57,12 @@ class BrandMessageAdmin(admin.ModelAdmin):
 
 @admin.register(BrandManager)
 class BrandManagerAdmin(admin.ModelAdmin):
-    list_display = ('account_type', 'user', 'user_email', 'brand_label', 'is_approved', 'created_at')
+    list_display = ('account_type', 'user', 'user_email', 'brand_label', 'is_approved', 'telegram_on', 'created_at')
     list_editable = ('is_approved',)
     list_filter = ('is_approved', 'brand')
     search_fields = ('user__username', 'user__email', 'brand__name')
-    readonly_fields = ('created_at',)
+    readonly_fields = ('created_at', 'telegram_chat_id', 'telegram_bind_expires')
+    exclude = ('telegram_bind_hash',)
     list_select_related = ('user', 'brand')
 
     @admin.display(description='Тип аккаунта')
@@ -75,6 +76,10 @@ class BrandManagerAdmin(admin.ModelAdmin):
     @admin.display(description='Бренд')
     def brand_label(self, obj):
         return obj.brand or 'Ещё не создан'
+
+    @admin.display(description='Telegram', boolean=True)
+    def telegram_on(self, obj):
+        return bool(obj.telegram_chat_id)
 
 
 class ManagerAccountFilter(admin.SimpleListFilter):

@@ -67,6 +67,9 @@ class BrandManager(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='brand_manager', verbose_name='Пользователь')
     brand = models.ForeignKey(Brand, on_delete=models.PROTECT, related_name='managers', verbose_name='Бренд', null=True, blank=True)
     is_approved = models.BooleanField('Подтверждён администратором', default=False)
+    telegram_chat_id = models.CharField('Telegram-чат', max_length=32, null=True, blank=True, unique=True)
+    telegram_bind_hash = models.CharField('Ключ подключения Telegram', max_length=64, blank=True, default='')
+    telegram_bind_expires = models.DateTimeField('Ключ Telegram действует до', null=True, blank=True)
     created_at = models.DateTimeField('Заявка создана', auto_now_add=True)
 
     class Meta:

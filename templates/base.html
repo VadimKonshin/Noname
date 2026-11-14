@@ -75,6 +75,7 @@
           <a href="{% url 'info_delivery' %}">Доставка</a>
           <a href="{% url 'info_returns' %}">Возврат</a>
           <a href="{% url 'info_contacts' %}">Контакты</a>
+          {% if telegram_news_url %}<a href="{{ telegram_news_url }}" rel="noopener noreferrer" target="_blank">Группа для покупателей</a>{% endif %}
         </div>
         <div>
           <span>Аккаунт</span>

@@ -1,8 +1,33 @@
 """Settings for the local-first NoName independent brands store."""
 import os
+import sys
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def load_env_file(path):
+    """Fill empty environment variables from a local .env file."""
+    if not path.is_file():
+        return
+    for raw in path.read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        if line.startswith('export '):
+            line = line[7:].strip()
+        key, value = line.split('=', 1)
+        key = key.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+        if key.startswith('TELEGRAM_') and key not in os.environ:
+            os.environ[key] = value
+
+
+# Tests keep using explicit settings. A filled .env must not notify Telegram during manage.py test.
+if 'test' not in sys.argv:
+    load_env_file(BASE_DIR / '.env')
 
 
 def env_bool(name, default=False):
@@ -95,3 +120,8 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 DATA_UPLOAD_MAX_NUMBER_FILES = 12
 RATELIMIT_ENABLE = env_bool('DJANGO_RATELIMIT_ENABLE', True)
 RATELIMIT_VIEW = 'shop.views.ratelimited_error'
+
+# Telegram Bot API. Leave the token blank locally: the store then skips notifications.
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '').strip()
+TELEGRAM_BOT_USERNAME = os.environ.get('TELEGRAM_BOT_USERNAME', '').strip().lstrip('@')
+TELEGRAM_NEWS_URL = os.environ.get('TELEGRAM_NEWS_URL', '').strip()
