@@ -1,0 +1,10 @@
+{% extends 'emails/base.html' %}
+{% block body %}
+<p><strong>Новый заказ №{{ order.pk }}.</strong></p>
+<p>Получатель: {{ order.full_name }}<br>Почта: {{ order.email }}<br>Телефон: {{ order.phone }}<br>Итого: {{ order.total }} ₽</p>
+<ul>
+  {% for item in items %}
+    <li>{{ item.brand_name }}: {{ item.product_title }}, размер {{ item.size }}, {{ item.quantity }} шт. — {{ item.line_total }} ₽</li>
+  {% endfor %}
+</ul>
+{% endblock %}

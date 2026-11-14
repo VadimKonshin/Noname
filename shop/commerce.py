@@ -181,7 +181,9 @@ def update_order_status(order_id, status):
             raise ValidationError('Выбран недопустимый статус заказа.')
         if order.status == Order.CANCELLED and status != Order.CANCELLED:
             raise ValidationError('Отменённый заказ нельзя открыть повторно.')
-        if status == Order.CANCELLED and order.status != Order.CANCELLED:
+        if order.status == status:
+            return order
+        if status == Order.CANCELLED:
             for item in order.items.all():
                 if item.is_preorder or item.product_id is None:
                     continue
@@ -191,4 +193,9 @@ def update_order_status(order_id, status):
                 ).update(stock_quantity=F('stock_quantity') + item.quantity)
         order.status = status
         order.save(update_fields=['status', 'updated_at'])
+        if status in (Order.SHIPPED, Order.CANCELLED):
+            from .mail import notify_order_status
+            from .telegram import notify_status_change
+            notify_order_status(order.pk)
+            notify_status_change(order.pk)
     return order

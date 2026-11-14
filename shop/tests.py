@@ -38,6 +38,12 @@ def sample_jpeg(name='wide.jpg', size=(2000, 1400), exif_orientation=None):
     return SimpleUploadedFile(name, output.getvalue(), content_type='image/jpeg')
 
 
+def mail_path(body):
+    marker = 'http://127.0.0.1:8000'
+    start = body.index(marker)
+    return body[start + len(marker):].split()[0]
+
+
 def variant_payload(product=None):
     variants = list(product.variants.all()) if product else [None]
     data = {
@@ -80,6 +86,27 @@ class StoreTests(TestCase):
         self.assertContains(self.client.get(reverse('catalog'), {'q': 'хлопок'}), self.product.title)
         self.assertNotContains(self.client.get(reverse('catalog'), {'q': 'несуществующий'}), self.product.title)
 
+    def test_catalog_can_sort_in_stock_first(self):
+        stocked = Product.objects.create(
+            brand=self.brand, title='Есть остаток', description='В наличии', price=Decimal('2100.00'),
+        )
+        ProductVariant.objects.create(product=stocked, size='M', stock_quantity=4)
+        preorder = Product.objects.create(
+            brand=self.brand, title='Только предзаказ', description='Шьём', price=Decimal('2200.00'),
+            allow_preorder=True,
+        )
+        ProductVariant.objects.create(product=preorder, size='M', stock_quantity=0)
+        empty = Product.objects.create(
+            brand=self.brand, title='Нет в наличии', description='Пусто', price=Decimal('2300.00'),
+        )
+        ProductVariant.objects.create(product=empty, size='M', stock_quantity=0)
+        response = self.client.get(reverse('catalog'), {'sort': 'stock'})
+        self.assertContains(response, 'Сначала в наличии')
+        body = response.content.decode()
+        self.assertLess(body.index('Есть остаток'), body.index('Нет в наличии'))
+        self.assertLess(body.index('Только предзаказ'), body.index('Нет в наличии'))
+        self.assertContains(response, 'Нет в наличии')
+
     def test_private_product_hidden_from_catalog(self):
         self.product.is_published = False
         self.product.save()
@@ -91,7 +118,9 @@ class StoreTests(TestCase):
             'username': 'new_person', 'email': 'buyer@example.com',
             'password1': 'HardToGuess837!', 'password2': 'HardToGuess837!',
         })
-        self.assertRedirects(resp, reverse('home'))
+        self.assertRedirects(resp, reverse('account_email'))
+        person = User.objects.get(username='new_person')
+        self.assertIsNone(person.profile.email_verified_at)
         self.assertTrue(User.objects.filter(username='new_person').exists())
         self.assertEqual(str(self.client.session['_auth_user_id']), str(User.objects.get(username='new_person').pk))
 
@@ -384,14 +413,22 @@ class BrandAccountTests(TestCase):
             'password1': 'AnotherSecurePass#831',
             'password2': 'AnotherSecurePass#831',
         })
-        self.assertRedirects(response, reverse('brand_pending'))
+        self.assertRedirects(response, reverse('account_email'))
         manager = BrandManager.objects.get(user__username='new_brand_manager')
         self.assertFalse(manager.is_approved)
         self.assertIsNone(manager.brand)
+        self.assertIsNone(manager.user.profile.email_verified_at)
         self.assertEqual(Brand.objects.count(), brand_count)
+        self.assertRedirects(self.client.get(reverse('brand_dashboard')), reverse('account_email'))
+        self.assertRedirects(self.client.get(reverse('brand_create')), reverse('account_email'))
+        from django.core import mail
+        self.client.get(mail_path(mail.outbox[-1].body))
+        manager.user.profile.refresh_from_db()
+        self.assertIsNotNone(manager.user.profile.email_verified_at)
         self.assertEqual(self.client.get(reverse('brand_dashboard')).status_code, 403)
         self.assertEqual(self.client.get(reverse('brand_products')).status_code, 403)
         self.assertEqual(self.client.get(reverse('brand_create')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('brand_pending')).status_code, 200)
 
     def test_approved_manager_creates_only_one_brand(self):
         user = User.objects.create_user(username='approved_without_brand', password=self.password)
@@ -508,22 +545,60 @@ class BrandAccountTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.brand.refresh_from_db()
         self.assertFalse(self.brand.is_deleted)
+        self.assertIsNone(self.brand.deletion_requested_at)
 
-    def test_manager_soft_deletes_brand_and_products(self):
+    def test_manager_requests_deletion_and_admin_confirms_it(self):
         self.client.force_login(self.manager_user)
         response = self.client.post(reverse('brand_delete'), {
             'brand_name': self.brand.name,
             'password': self.password,
         })
-        self.assertRedirects(response, reverse('brand_deleted'))
+        self.assertRedirects(response, reverse('brand_dashboard'))
+        self.brand.refresh_from_db()
+        self.product.refresh_from_db()
+        self.assertFalse(self.brand.is_deleted)
+        self.assertTrue(self.brand.is_active)
+        self.assertIsNotNone(self.brand.deletion_requested_at)
+        self.assertEqual(self.brand.deletion_requested_by, self.manager_user)
+        self.assertFalse(self.product.is_deleted)
+        self.assertEqual(self.client.get(self.product.get_absolute_url()).status_code, 200)
+        self.assertContains(self.client.get(reverse('brand_dashboard')), 'Заявка на удаление отправлена')
+        admin = User.objects.create_superuser(username='delete_admin', password=self.password, email='delete-admin@example.com')
+        self.client.force_login(admin)
+        confirmed = self.client.post(reverse('admin:shop_brand_changelist'), {
+            'action': 'confirm_brand_deletion',
+            '_selected_action': [str(self.brand.pk)],
+        }, follow=True)
+        self.assertContains(confirmed, 'Брендов скрыто: 1')
         self.brand.refresh_from_db()
         self.product.refresh_from_db()
         self.assertTrue(self.brand.is_deleted)
         self.assertFalse(self.brand.is_active)
         self.assertTrue(self.product.is_deleted)
+        self.client.force_login(self.manager_user)
         self.assertEqual(self.client.get(self.product.get_absolute_url()).status_code, 404)
         self.assertEqual(self.client.get(reverse('brand_products')).status_code, 403)
         self.assertEqual(self.client.get(reverse('brand_deleted')).status_code, 200)
+
+    def test_admin_keeps_a_brand_without_a_deletion_request(self):
+        admin = User.objects.create_superuser(username='keep_admin', password=self.password, email='keep-admin@example.com')
+        self.client.force_login(admin)
+        self.client.post(reverse('admin:shop_brand_changelist'), {
+            'action': 'confirm_brand_deletion',
+            '_selected_action': [str(self.other_brand.pk)],
+        })
+        self.other_brand.refresh_from_db()
+        self.assertFalse(self.other_brand.is_deleted)
+        self.client.force_login(self.manager_user)
+        self.client.post(reverse('brand_delete'), {'brand_name': self.brand.name, 'password': self.password})
+        self.client.force_login(admin)
+        self.client.post(reverse('admin:shop_brand_changelist'), {
+            'action': 'dismiss_brand_deletion',
+            '_selected_action': [str(self.brand.pk)],
+        })
+        self.brand.refresh_from_db()
+        self.assertIsNone(self.brand.deletion_requested_at)
+        self.assertFalse(self.brand.is_deleted)
 
     def test_product_permission_does_not_unlock_other_brands(self):
         from django.contrib.auth.models import Permission

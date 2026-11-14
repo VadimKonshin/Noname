@@ -4,6 +4,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db.models import Q
 from django.http import Http404
+from django.shortcuts import redirect
 
 from .models import BrandManager
 
@@ -22,10 +23,40 @@ def get_brand_manager(user, approved_only=True):
     return manager
 
 
+def brand_account_home(user):
+    manager = get_brand_manager(user, approved_only=False)
+    if manager:
+        from .accounts import user_email_verified
+        if not user_email_verified(user):
+            return 'account_email'
+        if not manager.is_approved:
+            return 'brand_pending'
+        if manager.brand is None:
+            return 'brand_create'
+        return 'brand_deleted' if manager.brand.is_deleted else 'brand_dashboard'
+    if user.is_superuser:
+        return 'dashboard'
+    return 'home'
+
+
+def redirect_unverified_manager(request):
+    if not request.user.is_authenticated:
+        return None
+    if not BrandManager.objects.filter(user_id=request.user.pk).exists():
+        return None
+    from .accounts import user_email_verified
+    if user_email_verified(request.user):
+        return None
+    return redirect('account_email')
+
+
 def brand_manager_required(view):
     @login_required
     @wraps(view)
     def wrapped(request, *args, **kwargs):
+        blocked = redirect_unverified_manager(request)
+        if blocked:
+            return blocked
         manager = get_brand_manager(request.user)
         if manager is None:
             raise PermissionDenied
@@ -39,6 +70,9 @@ def product_permission_required(permission):
         @login_required
         @wraps(view)
         def wrapped(request, *args, **kwargs):
+            blocked = redirect_unverified_manager(request)
+            if blocked:
+                return blocked
             manager = get_brand_manager(request.user)
             if manager is not None and not request.user.is_superuser:
                 request.brand_manager = manager

@@ -1,8 +1,40 @@
 """Settings for the local-first NoName independent brands store."""
 import os
+import sys
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def _env_allowed(key):
+    return key.startswith('TELEGRAM_') or key in {
+        'DJANGO_EMAIL_HOST', 'DJANGO_EMAIL_PORT', 'DJANGO_EMAIL_USER', 'DJANGO_EMAIL_PASSWORD',
+        'DJANGO_EMAIL_USE_TLS', 'DJANGO_DEFAULT_FROM_EMAIL', 'DJANGO_ORDER_EMAIL', 'DJANGO_SITE_URL',
+    }
+
+
+def load_env_file(path):
+    """Fill empty environment variables from a local .env file."""
+    if not path.is_file():
+        return
+    for raw in path.read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        if line.startswith('export '):
+            line = line[7:].strip()
+        key, value = line.split('=', 1)
+        key = key.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+        if _env_allowed(key) and key not in os.environ:
+            os.environ[key] = value
+
+
+# Tests keep using explicit settings. A filled .env must not notify Telegram during manage.py test.
+if 'test' not in sys.argv:
+    load_env_file(BASE_DIR / '.env')
 
 
 def env_bool(name, default=False):
@@ -95,3 +127,23 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 DATA_UPLOAD_MAX_NUMBER_FILES = 12
 RATELIMIT_ENABLE = env_bool('DJANGO_RATELIMIT_ENABLE', True)
 RATELIMIT_VIEW = 'shop.views.ratelimited_error'
+
+# Telegram Bot API. Leave the token blank locally: the store then skips notifications.
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '').strip()
+TELEGRAM_BOT_USERNAME = os.environ.get('TELEGRAM_BOT_USERNAME', '').strip().lstrip('@')
+TELEGRAM_NEWS_URL = os.environ.get('TELEGRAM_NEWS_URL', '').strip()
+
+# Local letters print in the runserver console. Set DJANGO_EMAIL_HOST to send them for real.
+DEFAULT_FROM_EMAIL = os.environ.get('DJANGO_DEFAULT_FROM_EMAIL', 'NoName <hello@noname.local>')
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
+ORDER_NOTICE_EMAIL = os.environ.get('DJANGO_ORDER_EMAIL', 'hello@noname.local').strip()
+SITE_URL = os.environ.get('DJANGO_SITE_URL', 'http://127.0.0.1:8000').rstrip('/')
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+EMAIL_TIMEOUT = 10
+if os.environ.get('DJANGO_EMAIL_HOST'):
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+    EMAIL_HOST = os.environ['DJANGO_EMAIL_HOST']
+    EMAIL_PORT = int(os.environ.get('DJANGO_EMAIL_PORT', '587'))
+    EMAIL_HOST_USER = os.environ.get('DJANGO_EMAIL_USER', '')
+    EMAIL_HOST_PASSWORD = os.environ.get('DJANGO_EMAIL_PASSWORD', '')
+    EMAIL_USE_TLS = env_bool('DJANGO_EMAIL_USE_TLS', True)

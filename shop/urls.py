@@ -1,10 +1,10 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path
 from django_ratelimit.decorators import ratelimit
-from . import views, commerce_views
+from . import accounts_views, views, commerce_views
 
 login_view = ratelimit(group='login', key='ip', rate='10/5m', method='POST')(
-    auth_views.LoginView.as_view(template_name='accounts/login.html', redirect_authenticated_user=True)
+    views.StoreLoginView.as_view()
 )
 brand_login_view = ratelimit(group='brand_login', key='ip', rate='10/5m', method='POST')(
     views.BrandLoginView.as_view()
@@ -22,6 +22,8 @@ urlpatterns = [
     path('brand/delete/', views.brand_delete, name='brand_delete'),
     path('brand/deleted/', views.brand_deleted, name='brand_deleted'),
     path('brand/', commerce_views.brand_dashboard, name='brand_dashboard'),
+    path('brand/telegram/', commerce_views.brand_telegram_connect, name='brand_telegram_connect'),
+    path('brand/telegram/disconnect/', commerce_views.brand_telegram_disconnect, name='brand_telegram_disconnect'),
     path('brand/orders/', commerce_views.brand_orders, name='brand_orders'),
     path('brand/products/', views.brand_products, name='brand_products'),
     path('catalog/', views.catalog, name='catalog'),
@@ -45,6 +47,11 @@ urlpatterns = [
     path('catalog/<str:slug>/', views.product_detail, name='product_detail'),
     path('register/', views.register, name='register'),
     path('login/', login_view, name='login'),
+    path('account/email/', accounts_views.account_email, name='account_email'),
+    path('account/email/resend/', accounts_views.account_email_resend, name='account_email_resend'),
+    path('account/email/confirm/<str:token>/', accounts_views.account_email_confirm, name='account_email_confirm'),
+    path('account/password/reset/', accounts_views.password_reset, name='password_reset'),
+    path('account/password/reset/<str:token>/', accounts_views.password_reset_confirm, name='password_reset_confirm'),
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),
     path('products/add/', views.product_create, name='product_create'),
     path('products/<str:slug>/edit/', views.product_edit, name='product_edit'),

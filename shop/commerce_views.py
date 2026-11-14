@@ -24,6 +24,8 @@ from .commerce import (
 )
 from .commerce_forms import CheckoutForm, OrderStatusForm
 from .models import DeliveryMethod, Order, OrderItem, Product, ProductVariant
+from .mail import notify_order_created
+from .telegram import cabinet_context, issue_bind_token, notify_new_order
 
 
 def selected_delivery(request):
@@ -196,6 +198,8 @@ def checkout(request):
                                   is_preorder=item['is_preorder'], preorder_days=item['preorder_days'])
                         for item in verified_cart['lines']
                     ])
+                    notify_new_order(order.pk)
+                    notify_order_created(order.pk)
             except IntegrityError:
                 previous = Order.objects.filter(checkout_token=token).first()
                 if previous and ((request.user.is_authenticated and previous.user_id == request.user.pk)
@@ -299,6 +303,31 @@ def dashboard(request):
 
 
 @brand_manager_required
+@require_POST
+def brand_telegram_connect(request):
+    manager = request.brand_manager
+    if manager.brand_id is None or manager.brand.is_deleted:
+        messages.error(request, 'Сначала создайте бренд, затем подключайте Telegram.')
+        return redirect('brand_create')
+    request.session['telegram_bind_token'] = issue_bind_token(manager)
+    messages.success(request, 'Ссылка действует 30 минут. Откройте её в Telegram с телефона менеджера.')
+    return redirect('brand_dashboard')
+
+
+@brand_manager_required
+@require_POST
+def brand_telegram_disconnect(request):
+    manager = request.brand_manager
+    manager.telegram_chat_id = None
+    manager.telegram_bind_hash = ''
+    manager.telegram_bind_expires = None
+    manager.save(update_fields=['telegram_chat_id', 'telegram_bind_hash', 'telegram_bind_expires'])
+    request.session.pop('telegram_bind_token', None)
+    messages.success(request, 'Telegram отключён. Новые заказы в этот чат больше не приходят.')
+    return redirect('brand_dashboard')
+
+
+@brand_manager_required
 @require_GET
 def brand_dashboard(request):
     brand = request.brand_manager.brand
@@ -317,6 +346,7 @@ def brand_dashboard(request):
              .order_by('-units', '-value'))
     recent = attach_brand_items(orders.select_related('user').order_by('-created_at'), brand)[:8]
     return render(request, 'shop/brand_dashboard.html', {
+        **cabinet_context(request.brand_manager, request.session.get('telegram_bind_token')),
         'brand': brand,
         'orders_count': orders.count(),
         'active_orders_count': active_orders.count(),

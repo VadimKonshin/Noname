@@ -17,7 +17,7 @@
         {% csrf_token %}
         {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
         <div class="form-field">
-          <label for="id_username">Логин</label>
+          <label for="id_username">Логин или почта</label>
           <input type="text" name="username" id="id_username" autocomplete="username" required autofocus value="{{ form.username.value|default_if_none:'' }}">
         </div>
         <div class="form-field">
@@ -27,6 +27,7 @@
         <input type="hidden" name="next" value="{{ next }}">
         <button type="submit" class="btn btn-dark btn-wide">Войти в кабинет <span>↗</span></button>
       </form>
+      <div class="auth-bottom"><a href="{% url 'password_reset' %}">Забыли пароль?</a></div>
       <div class="auth-bottom">Нет аккаунта менеджера? <a href="{% url 'brand_register' %}">Подать заявку ↗</a></div>
       <div class="auth-bottom"><a href="{% url 'login' %}">Вход для покупателей ↗</a></div>
     </div>

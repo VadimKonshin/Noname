@@ -1,0 +1,15 @@
+В заказе №{{ order.pk }} есть позиции бренда {{ brand.name }}.
+
+Получатель: {{ order.full_name }}
+Почта: {{ order.email }}
+Телефон: {{ order.phone }}
+Доставка: {{ order.delivery_name }}
+{% if order.delivery_eta %}Срок: {{ order.delivery_eta }}
+{% endif %}{% if order.pickup_address %}Самовывоз: {{ order.pickup_address }}
+{% endif %}{% if order.postal_code or order.city or order.address %}Адрес: {{ order.postal_code }} {{ order.city }} {{ order.address }}
+{% endif %}{% if order.comment %}Комментарий: {{ order.comment }}
+{% endif %}
+Ваши позиции:
+{% for item in items %}- {{ item.product_title }}, размер {{ item.size }}, {{ item.quantity }} шт. — {{ item.line_total }} ₽{% if item.is_preorder %} (предзаказ){% endif %}
+{% endfor %}
+Сумма ваших позиций: {{ subtotal }} ₽

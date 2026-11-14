@@ -6,7 +6,7 @@ from django.utils.html import format_html
 
 from .commerce import update_order_status
 from .commerce_forms import OrderStatusForm
-from .models import Brand, BrandManager, BrandMessage, DeliveryMethod, Order, OrderItem, Product, ProductImage, ProductVariant
+from .models import Brand, BrandManager, BrandMessage, DeliveryMethod, Order, OrderItem, Product, ProductImage, ProductVariant, UserProfile
 
 
 class ProductImageInline(admin.TabularInline):
@@ -28,13 +28,45 @@ def archive_products(modeladmin, request, queryset):
     modeladmin.message_user(request, f'Удалено из каталога: {count}', messages.SUCCESS)
 
 
+class DeletionRequestFilter(admin.SimpleListFilter):
+    title = 'заявка на удаление'
+    parameter_name = 'deletion_request'
+
+    def lookups(self, request, model_admin):
+        return (('yes', 'Ждёт подтверждения'),)
+
+    def queryset(self, request, queryset):
+        if self.value() == 'yes':
+            return queryset.filter(is_deleted=False, deletion_requested_at__isnull=False)
+        return queryset
+
+
 @admin.register(Brand)
 class BrandAdmin(admin.ModelAdmin):
-    list_display = ('name', 'is_active', 'is_deleted', 'sort_order', 'slug')
+    list_display = ('name', 'is_active', 'is_deleted', 'deletion_requested_at', 'sort_order', 'slug')
     list_editable = ('is_active', 'sort_order')
-    list_filter = ('is_active', 'is_deleted')
+    list_filter = ('is_active', 'is_deleted', DeletionRequestFilter)
     search_fields = ('name', 'description')
-    readonly_fields = ('slug', 'deleted_at', 'is_deleted')
+    readonly_fields = ('slug', 'deleted_at', 'is_deleted', 'deletion_requested_at', 'deletion_requested_by')
+    actions = ('confirm_brand_deletion', 'dismiss_brand_deletion')
+
+    @admin.action(description='Подтвердить удаление выбранных брендов')
+    def confirm_brand_deletion(self, request, queryset):
+        count = 0
+        for brand in queryset.filter(is_deleted=False, deletion_requested_at__isnull=False):
+            brand.soft_delete()
+            count += 1
+        if count:
+            self.message_user(request, f'Брендов скрыто: {count}. Заказы сохранены.', messages.SUCCESS)
+        else:
+            self.message_user(request, 'Среди выбранных нет заявки на удаление. Витрина не изменена.', messages.WARNING)
+
+    @admin.action(description='Отклонить заявку на удаление')
+    def dismiss_brand_deletion(self, request, queryset):
+        count = queryset.filter(is_deleted=False, deletion_requested_at__isnull=False).update(
+            deletion_requested_at=None, deletion_requested_by=None,
+        )
+        self.message_user(request, f'Заявок отклонено: {count}.', messages.SUCCESS)
 
     def has_delete_permission(self, request, obj=None):
         return False
@@ -57,12 +89,20 @@ class BrandMessageAdmin(admin.ModelAdmin):
 
 @admin.register(BrandManager)
 class BrandManagerAdmin(admin.ModelAdmin):
-    list_display = ('account_type', 'user', 'user_email', 'brand_label', 'is_approved', 'created_at')
+    list_display = ('account_type', 'user', 'user_email', 'brand_label', 'is_approved', 'email_verified', 'telegram_on', 'created_at')
     list_editable = ('is_approved',)
     list_filter = ('is_approved', 'brand')
     search_fields = ('user__username', 'user__email', 'brand__name')
-    readonly_fields = ('created_at',)
-    list_select_related = ('user', 'brand')
+    readonly_fields = ('created_at', 'telegram_chat_id', 'telegram_bind_expires')
+    exclude = ('telegram_bind_hash',)
+    list_select_related = ('user__profile', 'brand')
+
+    @admin.display(boolean=True, description='Почта подтверждена')
+    def email_verified(self, obj):
+        try:
+            return obj.user.profile.email_verified_at is not None
+        except UserProfile.DoesNotExist:
+            return True
 
     @admin.display(description='Тип аккаунта')
     def account_type(self, obj):
@@ -75,6 +115,10 @@ class BrandManagerAdmin(admin.ModelAdmin):
     @admin.display(description='Бренд')
     def brand_label(self, obj):
         return obj.brand or 'Ещё не создан'
+
+    @admin.display(description='Telegram', boolean=True)
+    def telegram_on(self, obj):
+        return bool(obj.telegram_chat_id)
 
 
 class ManagerAccountFilter(admin.SimpleListFilter):
@@ -97,12 +141,22 @@ admin.site.unregister(User)
 
 @admin.register(User)
 class StoreUserAdmin(UserAdmin):
-    list_display = (*UserAdmin.list_display, 'manager_account')
+    list_display = (*UserAdmin.list_display, 'manager_account', 'email_verified')
     list_filter = (*UserAdmin.list_filter, ManagerAccountFilter)
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('profile')
 
     @admin.display(boolean=True, description='Менеджер')
     def manager_account(self, obj):
         return BrandManager.objects.filter(user=obj).exists()
+
+    @admin.display(boolean=True, description='Почта подтверждена')
+    def email_verified(self, obj):
+        try:
+            return obj.profile.email_verified_at is not None
+        except UserProfile.DoesNotExist:
+            return True
 
 
 @admin.register(Product)

@@ -1,9 +1,11 @@
 from django import forms
-from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
+from django.contrib.auth.forms import AuthenticationForm, SetPasswordForm, UserCreationForm
 from django.contrib.auth.models import User
 from django.db import transaction
 from django.forms import BaseInlineFormSet, inlineformset_factory
-from .models import Brand, BrandManager, Product, ProductVariant
+
+from .accounts import resolve_login_name
+from .models import Brand, BrandManager, Product, ProductVariant, UserProfile
 
 
 class RegisterForm(UserCreationForm):
@@ -25,6 +27,10 @@ class RegisterForm(UserCreationForm):
         user.email = self.cleaned_data['email']
         if commit:
             user.save()
+            profile, _created = UserProfile.objects.get_or_create(user=user)
+            profile.email_verified_at = None
+            profile.pending_email = ''
+            profile.save(update_fields=['email_verified_at', 'pending_email'])
         return user
 
 
@@ -40,13 +46,69 @@ class BrandManagerRegisterForm(RegisterForm):
         return user
 
 
-class BrandAuthenticationForm(AuthenticationForm):
+class EmailOrUsernameAuthenticationForm(AuthenticationForm):
+    username = forms.CharField(
+        label='Логин или почта',
+        max_length=254,
+        widget=forms.TextInput(attrs={'autofocus': True, 'autocomplete': 'username'}),
+    )
+    error_messages = {
+        'invalid_login': 'Неверный логин или пароль. Попробуй ещё раз.',
+        'inactive': 'Этот аккаунт отключён.',
+    }
+
+    def clean(self):
+        username, error = resolve_login_name(self.cleaned_data.get('username'))
+        if error:
+            raise forms.ValidationError(error)
+        self.cleaned_data['username'] = username
+        return super().clean()
+
+
+class BrandAuthenticationForm(EmailOrUsernameAuthenticationForm):
     def clean(self):
         data = super().clean()
         user = self.user_cache
         if user and not user.is_superuser and not BrandManager.objects.filter(user=user).exists():
             raise forms.ValidationError('Этот аккаунт не зарегистрирован как менеджер бренда.', code='not_brand_manager')
         return data
+
+
+class PasswordResetRequestForm(forms.Form):
+    email = forms.EmailField(label='Почта')
+
+    def clean_email(self):
+        return self.cleaned_data['email'].strip().lower()
+
+
+class StoreSetPasswordForm(SetPasswordForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['new_password1'].label = 'Новый пароль'
+        self.fields['new_password2'].label = 'Повторите пароль'
+
+
+class EmailChangeForm(forms.Form):
+    password = forms.CharField(label='Текущий пароль', widget=forms.PasswordInput)
+    email = forms.EmailField(label='Новая почта')
+
+    def __init__(self, *args, user=None, **kwargs):
+        self.user = user
+        super().__init__(*args, **kwargs)
+
+    def clean_password(self):
+        password = self.cleaned_data['password']
+        if not self.user.check_password(password):
+            raise forms.ValidationError('Неверный пароль.')
+        return password
+
+    def clean_email(self):
+        email = self.cleaned_data['email'].strip().lower()
+        if email == (self.user.email or '').lower():
+            raise forms.ValidationError('Это уже почта аккаунта.')
+        if User.objects.filter(email__iexact=email).exclude(pk=self.user.pk).exists():
+            raise forms.ValidationError('Этот e-mail уже зарегистрирован.')
+        return email
 
 
 class BrandProfileForm(forms.ModelForm):

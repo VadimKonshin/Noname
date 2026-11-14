@@ -5,7 +5,32 @@
   <div class="eyebrow"><span class="tiny-dot"></span> BRAND / АНАЛИТИКА</div>
   <h1 class="commerce-heading">{{ brand.name|upper }}<span class="heading-period">.</span></h1>
   <p class="page-lead">Кабинет менеджера бренда. Здесь отображаются только ваши товары и позиции заказов.</p>
+  {% if brand.deletion_requested_at %}
+    <p class="page-lead">Заявка на удаление отправлена. Бренд и товары остаются на витрине, пока администратор её не подтвердит.</p>
+  {% endif %}
   {% include 'includes/brand_nav.html' with active_page='dashboard' %}
+
+  <div class="form-section">
+    <h2>Telegram</h2>
+    {% if telegram_connected %}
+      <p>Уведомления о ваших заказах и сообщениях покупателей приходят в подключённый личный чат.</p>
+      <form method="post" action="{% url 'brand_telegram_disconnect' %}">
+        {% csrf_token %}
+        <button class="btn btn-dark" type="submit">Отключить</button>
+      </form>
+    {% else %}
+      <p>Подключите бота в личном чате. Туда придут только заказы и сообщения {{ brand.name }}.</p>
+    {% endif %}
+    <form method="post" action="{% url 'brand_telegram_connect' %}">
+      {% csrf_token %}
+      <button class="btn btn-dark" type="submit">Получить ссылку</button>
+    </form>
+    {% if telegram_link %}
+      <p><a href="{{ telegram_link }}" rel="noopener noreferrer" target="_blank">Открыть бота и включить уведомления</a></p>
+    {% elif telegram_start_code %}
+      <p>Откройте бота и отправьте: /start {{ telegram_start_code }}</p>
+    {% endif %}
+  </div>
 
   <div class="metric-grid">
     <div class="metric">

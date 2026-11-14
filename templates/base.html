@@ -40,6 +40,7 @@
             {% if perms.shop.add_product %}<a href="{% url 'product_create' %}" class="nav-add">+ Товар</a>{% endif %}
             <a href="{% url 'my_orders' %}">Мои заказы</a>
           {% endif %}
+          {% if not email_verified %}<a href="{% url 'account_email' %}">Подтвердить почту</a>{% endif %}
           <span class="nav-user">{{ user.username }}</span>
           <form method="post" action="{% url 'logout' %}" class="logout-form">
             {% csrf_token %}
@@ -75,12 +76,14 @@
           <a href="{% url 'info_delivery' %}">Доставка</a>
           <a href="{% url 'info_returns' %}">Возврат</a>
           <a href="{% url 'info_contacts' %}">Контакты</a>
+          {% if telegram_news_url %}<a href="{{ telegram_news_url }}" rel="noopener noreferrer" target="_blank">Группа для покупателей</a>{% endif %}
         </div>
         <div>
           <span>Аккаунт</span>
           {% if user.is_authenticated %}
             {% if brand_manager %}<a href="{% url 'brand_dashboard' %}">Кабинет бренда</a>{% endif %}
             <a href="{% url 'my_orders' %}">Мои заказы</a>
+            <a href="{% url 'account_email' %}">Почта</a>
           {% else %}
             <a href="{% url 'login' %}">Вход</a>
             <a href="{% url 'register' %}">Регистрация</a>
