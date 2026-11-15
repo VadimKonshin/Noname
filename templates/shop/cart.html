@@ -5,7 +5,7 @@
 <section class="container commerce-page noname-cart">
   <div class="eyebrow"><span class="tiny-dot"></span> CHECKOUT / 01</div>
   <h1 class="commerce-heading">ТВОЯ КОРЗИНА<span class="heading-period">.</span></h1>
-  <p class="page-lead">Сначала вещи, затем способ доставки. Регистрация не требуется.</p>
+  <p class="page-lead">Один заказ — один бренд и одна доставка. Регистрация не требуется.</p>
 
   {% if cart.lines %}
     <div class="cart-sequence">
@@ -44,6 +44,9 @@
       <div class="cart-subtotal-line">
         <span>СУММА ТОВАРОВ</span><strong>{{ cart.subtotal|floatformat:0 }} ₽</strong>
       </div>
+      {% if not single_brand %}
+        <p class="detail-notice">В корзине вещи разных брендов. Один заказ везёт один бренд одной доставкой. Удалите лишние вещи, затем выберите доставку.</p>
+      {% else %}
       <div class="checkout-step-title shipping-step-title">
         <span>02 / ДОСТАВКА</span><span>ВЫБЕРИ ОДИН ВАРИАНТ</span>
       </div>
@@ -51,18 +54,22 @@
         {% csrf_token %}
         {% for method in delivery_methods %}
           <label class="shipping-option">
-            <input type="radio" name="delivery_method" value="{{ method.pk }}" data-method-price="{{ method.price }}" {% if selected_method.pk == method.pk %}checked{% endif %} required>
+            <input type="radio" name="delivery_method" value="{{ method.pk }}" data-method-price="{% if cdek_live and method.code == 'cdek' %}quote{% else %}{{ method.price }}{% endif %}" {% if selected_method.pk == method.pk %}checked{% endif %} required>
             <span class="shipping-option-mark" aria-hidden="true"></span>
             <span class="shipping-option-copy">
               <strong>{{ method.name }}</strong>
               <small>
-                {{ method.description }}
-                {% if method.eta %}<br>Срок: {{ method.eta }}{% endif %}
-                {% if method.pickup_address %}<br>Адрес: {{ method.pickup_address }}{% endif %}
+                {% if cdek_live and method.code == 'cdek' %}
+                  Цена считается по индексу на оформлении.
+                {% else %}
+                  {{ method.description }}
+                  {% if method.eta %}<br>Срок: {{ method.eta }}{% endif %}
+                  {% if method.pickup_address %}<br>Адрес: {{ method.pickup_address }}{% endif %}
+                {% endif %}
               </small>
             </span>
             <strong class="shipping-option-price">
-              {% if method.price %}{{ method.price|floatformat:0 }} ₽{% else %}БЕСПЛАТНО{% endif %}
+              {% if cdek_live and method.code == 'cdek' %}по индексу{% elif method.price %}{{ method.price|floatformat:0 }} ₽{% else %}БЕСПЛАТНО{% endif %}
             </strong>
           </label>
         {% empty %}
@@ -72,11 +79,11 @@
           <div class="summary-row"><span>Вещи</span><strong>{{ cart.subtotal|floatformat:0 }} ₽</strong></div>
           <div class="summary-row">
             <span>Доставка</span>
-            <strong data-shipping-preview>{% if selected_method %}{{ selected_method.price|floatformat:0 }} ₽{% else %}НЕ ВЫБРАНА{% endif %}</strong>
+            <strong data-shipping-preview>{% if cdek_selected_live %}ПО ИНДЕКСУ{% elif selected_method %}{{ selected_method.price|floatformat:0 }} ₽{% else %}НЕ ВЫБРАНА{% endif %}</strong>
           </div>
           <div class="summary-total">
             <span>ИТОГО</span>
-            <strong data-total-preview>{% if selected_method %}{{ grand_total|floatformat:0 }} ₽{% else %}{{ cart.subtotal|floatformat:0 }} ₽ *{% endif %}</strong>
+            <strong data-total-preview>{% if cdek_selected_live %}{{ cart.subtotal|floatformat:0 }} ₽ *{% elif selected_method %}{{ grand_total|floatformat:0 }} ₽{% else %}{{ cart.subtotal|floatformat:0 }} ₽ *{% endif %}</strong>
           </div>
           <small>* Итоговая стоимость рассчитывается после выбора доставки.</small>
         </div>
@@ -84,6 +91,7 @@
           ПРОДОЛЖИТЬ ОФОРМЛЕНИЕ ↗
         </button>
       </form>
+      {% endif %}
       <p class="guest-hint">АККАУНТ НЕ НУЖЕН / КОНТАКТЫ УКАЖЕШЬ НА СЛЕДУЮЩЕМ ШАГЕ</p>
     </div>
   {% else %}

@@ -7,6 +7,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from .commerce import update_order_status
+from .mail import notify_order_created
 from .models import Brand, BrandManager, DeliveryMethod, Order, OrderItem, Product, ProductVariant
 
 User = get_user_model()
@@ -45,17 +46,27 @@ class OrderMailTests(TestCase):
 
     def test_checkout_letters_keep_each_brand_to_its_own_items(self):
         self._add(self.alpha_shirt, 'M')
-        self._add(self.beta_shirt, 'L')
-        self.client.post(reverse('cart_delivery'), {'delivery_method': self.delivery.pk, 'next': '1'})
-        self.client.get(reverse('checkout'))
+        refused = self.client.post(reverse('cart_add', args=[self.beta_shirt.slug]), {
+            'size': 'L', 'quantity': 1, 'order_type': 'stock',
+        }, follow=True)
+        self.assertContains(refused, 'один бренд и одна доставка')
+        self.assertEqual(refused.context['cart']['count'], 1)
+        order = Order.objects.create(
+            checkout_token='mail-mixed', full_name='Тестовый покупатель', email='buyer@example.com',
+            phone='+79991234567', city='Москва', address='ул. Тестовая, д. 1', postal_code='123456',
+            comment='Позвоните', delivery_name='По городу', delivery_price=Decimal('0'),
+            subtotal=Decimal('9000'), total=Decimal('9000'),
+        )
+        OrderItem.objects.create(
+            order=order, product=self.alpha_shirt, product_title=self.alpha_shirt.title,
+            brand_name=self.alpha.name, size='M', quantity=1, unit_price=Decimal('3000'), line_total=Decimal('3000'),
+        )
+        OrderItem.objects.create(
+            order=order, product=self.beta_shirt, product_title=self.beta_shirt.title,
+            brand_name=self.beta.name, size='L', quantity=1, unit_price=Decimal('6000'), line_total=Decimal('6000'),
+        )
         with self.captureOnCommitCallbacks(execute=True):
-            response = self.client.post(reverse('checkout'), {
-                'checkout_token': self.client.session['checkout_token'],
-                'full_name': 'Тестовый покупатель', 'email': 'buyer@example.com',
-                'phone': '+79991234567', 'city': 'Москва', 'address': 'ул. Тестовая, д. 1',
-                'postal_code': '123456', 'comment': 'Позвоните',
-            })
-        self.assertEqual(response.status_code, 302)
+            notify_order_created(order.pk)
         by_recipient = {message.to[0]: message for message in mail.outbox}
         self.assertEqual(set(by_recipient), {'buyer@example.com', 'alpha@example.com', 'beta@example.com', 'store@example.com'})
         self.assertNotIn('quiet@example.com', by_recipient)

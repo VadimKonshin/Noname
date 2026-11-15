@@ -11,7 +11,21 @@
       <p class="form-hint">Вещь: <a href="{{ note.product.get_absolute_url }}">{{ note.product.title }}</a></p>
     {% endif %}
     <p class="message-body">{{ note.body|linebreaksbr }}</p>
-    <p class="form-hint">Ответ напишите сами на {{ note.sender_email }}. Сайт это письмо не отправит.</p>
+    {% if note.replied_at %}
+      <p class="form-hint">Ответ отправлен {{ note.replied_at|date:'d.m.Y H:i' }} на {{ note.sender_email }}.</p>
+      <p class="message-body">{{ note.reply_body|linebreaksbr }}</p>
+    {% else %}
+      <form method="post" class="checkout-form">
+        {% csrf_token %}
+        <div class="form-field">
+          <label for="{{ form.reply.id_for_label }}">{{ form.reply.label }}</label>
+          {{ form.reply }}
+          {% if form.reply.errors %}<div class="field-error">{{ form.reply.errors }}</div>{% endif %}
+        </div>
+        <button type="submit" class="btn btn-dark">Отправить ответ</button>
+      </form>
+      <p class="form-hint">Письмо уйдёт на {{ note.sender_email }}. В Telegram покупателя оно не дублируется.</p>
+    {% endif %}
   </div>
   <a class="back-catalog" href="{% url 'brand_messages' %}">← К сообщениям</a>
 </section>

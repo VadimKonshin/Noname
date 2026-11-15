@@ -4,7 +4,7 @@
 <section class="container commerce-page">
   <div class="eyebrow"><span class="tiny-dot"></span> CHECKOUT / 02</div>
   <h1 class="commerce-heading">ОФОРМЛЕНИЕ<span class="heading-period">.</span></h1>
-  <p class="page-lead">Никакой обязательной регистрации. Оставь данные для связи — мы подтвердим заказ.</p>
+  <p class="page-lead">Один бренд и одна доставка. Регистрация не нужна: оставь данные для связи, и магазин подтвердит заказ.</p>
 
   <div class="commerce-layout">
     <div class="checkout-panel">
@@ -32,28 +32,50 @@
             <div>
               <strong>{{ selected_method.name }}</strong>
               <small>
-                {{ selected_method.description }}
-                {% if selected_method.eta %}<br>Срок: {{ selected_method.eta }}{% endif %}
-                {% if selected_method.pickup_address %}<br>Адрес: {{ selected_method.pickup_address }}{% endif %}
+                {% if cdek_live %}
+                  Стоимость запрашивается у СДЭК по индексу. В форму цена не подставляется.
+                  {% if cdek_quote.eta %}<br>Срок: {{ cdek_quote.eta }}{% endif %}
+                {% else %}
+                  {{ selected_method.description }}
+                  {% if selected_method.eta %}<br>Срок: {{ selected_method.eta }}{% endif %}
+                  {% if selected_method.pickup_address %}<br>Адрес: {{ selected_method.pickup_address }}{% endif %}
+                {% endif %}
               </small>
             </div>
-            <strong>{{ selected_method.price|floatformat:0 }} ₽</strong>
+            <strong>
+              {% if cdek_quote %}{{ cdek_quote.price|floatformat:0 }} ₽{% elif shipping_known %}{{ shipping_price|floatformat:0 }} ₽{% else %}по индексу{% endif %}
+            </strong>
             <a href="{% url 'cart' %}">ИЗМЕНИТЬ ↗</a>
           </div>
-          {% if selected_method.requires_address %}
+          {% if cdek_live %}
+            <p class="form-hint">Укажи город и индекс. Вес посылки для расчёта — оценка: в карточке вещи веса нет. После ответа СДЭК выбери пункт выдачи.</p>
+          {% elif selected_method.requires_address %}
             <p class="form-hint">Укажи город и адрес или пункт выдачи для выбранной службы.</p>
           {% endif %}
           {% for field in form %}
             {% if field.name == 'city' or field.name == 'address' or field.name == 'postal_code' %}
               <div class="form-field" {% if not selected_method.requires_address %}hidden{% endif %}>
                 <label for="{{ field.id_for_label }}">
-                  {{ field.label }}{% if selected_method.requires_address and field.name != 'postal_code' %} *{% endif %}
+                  {{ field.label }}{% if cdek_live and field.name != 'address' %} *{% elif selected_method.requires_address and field.name != 'postal_code' %} *{% endif %}
                 </label>
                 {{ field }}
                 {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
               </div>
             {% endif %}
           {% endfor %}
+          {% if cdek_quote %}
+            <p class="form-hint">Пункты выдачи для индекса {{ cdek_quote.postal_code }}. Цена {{ cdek_quote.price|floatformat:0 }} ₽ пришла от СДЭК.</p>
+            {% for point in cdek_quote.points %}
+              <label class="shipping-option">
+                <input type="radio" name="delivery_point" value="{{ point.code }}" {% if selected_point == point.code %}checked{% endif %} required>
+                <span class="shipping-option-mark" aria-hidden="true"></span>
+                <span class="shipping-option-copy">
+                  <strong>{{ point.name }}</strong>
+                  <small>{{ point.address }}</small>
+                </span>
+              </label>
+            {% endfor %}
+          {% endif %}
         </div>
 
         <div class="form-section">
@@ -71,7 +93,7 @@
           Если заказываешь без аккаунта, сохрани номер — страница заказа откроется только в этом браузере.
           <a href="{% url 'info_delivery' %}">Доставка</a> и <a href="{% url 'info_returns' %}">возврат</a>.
         </p>
-        <button type="submit" class="btn btn-dark btn-wide">ОТПРАВИТЬ ЗАКАЗ <span>↗</span></button>
+        <button type="submit" class="btn btn-dark btn-wide">{% if cdek_live and not cdek_quote %}РАССЧИТАТЬ СДЭК{% else %}ОТПРАВИТЬ ЗАКАЗ{% endif %} <span>↗</span></button>
       </form>
     </div>
 
@@ -88,8 +110,8 @@
         </div>
       {% endfor %}
       <div class="summary-row"><span>Вещи</span><strong>{{ cart.subtotal|floatformat:0 }} ₽</strong></div>
-      <div class="summary-row"><span>{{ selected_method.name }}</span><strong>{{ selected_method.price|floatformat:0 }} ₽</strong></div>
-      <div class="summary-total"><span>ИТОГО</span><strong>{{ grand_total|floatformat:0 }} ₽</strong></div>
+      <div class="summary-row"><span>{{ selected_method.name }}</span><strong>{% if cdek_quote %}{{ cdek_quote.price|floatformat:0 }} ₽{% elif shipping_known %}{{ shipping_price|floatformat:0 }} ₽{% else %}по индексу{% endif %}</strong></div>
+      <div class="summary-total"><span>ИТОГО</span><strong>{% if shipping_known %}{{ grand_total|floatformat:0 }} ₽{% else %}{{ cart.subtotal|floatformat:0 }} ₽ *{% endif %}</strong></div>
       <p class="summary-note">Стоимость пересчитывается сервером перед подтверждением, не по данным браузера.</p>
       <a href="{% url 'cart' %}" class="back-catalog">← Вернуться к корзине</a>
     </aside>

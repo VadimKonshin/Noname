@@ -91,6 +91,11 @@
       totalEl.textContent = money(subtotal) + ' *';
       return;
     }
+    if (chosen.dataset.methodPrice === 'quote') {
+      shippingEl.textContent = 'ПО ИНДЕКСУ';
+      totalEl.textContent = money(subtotal) + ' *';
+      return;
+    }
     const shipping = Number(String(chosen.dataset.methodPrice || '0').replace(/\s/g, '').replace(',', '.')) || 0;
     shippingEl.textContent = money(shipping);
     totalEl.textContent = money(subtotal + shipping);

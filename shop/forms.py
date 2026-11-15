@@ -173,6 +173,18 @@ class BrandMessageForm(forms.Form):
         return body
 
 
+class BrandReplyForm(forms.Form):
+    reply = forms.CharField(
+        label='Ответ покупателю',
+        min_length=2,
+        max_length=4000,
+        widget=forms.Textarea(attrs={'rows': 5}),
+    )
+
+    def clean_reply(self):
+        return self.cleaned_data['reply'].strip()
+
+
 class BrandDeleteForm(forms.Form):
     brand_name = forms.CharField(label='Название бренда', max_length=120)
     password = forms.CharField(label='Пароль аккаунта', widget=forms.PasswordInput)
@@ -250,7 +262,11 @@ class ProductForm(forms.ModelForm):
 
     class Meta:
         model = Product
-        fields = ('brand', 'title', 'description', 'composition', 'fit', 'care', 'price', 'cover', 'color', 'is_available', 'allow_preorder', 'preorder_days', 'is_published', 'is_featured')
+        fields = (
+            'brand', 'title', 'description', 'composition', 'fit', 'care',
+            'offers_cdek', 'offers_post',
+            'price', 'cover', 'color', 'is_available', 'allow_preorder', 'preorder_days', 'is_published', 'is_featured',
+        )
         widgets = {
             'description': forms.Textarea(attrs={'rows': 6, 'placeholder': 'Расскажи о ткани, посадке, принте и уходе за вещью…'}),
             'composition': forms.TextInput(attrs={'placeholder': 'Например, 100% хлопок, 240 г/м²'}),
@@ -270,3 +286,9 @@ class ProductForm(forms.ModelForm):
 
     def clean_preorder_days(self):
         return self.cleaned_data.get('preorder_days') or 14
+
+    def clean(self):
+        cleaned = super().clean()
+        if not cleaned.get('offers_cdek') and not cleaned.get('offers_post'):
+            raise forms.ValidationError('Отметьте СДЭК, Почту России или оба способа.')
+        return cleaned

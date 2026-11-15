@@ -1,0 +1,6 @@
+{% extends 'emails/base.html' %}
+{% block body %}
+<p><strong>{{ brand.name }}</strong> отвечает на ваше сообщение.</p>
+{% if note.product %}<p>Вещь: {{ note.product.title }}</p>{% endif %}
+<p>{{ reply|linebreaksbr }}</p>
+{% endblock %}

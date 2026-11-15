@@ -20,11 +20,12 @@ from .access import (
 )
 from .accounts import remember_console_link, save_new_account, send_confirmation, user_email_verified, uses_console_mail
 from .forms import (
-    BrandAuthenticationForm, BrandCreateForm, BrandDeleteForm, BrandMessageForm, BrandProfileForm,
+    BrandAuthenticationForm, BrandCreateForm, BrandDeleteForm, BrandMessageForm, BrandProfileForm, BrandReplyForm,
     BrandManagerRegisterForm, EmailOrUsernameAuthenticationForm, ProductForm, ProductVariantFormSet, RegisterForm,
 )
 from .commerce import MAX_OPEN_PREORDER_PER_VARIANT
 from .models import Brand, BrandManager, BrandMessage, Product, ProductImage, ProductVariant
+from .mail import deliver_mail
 from .telegram import notify_brand_contact
 from .validators import validate_product_image
 
@@ -90,7 +91,7 @@ def brand_message(request, slug):
         notify_brand_contact(note.pk)
         messages.success(
             request,
-            'Сообщение у менеджера бренда. Письмо само не отправляется: ответ придёт на указанную почту, когда менеджер его прочитает.',
+            'Сообщение у менеджера бренда. Ответ придёт на указанную почту.',
         )
         return redirect('brand_storefront', slug=brand.slug)
     return render(request, 'shop/brand_message.html', {'brand': brand, 'product': product, 'form': form})
@@ -109,8 +110,9 @@ def brand_messages(request):
     return render(request, 'shop/brand_messages.html', {'brand': brand, 'page': page})
 
 
+@ratelimit(group='brand_reply', key='user', rate='8/h', method='POST')
 @brand_manager_required
-@require_GET
+@require_http_methods(['GET', 'POST'])
 def brand_message_detail(request, pk):
     brand = request.brand_manager.brand
     if brand is None:
@@ -119,7 +121,29 @@ def brand_message_detail(request, pk):
     if note.read_at is None:
         note.read_at = timezone.now()
         note.save(update_fields=['read_at'])
-    return render(request, 'shop/brand_message_detail.html', {'brand': brand, 'note': note})
+    form = BrandReplyForm(request.POST if request.method == 'POST' and note.replied_at is None else None)
+    if request.method == 'POST' and note.replied_at is None and form.is_valid():
+        reply = form.cleaned_data['reply']
+        reply_to = [request.user.email] if request.user.email else None
+        try:
+            deliver_mail(
+                f'NoName: ответ {brand.name}',
+                'emails/brand_reply.txt',
+                'emails/brand_reply.html',
+                {'brand': brand, 'note': note, 'reply': reply},
+                [note.sender_email],
+                reply_to=reply_to,
+            )
+        except RuntimeError:
+            messages.error(request, 'Письмо не ушло. Ответ не сохранён, его можно отправить ещё раз.')
+        else:
+            note.reply_body = reply
+            note.replied_at = timezone.now()
+            note.replied_by = request.user
+            note.save(update_fields=['reply_body', 'replied_at', 'replied_by'])
+            messages.success(request, f'Ответ отправлен на {note.sender_email}.')
+            return redirect('brand_message_detail', pk=note.pk)
+    return render(request, 'shop/brand_message_detail.html', {'brand': brand, 'note': note, 'form': form})
 
 
 def home(request):

@@ -1,11 +1,15 @@
 """Telegram bot: personal manager alerts and buyer order-status checks."""
 import hashlib
+import http.client
 import json
 import logging
 import re
+import socket
 import ssl
+import sys
 import threading
 import time
+import urllib.request
 from decimal import Decimal
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -20,20 +24,46 @@ from django.utils import timezone
 logger = logging.getLogger(__name__)
 
 MESSAGE_LIMIT = 3900
+_API_HOST = 'api.telegram.org'
+# The handshake still goes to api.telegram.org. This label is only the SNI
+# value: some networks reset the connection when the ClientHello names Telegram.
+_DECOY_SNI = 'example.com'
 _POLLER_STARTED = False
+_direct_tls_blocked = False
+_route_checked = False
 
 
 def news_url():
-    url = getattr(settings, 'TELEGRAM_NEWS_URL', '').strip()
-    if url.startswith(('https://t.me/', 'https://telegram.me/')) and len(url) <= 300 and ' ' not in url:
-        return url
-    return ''
+    """App link for the buyers group. https://t.me is blocked on this network, so the page opens Telegram directly."""
+    return _telegram_app_link(getattr(settings, 'TELEGRAM_NEWS_URL', ''))
 
 
 def public_bot_url():
     username = getattr(settings, 'TELEGRAM_BOT_USERNAME', '').strip().lstrip('@')
     if re.fullmatch(r'[A-Za-z0-9_]{5,32}', username or ''):
-        return f'https://t.me/{username}'
+        return f'tg://resolve?domain={username}'
+    return ''
+
+
+def _telegram_app_link(url):
+    url = str(url or '').strip()
+    if len(url) > 300 or any(char.isspace() for char in url):
+        return ''
+    if url.startswith('https://t.me/'):
+        rest = url[len('https://t.me/'):]
+    elif url.startswith('https://telegram.me/'):
+        rest = url[len('https://telegram.me/'):]
+    else:
+        return ''
+    rest = rest.split('#', 1)[0].split('?', 1)[0].strip('/')
+    if rest.startswith('+') or rest.startswith('joinchat/'):
+        code = rest[1:] if rest.startswith('+') else rest[len('joinchat/'):]
+        if re.fullmatch(r'[A-Za-z0-9_-]{10,64}', code or ''):
+            return f'tg://join?invite={code}'
+        return ''
+    username = rest.split('/', 1)[0]
+    if re.fullmatch(r'[A-Za-z0-9_]{5,32}', username or ''):
+        return f'tg://resolve?domain={username}'
     return ''
 
 
@@ -70,7 +100,7 @@ def cabinet_context(manager, session_token):
         code = token
         username = bot_username()
         if username:
-            link = f'https://t.me/{username}?start={token}'
+            link = f'tg://resolve?domain={username}&start={token}'
     return {
         'telegram_connected': bool(manager.telegram_chat_id),
         'telegram_link': link,
@@ -104,31 +134,60 @@ def handle_update(update):
 
 
 def bind_manager(chat_id, code):
-    from .models import BrandManager
+    from .models import BrandManager, UserProfile
 
-    manager = (BrandManager.objects.select_related('brand')
-               .filter(telegram_bind_hash=_digest(code), telegram_bind_expires__gt=timezone.now(), is_approved=True)
-               .first())
-    if manager is None or manager.brand_id is None or manager.brand.is_deleted:
-        return 'Ссылка устарела или кабинет ещё не подтверждён. Откройте кабинет бренда и получите новую.'
-    chat = str(chat_id)
-    BrandManager.objects.filter(telegram_chat_id=chat).exclude(pk=manager.pk).update(telegram_chat_id=None)
-    manager.telegram_chat_id = chat
-    manager.telegram_bind_hash = ''
-    manager.telegram_bind_expires = None
-    manager.save(update_fields=['telegram_chat_id', 'telegram_bind_hash', 'telegram_bind_expires'])
-    return f'Готово. Заказы и сообщения бренда «{manager.brand.name}» будут приходить в этот чат.'
+    if _bump(f'telegram-bind-{chat_id}', BIND_LIMIT):
+        return 'Слишком много попыток подключения. Попробуйте через час.'
+    if not code or len(str(code)) > 200:
+        return _bind_rejected()
+    with transaction.atomic():
+        manager = (BrandManager.objects.select_for_update()
+                   .select_related('brand')
+                   .filter(telegram_bind_hash=_digest(code), telegram_bind_expires__gt=timezone.now())
+                   .first())
+        if manager is None:
+            return _bind_rejected()
+        email_ready = UserProfile.objects.filter(
+            user_id=manager.user_id, email_verified_at__isnull=False,
+        ).exists()
+        if not email_ready or not manager.is_approved or manager.brand_id is None or manager.brand.is_deleted:
+            manager.telegram_bind_hash = ''
+            manager.telegram_bind_expires = None
+            manager.save(update_fields=['telegram_bind_hash', 'telegram_bind_expires'])
+            return _bind_rejected()
+        chat = str(chat_id)
+        BrandManager.objects.filter(telegram_chat_id=chat).exclude(pk=manager.pk).update(telegram_chat_id=None)
+        manager.telegram_chat_id = chat
+        manager.telegram_bind_hash = ''
+        manager.telegram_bind_expires = None
+        manager.save(update_fields=['telegram_chat_id', 'telegram_bind_hash', 'telegram_bind_expires'])
+        brand_name = _html(manager.brand.name)
+    return f'Готово. Заказы и сообщения бренда «{brand_name}» будут приходить в этот чат.'
 
 
 def order_status(chat_id, order_id, phone):
+    from django.db.models import Q
     from .models import Order
 
-    if _limited(chat_id):
+    if _status_limited(chat_id, phone):
         return 'Слишком много проверок. Попробуйте через час.'
     order = Order.objects.prefetch_related('items').filter(pk=order_id).first()
     if order is None or not _phones_match(order.phone, phone):
         return 'Заказ с таким номером и телефоном не найден.'
-    Order.objects.filter(pk=order.pk).update(buyer_telegram_chat_id=str(chat_id))
+    chat = str(chat_id)
+    current = order.buyer_telegram_chat_id or ''
+    if current == chat:
+        bound_here = True
+    elif current:
+        bound_here = False
+    else:
+        bound_here = Order.objects.filter(pk=order.pk).filter(
+            Q(buyer_telegram_chat_id='') | Q(buyer_telegram_chat_id__isnull=True),
+        ).update(buyer_telegram_chat_id=chat) == 1
+    if bound_here:
+        footer = 'Если статус станет «отправлен» или «отменён», бот напишет в этот чат.'
+    else:
+        footer = 'Уведомления об отправке и отмене остаются в чате, который первым проверил этот заказ.'
     lines = [
         f'<b>Заказ №{order.pk}</b>',
         f'Статус: {_html(order.get_status_display())}',
@@ -145,7 +204,7 @@ def order_status(chat_id, order_id, phone):
         f'Доставка: {_html(order.delivery_name)}',
         f'Итого: {_money(order.total)}',
         '',
-        'Если статус станет «отправлен» или «отменён», бот напишет в этот чат.',
+        footer,
     ])
     return '\n'.join(lines)
 
@@ -303,6 +362,10 @@ def _brand_order_text(order, brand, items):
         lines.append(f'Срок: {_html(order.delivery_eta)}')
     if order.pickup_address:
         lines.append(f'Самовывоз: {_html(order.pickup_address)}')
+    if order.delivery_point_code:
+        lines.append(f'Пункт: {_html(order.delivery_point_code)}')
+    if order.delivery_point_address:
+        lines.append(f'Адрес пункта: {_html(order.delivery_point_address)}')
     address = ', '.join(part for part in (order.postal_code, order.city, order.address) if part)
     if address:
         lines.append(f'Адрес: {_html(address)}')
@@ -379,7 +442,7 @@ def _help_text():
         'Сюда приходят только заказы и сообщения его бренда.\n\n'
         'Покупатель может проверить статус. Напишите номер заказа и телефон из заказа:\n'
         '15 +79991234567\n\n'
-        'После успешной проверки бот сам напишет в этот чат, когда заказ отправят или отменят.'
+        'После первой успешной проверки бот напишет в этот чат, когда заказ отправят или отменят.'
     )
 
 
@@ -397,16 +460,42 @@ def _phones_match(stored, given):
     return len(left) >= 10 and len(right) >= 10 and left[-10:] == right[-10:]
 
 
-def _limited(chat_id):
-    key = f'telegram-status-{chat_id}'
+CHAT_STATUS_LIMIT = 8
+PHONE_STATUS_LIMIT = 30
+BIND_LIMIT = 8
+LIMIT_WINDOW = 3600
+
+
+def _bind_rejected():
+    return 'Ссылка устарела или кабинет ещё не подтверждён. Откройте кабинет бренда и получите новую.'
+
+
+def _status_limited(chat_id, phone):
+    """A new chat does not reset the budget of a phone that is already being checked."""
+    if _bump(f'telegram-status-chat-{chat_id}', CHAT_STATUS_LIMIT):
+        return True
+    phone_key = _phone_limit_key(phone)
+    return bool(phone_key) and _bump(f'telegram-status-phone-{phone_key}', PHONE_STATUS_LIMIT)
+
+
+def _phone_limit_key(phone):
+    digits = re.sub(r'\D', '', phone or '')
+    if len(digits) < 10:
+        return ''
+    return hashlib.sha256(digits[-10:].encode()).hexdigest()
+
+
+def _bump(key, limit):
+    if cache.add(key, 1, LIMIT_WINDOW):
+        return False
     try:
         count = cache.incr(key)
     except ValueError:
-        cache.set(key, 1, 3600)
+        cache.set(key, 1, LIMIT_WINDOW)
         return False
     if count == 1:
-        cache.touch(key, 3600)
-    return count > 8
+        cache.touch(key, LIMIT_WINDOW)
+    return count > limit
 
 
 def _digest(code):
@@ -439,18 +528,115 @@ def _send(chat_id, text):
     return sent
 
 
+def _certificate_matches(cert, hostname):
+    """True when a DNS name on the certificate covers hostname, including one wildcard label."""
+    hostname = str(hostname or '').lower().rstrip('.')
+    if not hostname or not isinstance(cert, dict):
+        return False
+    names = [value for kind, value in cert.get('subjectAltName', ()) if kind == 'DNS' and value]
+    for pattern in names:
+        pattern = pattern.lower().rstrip('.')
+        if pattern == hostname:
+            return True
+        if pattern.startswith('*.') and pattern.count('*') == 1:
+            rest = pattern[2:]
+            label, dot, tail = hostname.partition('.')
+            if dot and label and tail == rest:
+                return True
+    return False
+
+
+def _blocked_handshake(exc):
+    reason = getattr(exc, 'reason', exc)
+    if isinstance(reason, TimeoutError) or isinstance(exc, TimeoutError):
+        return True
+    text = str(reason)
+    return 'UNEXPECTED_EOF_WHILE_READING' in text or 'handshake operation timed out' in text
+
+
+def _note_direct_route():
+    """One short handshake. A reset or a stall means the server name itself is being dropped."""
+    global _route_checked, _direct_tls_blocked
+    if _route_checked or _direct_tls_blocked or 'test' in sys.argv:
+        return
+    _route_checked = True
+    raw = None
+    try:
+        raw = socket.create_connection((_API_HOST, 443), 4)
+        context = ssl.create_default_context(cafile=certifi.where())
+        secure = context.wrap_socket(raw, server_hostname=_API_HOST)
+        secure.close()
+        raw = None
+    except Exception as exc:
+        if raw is not None:
+            raw.close()
+        if not _blocked_handshake(exc):
+            return
+        _direct_tls_blocked = True
+        logger.warning(
+            'Telegram resets the TLS handshake when the server name is visible; '
+            'requests to %s keep the certificate check',
+            _API_HOST,
+        )
+
+
+def _open(request, timeout):
+    global _direct_tls_blocked
+    _note_direct_route()
+    if not _direct_tls_blocked:
+        try:
+            return urlopen(
+                request,
+                timeout=timeout,
+                context=ssl.create_default_context(cafile=certifi.where()),
+            )
+        except URLError as exc:
+            if not _blocked_handshake(exc):
+                raise
+            _direct_tls_blocked = True
+            logger.warning(
+                'Telegram resets the TLS handshake when the server name is visible; '
+                'retrying %s with the certificate check unchanged',
+                _API_HOST,
+            )
+    return _decoy_urlopen(request, timeout)
+
+
+def _decoy_urlopen(request, timeout):
+    context = ssl.create_default_context(cafile=certifi.where())
+    context.check_hostname = False
+    opener = urllib.request.build_opener(_DecoySNIHandler(context=context))
+    return opener.open(request, timeout=timeout)
+
+
+class _DecoySNIHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(_DecoySNIConnection, req, context=self._context)
+
+
+class _DecoySNIConnection(http.client.HTTPSConnection):
+    def connect(self):
+        http.client.HTTPConnection.connect(self)
+        expected = self._tunnel_host or self.host
+        self.sock = self._context.wrap_socket(self.sock, server_hostname=_DECOY_SNI)
+        if expected != _API_HOST or not _certificate_matches(self.sock.getpeercert(), _API_HOST):
+            self.sock.close()
+            self.sock = None
+            raise ssl.SSLCertVerificationError(f'certificate is not valid for {_API_HOST}')
+
+
 def _api(method, payload, timeout=5):
     token = getattr(settings, 'TELEGRAM_BOT_TOKEN', '')
     if not token:
         return None
     request = Request(
-        f'https://api.telegram.org/bot{token}/{method}',
+        f'https://{_API_HOST}/bot{token}/{method}',
         data=json.dumps(payload).encode(),
         headers={'Content-Type': 'application/json'},
         method='POST',
     )
     try:
-        with urlopen(request, timeout=timeout, context=ssl.create_default_context(cafile=certifi.where())) as response:
+        with _open(request, timeout) as response:
             body = json.loads(response.read().decode())
     except HTTPError as exc:
         detail = exc.read().decode(errors='replace')[:500]

@@ -14,9 +14,10 @@ class CheckoutForm(forms.Form):
     comment = forms.CharField(label='Комментарий к заказу', required=False,
                               widget=forms.Textarea(attrs={'rows': 3}), max_length=2000)
 
-    def __init__(self, *args, delivery_method=None, **kwargs):
+    def __init__(self, *args, delivery_method=None, cdek_live=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.delivery_method = delivery_method
+        self.cdek_live = cdek_live
 
     def clean_phone(self):
         value = self.cleaned_data['phone'].strip()
@@ -27,6 +28,15 @@ class CheckoutForm(forms.Form):
 
     def clean(self):
         data = super().clean()
+        if self.cdek_live:
+            postal = re.sub(r'\D', '', data.get('postal_code') or '')
+            if len(postal) != 6:
+                self.add_error('postal_code', 'Для расчёта СДЭК укажите индекс из 6 цифр.')
+            else:
+                data['postal_code'] = postal
+            if not (data.get('city') or '').strip():
+                self.add_error('city', 'Укажите город для доставки.')
+            return data
         if self.delivery_method and self.delivery_method.requires_address:
             if not data.get('city', '').strip():
                 self.add_error('city', 'Укажите город для доставки.')

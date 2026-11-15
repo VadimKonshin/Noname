@@ -24,7 +24,7 @@ def notify_order_status(order_id):
     transaction.on_commit(lambda: _safe(_deliver_status, order_id))
 
 
-def deliver_mail(subject, text_template, html_template, context, recipients):
+def deliver_mail(subject, text_template, html_template, context, recipients, reply_to=None):
     cleaned = []
     for item in recipients:
         email = (item or '').strip()
@@ -35,10 +35,17 @@ def deliver_mail(subject, text_template, html_template, context, recipients):
     text = render_to_string(text_template, context).strip() + '\n'
     html = render_to_string(html_template, context)
     subject = ' '.join(str(subject).split())
+    answers = []
+    for item in reply_to or []:
+        email = (item or '').strip()
+        if email and '@' in email and email not in answers:
+            answers.append(email)
     failed = False
     for email in cleaned:
         try:
-            message = EmailMultiAlternatives(subject, text, settings.DEFAULT_FROM_EMAIL, [email])
+            message = EmailMultiAlternatives(
+                subject, text, settings.DEFAULT_FROM_EMAIL, [email], reply_to=answers or None,
+            )
             message.attach_alternative(html, 'text/html')
             message.send(fail_silently=False)
         except Exception:

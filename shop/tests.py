@@ -57,6 +57,8 @@ def variant_payload(product=None):
             data[f'variants-{index}-id'] = str(variant.pk)
         data[f'variants-{index}-size'] = variant.size if variant else 'M'
         data[f'variants-{index}-stock_quantity'] = str(variant.stock_quantity if variant else 5)
+    data['offers_cdek'] = 'on'
+    data['offers_post'] = 'on'
     return data
 
 
@@ -304,16 +306,23 @@ class StoreTests(TestCase):
         self.assertContains(self.client.get(reverse('home')), reverse('info_delivery'))
         self.assertContains(self.client.get(reverse('info_delivery')), 'не расчёт')
 
-    def test_demo_carriers_disabled_and_local_zones_active(self):
+    def test_buyer_delivery_is_cdek_and_post(self):
         from .models import DeliveryMethod
         self.assertFalse(DeliveryMethod.objects.filter(name__contains='(демо)', is_active=True).exists())
-        city = DeliveryMethod.objects.get(name='Доставка по городу')
-        self.assertTrue(city.is_active)
-        self.assertTrue(city.requires_address)
-        self.assertEqual(city.eta, '1–3 дня')
+        self.assertFalse(DeliveryMethod.objects.get(name='Доставка по городу').is_active)
         pickup = DeliveryMethod.objects.get(name='Самовывоз из мастерской')
-        self.assertFalse(pickup.requires_address)
-        self.assertTrue(pickup.pickup_address)
+        self.assertEqual(pickup.code, DeliveryMethod.PICKUP)
+        self.assertFalse(pickup.is_active)
+        cdek = DeliveryMethod.objects.get(code=DeliveryMethod.CDEK, is_active=True)
+        post = DeliveryMethod.objects.get(code=DeliveryMethod.POST, is_active=True)
+        self.assertEqual(cdek.name, 'СДЭК')
+        self.assertEqual(post.name, 'Почта России')
+
+    def test_cart_lists_cdek_and_post_without_pickup(self):
+        self.client.post(reverse('cart_add', args=[self.product.slug]), {'size': 'M', 'quantity': 1})
+        response = self.client.get(reverse('cart'))
+        self.assertEqual([method.name for method in response.context['delivery_methods']], ['СДЭК', 'Почта России'])
+        self.assertNotContains(response, 'Самовывоз')
 
     def test_brand_page_lists_its_products(self):
         response = self.client.get(reverse('brand_storefront', args=[self.brand.slug]))
@@ -508,6 +517,41 @@ class BrandAccountTests(TestCase):
         self.assertEqual(product.brand, self.brand)
         self.assertFalse(product.is_featured)
 
+    def test_product_form_chooses_carrier_and_disables_pickup_address(self):
+        self.client.force_login(self.manager_user)
+        page = self.client.get(reverse('product_create'))
+        self.assertContains(page, '03 / Способ получения')
+        self.assertContains(page, 'name="offers_cdek"')
+        self.assertContains(page, 'name="offers_post"')
+        self.assertContains(page, '<button type="button" class="small-action" disabled>Добавить адрес самовывоза</button>')
+        missing = variant_payload()
+        missing.pop('offers_cdek')
+        missing.pop('offers_post')
+        rejected = self.client.post(reverse('product_create'), {
+            'title': 'Без службы',
+            'description': 'Нет способа',
+            'price': '4500',
+            'color': 'Чёрный',
+            **missing,
+        })
+        self.assertEqual(rejected.status_code, 200)
+        self.assertFalse(Product.objects.filter(title='Без службы').exists())
+        self.assertContains(rejected, 'Отметьте СДЭК')
+        only_post = variant_payload()
+        only_post.pop('offers_cdek')
+        saved = self.client.post(reverse('product_create'), {
+            'title': 'Только почта',
+            'description': 'Почта России',
+            'price': '4500',
+            'color': 'Чёрный',
+            'is_published': 'on',
+            **only_post,
+        })
+        product = Product.objects.get(title='Только почта')
+        self.assertRedirects(saved, product.get_absolute_url())
+        self.assertFalse(product.offers_cdek)
+        self.assertTrue(product.offers_post)
+
     def test_manager_cannot_change_or_delete_other_brand_product(self):
         self.client.force_login(self.manager_user)
         self.assertEqual(self.client.get(reverse('product_edit', args=[self.other_product.slug])).status_code, 404)
@@ -688,3 +732,51 @@ class BrandAccountTests(TestCase):
         self.brand.is_active = False
         self.brand.save(update_fields=['is_active'])
         self.assertEqual(self.client.get(reverse('brand_message', args=[self.brand.slug])).status_code, 404)
+
+    def test_manager_reply_is_mailed_once_and_not_sent_to_telegram(self):
+        from django.core import mail
+        from unittest.mock import patch
+        self.manager_user.email = 'manager@example.com'
+        self.manager_user.save(update_fields=['email'])
+        note = BrandMessage.objects.create(
+            brand=self.brand, sender_name='Покупатель', sender_email='buyer@example.com',
+            body='Есть ли размер M на следующей неделе?',
+        )
+        self.client.force_login(self.manager_user)
+        with patch('shop.telegram.urlopen') as urlopen:
+            response = self.client.post(reverse('brand_message_detail', args=[note.pk]), {
+                'reply': 'Размер M будет в пятницу. <script>',
+            })
+        self.assertRedirects(response, reverse('brand_message_detail', args=[note.pk]))
+        urlopen.assert_not_called()
+        self.assertEqual(len(mail.outbox), 1)
+        letter = mail.outbox[0]
+        self.assertEqual(letter.to, ['buyer@example.com'])
+        self.assertEqual(letter.reply_to, ['manager@example.com'])
+        self.assertIn('Размер M будет в пятницу', letter.body)
+        html = letter.alternatives[0][0]
+        self.assertIn('&lt;script&gt;', html)
+        self.assertNotIn('<script>', html)
+        note.refresh_from_db()
+        self.assertEqual(note.reply_body, 'Размер M будет в пятницу. <script>')
+        self.assertEqual(note.replied_by, self.manager_user)
+        self.client.post(reverse('brand_message_detail', args=[note.pk]), {'reply': 'Второе письмо'})
+        self.assertEqual(len(mail.outbox), 1)
+        detail = self.client.get(reverse('brand_message_detail', args=[note.pk]))
+        self.assertContains(detail, 'Размер M будет в пятницу')
+        self.client.force_login(self.other_user)
+        self.assertEqual(self.client.post(reverse('brand_message_detail', args=[note.pk]), {'reply': 'Чужой'}).status_code, 404)
+
+    def test_failed_reply_is_not_stored(self):
+        from unittest.mock import patch
+        note = BrandMessage.objects.create(
+            brand=self.brand, sender_name='Покупатель', sender_email='buyer@example.com', body='Когда будет размер?',
+        )
+        self.client.force_login(self.manager_user)
+        with patch('shop.views.deliver_mail', side_effect=RuntimeError):
+            response = self.client.post(reverse('brand_message_detail', args=[note.pk]), {'reply': 'Отвечу позже подробно'})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Письмо не ушло')
+        note.refresh_from_db()
+        self.assertEqual(note.reply_body, '')
+        self.assertIsNone(note.replied_at)

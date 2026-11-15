@@ -1,0 +1,38 @@
+# Local PostgreSQL and Redis. Credentials come from .env, which git does not track.
+# Start: docker compose up -d
+# Stop:  docker compose down
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DJANGO_DB_NAME:-noname}
+      POSTGRES_USER: ${DJANGO_DB_USER:-noname}
+      POSTGRES_PASSWORD: ${DJANGO_DB_PASSWORD:?Set DJANGO_DB_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${DJANGO_DB_PORT:-5432}:5432"
+    volumes:
+      - noname_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--bind", "0.0.0.0", "--protected-mode", "no"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - noname_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  noname_postgres:
+  noname_redis:

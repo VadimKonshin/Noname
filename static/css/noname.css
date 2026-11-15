@@ -154,6 +154,7 @@ a,button {transition:color .18s,background .18s,border-color .18s}
 .basket-info p,.basket-actions label,.basket-info .eyebrow {color:#96969e}
 .small-action {border-color:#65656c;color:#dad9dd;background:#242429}
 .small-action:hover {background:#e35246;color:#fff}
+.small-action:disabled,.small-action:disabled:hover {background:#1b1b1e;color:#74747b;border-color:#444449;cursor:not-allowed}
 .muted-action {border-color:#663739;color:#d29796}
 .summary-box {background:#151519;color:#edebe6;border:1px solid #38383e}
 .summary-box h2,.summary-total strong,.summary-total {color:#f0efeb}

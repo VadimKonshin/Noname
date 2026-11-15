@@ -8,7 +8,7 @@
     Статус: <span class="status-pill status-{{ order.status }}">{{ order.get_status_display }}</span>.
     Заказ принят, оплата онлайн не списывалась. Сохраните номер: магазин свяжется по телефону или почте, чтобы подтвердить его.
     {% if telegram_bot_url and not brand_order_view %}
-      Статус можно проверить в <a href="{{ telegram_bot_url }}" rel="noopener noreferrer" target="_blank">Telegram-боте</a>: отправьте номер заказа и телефон, указанный при оформлении.
+      Статус можно проверить в <a href="{{ telegram_bot_url }}">Telegram-боте</a>: отправьте номер заказа и телефон, указанный при оформлении.
     {% endif %}
   </p>
 
@@ -36,6 +36,7 @@
         <p><strong>{{ order.delivery_name }}</strong></p>
         {% if order.delivery_eta %}<p>Срок: {{ order.delivery_eta }}</p>{% endif %}
         {% if order.pickup_address %}<p>Самовывоз: {{ order.pickup_address }}</p>{% endif %}
+        {% if order.delivery_point_code %}<p>Пункт: {{ order.delivery_point_code }}{% if order.delivery_point_address %}, {{ order.delivery_point_address }}{% endif %}</p>{% endif %}
         {% if order.city or order.address %}<p>{{ order.postal_code }} {{ order.city }}, {{ order.address }}</p>{% endif %}
         {% if order.comment %}<p>Комментарий: {{ order.comment }}</p>{% endif %}
       </div>
