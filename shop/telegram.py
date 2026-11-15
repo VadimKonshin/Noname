@@ -104,31 +104,60 @@ def handle_update(update):
 
 
 def bind_manager(chat_id, code):
-    from .models import BrandManager
+    from .models import BrandManager, UserProfile
 
-    manager = (BrandManager.objects.select_related('brand')
-               .filter(telegram_bind_hash=_digest(code), telegram_bind_expires__gt=timezone.now(), is_approved=True)
-               .first())
-    if manager is None or manager.brand_id is None or manager.brand.is_deleted:
-        return 'Ссылка устарела или кабинет ещё не подтверждён. Откройте кабинет бренда и получите новую.'
-    chat = str(chat_id)
-    BrandManager.objects.filter(telegram_chat_id=chat).exclude(pk=manager.pk).update(telegram_chat_id=None)
-    manager.telegram_chat_id = chat
-    manager.telegram_bind_hash = ''
-    manager.telegram_bind_expires = None
-    manager.save(update_fields=['telegram_chat_id', 'telegram_bind_hash', 'telegram_bind_expires'])
-    return f'Готово. Заказы и сообщения бренда «{manager.brand.name}» будут приходить в этот чат.'
+    if _bump(f'telegram-bind-{chat_id}', BIND_LIMIT):
+        return 'Слишком много попыток подключения. Попробуйте через час.'
+    if not code or len(str(code)) > 200:
+        return _bind_rejected()
+    with transaction.atomic():
+        manager = (BrandManager.objects.select_for_update()
+                   .select_related('brand')
+                   .filter(telegram_bind_hash=_digest(code), telegram_bind_expires__gt=timezone.now())
+                   .first())
+        if manager is None:
+            return _bind_rejected()
+        email_ready = UserProfile.objects.filter(
+            user_id=manager.user_id, email_verified_at__isnull=False,
+        ).exists()
+        if not email_ready or not manager.is_approved or manager.brand_id is None or manager.brand.is_deleted:
+            manager.telegram_bind_hash = ''
+            manager.telegram_bind_expires = None
+            manager.save(update_fields=['telegram_bind_hash', 'telegram_bind_expires'])
+            return _bind_rejected()
+        chat = str(chat_id)
+        BrandManager.objects.filter(telegram_chat_id=chat).exclude(pk=manager.pk).update(telegram_chat_id=None)
+        manager.telegram_chat_id = chat
+        manager.telegram_bind_hash = ''
+        manager.telegram_bind_expires = None
+        manager.save(update_fields=['telegram_chat_id', 'telegram_bind_hash', 'telegram_bind_expires'])
+        brand_name = _html(manager.brand.name)
+    return f'Готово. Заказы и сообщения бренда «{brand_name}» будут приходить в этот чат.'
 
 
 def order_status(chat_id, order_id, phone):
+    from django.db.models import Q
     from .models import Order
 
-    if _limited(chat_id):
+    if _status_limited(chat_id, phone):
         return 'Слишком много проверок. Попробуйте через час.'
     order = Order.objects.prefetch_related('items').filter(pk=order_id).first()
     if order is None or not _phones_match(order.phone, phone):
         return 'Заказ с таким номером и телефоном не найден.'
-    Order.objects.filter(pk=order.pk).update(buyer_telegram_chat_id=str(chat_id))
+    chat = str(chat_id)
+    current = order.buyer_telegram_chat_id or ''
+    if current == chat:
+        bound_here = True
+    elif current:
+        bound_here = False
+    else:
+        bound_here = Order.objects.filter(pk=order.pk).filter(
+            Q(buyer_telegram_chat_id='') | Q(buyer_telegram_chat_id__isnull=True),
+        ).update(buyer_telegram_chat_id=chat) == 1
+    if bound_here:
+        footer = 'Если статус станет «отправлен» или «отменён», бот напишет в этот чат.'
+    else:
+        footer = 'Уведомления об отправке и отмене остаются в чате, который первым проверил этот заказ.'
     lines = [
         f'<b>Заказ №{order.pk}</b>',
         f'Статус: {_html(order.get_status_display())}',
@@ -145,7 +174,7 @@ def order_status(chat_id, order_id, phone):
         f'Доставка: {_html(order.delivery_name)}',
         f'Итого: {_money(order.total)}',
         '',
-        'Если статус станет «отправлен» или «отменён», бот напишет в этот чат.',
+        footer,
     ])
     return '\n'.join(lines)
 
@@ -379,7 +408,7 @@ def _help_text():
         'Сюда приходят только заказы и сообщения его бренда.\n\n'
         'Покупатель может проверить статус. Напишите номер заказа и телефон из заказа:\n'
         '15 +79991234567\n\n'
-        'После успешной проверки бот сам напишет в этот чат, когда заказ отправят или отменят.'
+        'После первой успешной проверки бот напишет в этот чат, когда заказ отправят или отменят.'
     )
 
 
@@ -397,16 +426,42 @@ def _phones_match(stored, given):
     return len(left) >= 10 and len(right) >= 10 and left[-10:] == right[-10:]
 
 
-def _limited(chat_id):
-    key = f'telegram-status-{chat_id}'
+CHAT_STATUS_LIMIT = 8
+PHONE_STATUS_LIMIT = 30
+BIND_LIMIT = 8
+LIMIT_WINDOW = 3600
+
+
+def _bind_rejected():
+    return 'Ссылка устарела или кабинет ещё не подтверждён. Откройте кабинет бренда и получите новую.'
+
+
+def _status_limited(chat_id, phone):
+    """A new chat does not reset the budget of a phone that is already being checked."""
+    if _bump(f'telegram-status-chat-{chat_id}', CHAT_STATUS_LIMIT):
+        return True
+    phone_key = _phone_limit_key(phone)
+    return bool(phone_key) and _bump(f'telegram-status-phone-{phone_key}', PHONE_STATUS_LIMIT)
+
+
+def _phone_limit_key(phone):
+    digits = re.sub(r'\D', '', phone or '')
+    if len(digits) < 10:
+        return ''
+    return hashlib.sha256(digits[-10:].encode()).hexdigest()
+
+
+def _bump(key, limit):
+    if cache.add(key, 1, LIMIT_WINDOW):
+        return False
     try:
         count = cache.incr(key)
     except ValueError:
-        cache.set(key, 1, 3600)
+        cache.set(key, 1, LIMIT_WINDOW)
         return False
     if count == 1:
-        cache.touch(key, 3600)
-    return count > 8
+        cache.touch(key, LIMIT_WINDOW)
+    return count > limit
 
 
 def _digest(code):

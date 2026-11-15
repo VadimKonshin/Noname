@@ -5,6 +5,7 @@ from datetime import timedelta
 from decimal import Decimal
 from urllib.error import URLError
 
+from django.core.cache import cache
 from django.utils import timezone
 
 from django.contrib.auth import get_user_model
@@ -43,6 +44,9 @@ def sent_payload(request):
 
 @override_settings(RATELIMIT_ENABLE=False, **TELEGRAM)
 class TelegramTests(TestCase):
+    def setUp(self):
+        cache.clear()
+
     @classmethod
     def setUpTestData(cls):
         cls.member = User.objects.create_user('customer', email='client@example.org', password='PassWithLength#178')
@@ -262,6 +266,14 @@ class TelegramTests(TestCase):
         order.refresh_from_db()
         self.assertEqual(order.buyer_telegram_chat_id, '50')
         with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
+            handle_update({'message': {'text': f'{order.pk} 89991234567', 'chat': {'id': 52, 'type': 'private'}}})
+        kept = sent_payload(urlopen.call_args.args[0])['text']
+        self.assertIn('Отправлен', kept)
+        self.assertIn('первым проверил', kept)
+        self.assertNotIn('этот чат', kept)
+        order.refresh_from_db()
+        self.assertEqual(order.buyer_telegram_chat_id, '50')
+        with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
             handle_update({'message': {'text': f'{order.pk} +79990000000', 'chat': {'id': 51, 'type': 'private'}}})
         order.refresh_from_db()
         self.assertEqual(order.buyer_telegram_chat_id, '50')
@@ -336,3 +348,78 @@ class TelegramTests(TestCase):
         self.assertNotIn('Чужая вещь', by_chat['4242'])
         self.assertIn('Чужая вещь', by_chat['7777'])
         self.assertNotIn(self.shirt.title, by_chat['7777'])
+
+    def test_unconfirmed_manager_link_does_not_connect(self):
+        from unittest.mock import patch
+        quiet = User.objects.create_user('quiet_bind', email='quiet-bind@example.org', password='PassWithLength#178')
+        quiet.profile.email_verified_at = None
+        quiet.profile.save(update_fields=['email_verified_at'])
+        token = 'quiet-bind-token'
+        manager = BrandManager.objects.create(
+            user=quiet, brand=self.brand, is_approved=True,
+            telegram_bind_hash=hashlib.sha256(token.encode()).hexdigest(),
+            telegram_bind_expires=timezone.now() + timedelta(minutes=10),
+        )
+        with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
+            handle_update({'message': {'text': f'/start {token}', 'chat': {'id': 818, 'type': 'private'}}})
+        manager.refresh_from_db()
+        self.assertIsNone(manager.telegram_chat_id)
+        self.assertEqual(manager.telegram_bind_hash, '')
+        self.assertIn('устарела', sent_payload(urlopen.call_args.args[0])['text'])
+
+    def test_status_checks_for_one_phone_are_shared_across_chats(self):
+        from unittest.mock import patch
+        phone = '+70001110001'
+        with patch('shop.telegram.PHONE_STATUS_LIMIT', 2):
+            for offset in range(2):
+                with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
+                    handle_update({
+                        'message': {
+                            'text': f'{700000 + offset} {phone}',
+                            'chat': {'id': 9000 + offset, 'type': 'private'},
+                        },
+                    })
+                self.assertIn('не найден', sent_payload(urlopen.call_args.args[0])['text'])
+            with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
+                handle_update({
+                    'message': {'text': f'700099 {phone}', 'chat': {'id': 9099, 'type': 'private'}},
+                })
+            self.assertIn('Слишком много', sent_payload(urlopen.call_args.args[0])['text'])
+        with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
+            handle_update({
+                'message': {'text': '700100 +70001110002', 'chat': {'id': 9100, 'type': 'private'}},
+            })
+        self.assertIn('не найден', sent_payload(urlopen.call_args.args[0])['text'])
+
+    def test_one_chat_cannot_keep_guessing_with_new_phones(self):
+        from unittest.mock import patch
+        with patch('shop.telegram.CHAT_STATUS_LIMIT', 2):
+            for offset in range(2):
+                with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
+                    handle_update({
+                        'message': {
+                            'text': f'{710000 + offset} +7000222000{offset}',
+                            'chat': {'id': 7200, 'type': 'private'},
+                        },
+                    })
+                self.assertIn('не найден', sent_payload(urlopen.call_args.args[0])['text'])
+            with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
+                handle_update({
+                    'message': {'text': '710099 +70002220009', 'chat': {'id': 7200, 'type': 'private'}},
+                })
+            self.assertIn('Слишком много', sent_payload(urlopen.call_args.args[0])['text'])
+
+    def test_bind_attempts_are_limited_per_chat(self):
+        from unittest.mock import patch
+        with patch('shop.telegram.BIND_LIMIT', 2):
+            for token in ('nope-a', 'nope-b'):
+                with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
+                    handle_update({
+                        'message': {'text': f'/start {token}', 'chat': {'id': 6400, 'type': 'private'}},
+                    })
+                self.assertIn('устарела', sent_payload(urlopen.call_args.args[0])['text'])
+            with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
+                handle_update({
+                    'message': {'text': '/start nope-c', 'chat': {'id': 6400, 'type': 'private'}},
+                })
+            self.assertIn('Слишком много', sent_payload(urlopen.call_args.args[0])['text'])
