@@ -78,7 +78,7 @@
               <p class="size-help">Размеры пока не заданы.</p>
             {% endfor %}
           </div>
-          {% if product.allow_preorder %}<p class="size-help">Звёздочка — размер шьётся под заказ и не списывает склад.</p>{% endif %}
+          {% if product.allow_preorder %}<p class="size-help">Звёздочка — этот размер сошьют под заказ.</p>{% endif %}
           <p class="size-help" data-size-status aria-live="polite">Размер пока не выбран</p>
         </fieldset>
         <div class="quantity-line">
@@ -102,18 +102,18 @@
         {% if product.care %}<div class="detail-stat"><span>УХОД</span><strong>{{ product.care|linebreaksbr }}</strong></div>{% endif %}
       </div>
     {% endif %}
-    {% if product.brand and product.brand.size_chart %}
+    {% if product.brand and product.brand.size_rows %}
       <div class="detail-description">
-        <h2>РАЗМЕРЫ БРЕНДА</h2>
-        <p>{{ product.brand.size_chart|linebreaksbr }}</p>
+        <h2>РАЗМЕРЫ {{ product.brand.name }}</h2>
+        {% include 'includes/size_sheet.html' with rows=product.brand.size_rows %}
       </div>
     {% endif %}
     <div class="detail-notice">
       <span>✳</span>
-      <p>Заказ можно оформить без регистрации. Оплата онлайн не списывается: магазин свяжется по телефону или почте и подтвердит заказ. Условия доставки и возврата — внизу страницы.</p>
+      <p>Бери без аккаунта. Сейчас это заявка: деньги на сайте не списываются, бренд подтвердит заказ по телефону или почте. Как привезут и как вернуть — внизу страницы.</p>
     </div>
     {% if product.brand %}
-      <a class="back-catalog" href="{% url 'brand_message' product.brand.slug %}?product={{ product.slug }}">Написать бренду {{ product.brand.name }} ↗</a>
+      <a class="back-catalog" href="{% url 'brand_message' product.brand.slug %}?product={{ product.slug }}">Спросить {{ product.brand.name }} про эту вещь ↗</a>
     {% endif %}
     {% if can_change_product or can_delete_product %}
       <div class="product-admin-actions">
@@ -128,4 +128,20 @@
     <a href="{% url 'catalog' %}" class="back-catalog">← К каталогу</a>
   </div>
 </section>
+{% if related %}
+<section class="collection-section section-space">
+  <div class="container">
+    <div class="section-heading related-heading">
+      <div>
+        <div class="eyebrow"><span class="tiny-dot"></span> ЕЩЁ ОТ ЭТОГО БРЕНДА</div>
+        <h2>{{ product.brand.name }}<span class="heading-period">.</span></h2>
+      </div>
+      <a href="{% url 'brand_storefront' product.brand.slug %}" class="text-link">ВЕСЬ БРЕНД ↗</a>
+    </div>
+    <div class="product-grid">
+      {% for product in related %}{% include 'includes/product_card.html' %}{% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
 {% endblock %}

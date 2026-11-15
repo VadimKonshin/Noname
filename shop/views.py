@@ -24,7 +24,7 @@ from .forms import (
     BrandManagerRegisterForm, EmailOrUsernameAuthenticationForm, ProductForm, ProductVariantFormSet, RegisterForm,
 )
 from .commerce import MAX_OPEN_PREORDER_PER_VARIANT
-from .models import Brand, BrandManager, BrandMessage, Product, ProductImage, ProductVariant
+from .models import Brand, BrandManager, BrandMessage, DeliveryMethod, Product, ProductImage, ProductVariant
 from .mail import deliver_mail
 from .telegram import notify_brand_contact
 from .validators import validate_product_image
@@ -41,7 +41,14 @@ def public_products():
 def info_page(request, page):
     if page not in {'delivery', 'returns', 'contacts'}:
         raise Http404
-    return render(request, 'shop/info_page.html', {'page': page})
+    carriers = {
+        method.code: method
+        for method in DeliveryMethod.objects.filter(
+            is_active=True,
+            code__in=(DeliveryMethod.CDEK, DeliveryMethod.POST, DeliveryMethod.PICKUP),
+        )
+    }
+    return render(request, 'shop/info_page.html', {'page': page, 'carriers': carriers})
 
 
 def public_brand(slug):
@@ -57,8 +64,16 @@ def message_product(brand, slug):
 
 def brand_storefront(request, slug):
     brand = public_brand(slug)
-    products = public_products().filter(brand=brand).select_related('brand').prefetch_related('images', 'variants')
-    return render(request, 'shop/brand_storefront.html', {'brand': brand, 'products': products})
+    products = list(public_products().filter(brand=brand).select_related('brand').prefetch_related('images', 'variants'))
+    address = (brand.pickup_address or '').strip()
+    pickup_open = bool(address) and (brand.offers_pickup or any(product.offers_pickup for product in products))
+    return render(request, 'shop/brand_storefront.html', {
+        'brand': brand,
+        'products': products,
+        'piece_word': ru_plural(len(products), 'вещь', 'вещи', 'вещей'),
+        'receive_line': receive_line(brand, products),
+        'pickup_open': pickup_open,
+    })
 
 
 @ratelimit(group='brand_message', key='ip', rate='8/h', method='POST')
@@ -155,9 +170,15 @@ def home(request):
 
 def catalog(request):
     products = public_products().select_related('brand').prefetch_related('images', 'variants')
+    brands = Brand.objects.filter(
+        is_active=True, is_deleted=False, products__is_published=True, products__is_deleted=False,
+    ).distinct().order_by('sort_order', 'name')
     selected_brand = request.GET.get('brand', '').strip()[:150]
-    if selected_brand:
-        products = products.filter(brand__slug=selected_brand, brand__is_active=True)
+    selected = brands.filter(slug=selected_brand).first() if selected_brand else None
+    if selected:
+        products = products.filter(brand=selected)
+    elif selected_brand:
+        products = products.none()
     query = request.GET.get('q', '').strip()[:120]
     if query:
         products = products.filter(Q(title__icontains=query) | Q(description__icontains=query) | Q(color__icontains=query) | Q(brand__name__icontains=query))
@@ -175,18 +196,63 @@ def catalog(request):
         orders = {'new': '-created_at', 'price_low': 'price', 'price_high': '-price', 'name': 'title'}
         products = products.order_by(orders.get(sort, '-created_at'), '-pk')
     page = Paginator(products, 9).get_page(request.GET.get('page'))
-    return render(request, 'shop/catalog.html', {'page': page, 'query': query, 'sort': sort, 'total': page.paginator.count, 'selected_brand': selected_brand, 'brands': Brand.objects.filter(is_active=True, is_deleted=False).order_by('sort_order', 'name')})
+    total = page.paginator.count
+    if selected:
+        catalog_line = f'{total} {ru_plural(total, "вещь", "вещи", "вещей")} · {selected.name}'
+    else:
+        marks = brands.count()
+        catalog_line = (
+            f'{total} {ru_plural(total, "вещь", "вещи", "вещей")} · '
+            f'{marks} {ru_plural(marks, "бренд", "бренда", "брендов")} на площадке'
+        )
+    return render(request, 'shop/catalog.html', {
+        'page': page, 'query': query, 'sort': sort, 'total': total,
+        'selected_brand': selected.slug if selected else '',
+        'brands': brands, 'catalog_line': catalog_line,
+    })
 
 
 def product_detail(request, slug):
     product = get_object_or_404(public_products().select_related('brand').prefetch_related('images', 'variants'), slug=slug)
     manager = get_brand_manager(request.user)
     manages_brand = manager and product.brand_id == manager.brand_id
+    related = []
+    if product.brand_id:
+        related = list(
+            public_products().filter(brand_id=product.brand_id).exclude(pk=product.pk)
+            .select_related('brand').prefetch_related('images', 'variants')[:3]
+        )
     return render(request, 'shop/product_detail.html', {
         'product': product,
+        'related': related,
         'can_change_product': request.user.has_perm('shop.change_product') or manages_brand,
         'can_delete_product': request.user.has_perm('shop.delete_product') or manages_brand,
     })
+
+
+def ru_plural(number, one, few, many):
+    number = abs(int(number))
+    if 11 <= number % 100 <= 14:
+        return many
+    if number % 10 == 1:
+        return one
+    if 2 <= number % 10 <= 4:
+        return few
+    return many
+
+
+def receive_line(brand, products):
+    ways = []
+    if brand.offers_cdek:
+        ways.append('СДЭК')
+    if brand.offers_post:
+        ways.append('Почта России')
+    address = (brand.pickup_address or '').strip()
+    if address and (brand.offers_pickup or any(product.offers_pickup for product in products)):
+        ways.append('самовывоз')
+    if not ways:
+        return 'Бренд ещё выбирает, как отдать вещь'
+    return ' · '.join(ways)
 
 
 def ratelimited_error(request, exception=None):
@@ -318,7 +384,7 @@ def brand_edit(request):
     form = BrandProfileForm(request.POST if request.method == 'POST' else None, instance=brand)
     if request.method == 'POST' and form.is_valid():
         form.save()
-        messages.success(request, 'Описание бренда сохранено. Название по-прежнему меняет администратор.')
+        messages.success(request, 'Настройки бренда сохранены. Название по-прежнему меняет администратор.')
         return redirect('brand_dashboard')
     return render(request, 'shop/brand_edit.html', {'brand': brand, 'form': form})
 

@@ -63,9 +63,9 @@
     {% else %}
       <div class="empty-panel">
         <span class="empty-symbol">∅</span>
-        <h3>Пока без товаров.</h3>
-        <p>Бренды и коллекции появятся после добавления администратором.</p>
-        {% if perms.shop.add_product %}<a class="btn btn-dark" href="{% url 'product_create' %}">Добавить товар ↗</a>{% endif %}
+        <h3>Сцена ещё собирается.</h3>
+        <p>Имена брендов уже ждут в строке выше. Первые вещи появятся здесь, как только бренд их выложит.</p>
+        {% if perms.shop.add_product %}<a class="btn btn-dark" href="{% url 'product_create' %}">Выложить первую вещь ↗</a>{% endif %}
       </div>
     {% endif %}
   </div>

@@ -4,7 +4,7 @@
 <section class="container commerce-page">
   <div class="eyebrow"><span class="tiny-dot"></span> CHECKOUT / 02</div>
   <h1 class="commerce-heading">ОФОРМЛЕНИЕ<span class="heading-period">.</span></h1>
-  <p class="page-lead">Один бренд и одна доставка. Регистрация не нужна: оставь данные для связи, и магазин подтвердит заказ.</p>
+  <p class="page-lead">Один бренд, одна доставка. Аккаунт не нужен: оставь, как с тобой связаться.</p>
 
   <div class="commerce-layout">
     <div class="checkout-panel">
@@ -32,13 +32,15 @@
             <div>
               <strong>{{ selected_method.name }}</strong>
               <small>
-                {% if cdek_live %}
-                  Стоимость запрашивается у СДЭК по индексу. В форму цена не подставляется.
-                  {% if cdek_quote.eta %}<br>Срок: {{ cdek_quote.eta }}{% endif %}
+                {% if selected_method.code == 'pickup' and pickup_place %}
+                  Забираешь сам: {{ pickup_place }}
+                {% elif cdek_live %}
+                  Цену назовёт СДЭК по индексу. В форму её не подставляем.
+                  {% if cdek_quote.eta %}<br>{{ cdek_quote.eta }}{% endif %}
                 {% else %}
                   {{ selected_method.description }}
-                  {% if selected_method.eta %}<br>Срок: {{ selected_method.eta }}{% endif %}
-                  {% if selected_method.pickup_address %}<br>Адрес: {{ selected_method.pickup_address }}{% endif %}
+                  {% if selected_method.eta %}<br>{{ selected_method.eta }}{% endif %}
+                  {% if selected_method.pickup_address %}<br>{{ selected_method.pickup_address }}{% endif %}
                 {% endif %}
               </small>
             </div>
@@ -112,7 +114,7 @@
       <div class="summary-row"><span>Вещи</span><strong>{{ cart.subtotal|floatformat:0 }} ₽</strong></div>
       <div class="summary-row"><span>{{ selected_method.name }}</span><strong>{% if cdek_quote %}{{ cdek_quote.price|floatformat:0 }} ₽{% elif shipping_known %}{{ shipping_price|floatformat:0 }} ₽{% else %}по индексу{% endif %}</strong></div>
       <div class="summary-total"><span>ИТОГО</span><strong>{% if shipping_known %}{{ grand_total|floatformat:0 }} ₽{% else %}{{ cart.subtotal|floatformat:0 }} ₽ *{% endif %}</strong></div>
-      <p class="summary-note">Стоимость пересчитывается сервером перед подтверждением, не по данным браузера.</p>
+      <p class="summary-note">Сумму ещё раз посчитаем перед тем, как заказ сохранится.</p>
       <a href="{% url 'cart' %}" class="back-catalog">← Вернуться к корзине</a>
     </aside>
   </div>

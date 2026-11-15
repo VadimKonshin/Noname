@@ -11,8 +11,7 @@
   {% endif %}
 
   <p class="page-lead">
-    Удаление убирает товар из магазина и корзин покупателей, но сохраняет историю заказов и аналитику.
-    Восстановленные товары остаются черновиками.
+    В карточке вещи — цена, фото, описание и её собственная доставка. Удаление прячет вещь из магазина и корзин, заказы остаются. Восстановленная вещь ждёт, пока её снова опубликуют.
   </p>
   <div class="table-scroll">
     <table class="store-table">
@@ -50,7 +49,7 @@
                   {% endif %}
                 {% else %}
                   {% if can_change_products %}
-                    <a class="table-link" href="{% url 'product_edit' slug=product.slug %}">Изменить</a>
+                    <a class="table-link" href="{% url 'product_edit' slug=product.slug %}">Цена и карточка</a>
                   {% endif %}
                   {% if can_delete_products %}
                     <a class="table-link danger-link" href="{% url 'product_delete' slug=product.slug %}">Удалить</a>

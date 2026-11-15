@@ -7,16 +7,25 @@
     <h1>КАТАЛОГ<span class="heading-period">.</span></h1>
     <span class="count-label">{{ total }} ПРЕДМ.</span>
   </div>
-  <p>Авторская одежда небольших независимых брендов. Выбирай свой голос.</p>
+  <p class="catalog-pulse">{{ catalog_line }}</p>
 </section>
 
 <section class="container catalog-content">
+  {% if brands %}
+    <div class="brand-chips" aria-label="Бренды">
+      <a class="brand-chip{% if not selected_brand %} is-on{% endif %}" href="?q={{ query|urlencode }}&sort={{ sort }}">Все бренды</a>
+      {% for brand in brands %}
+        <a class="brand-chip{% if selected_brand == brand.slug %} is-on{% endif %}" href="?q={{ query|urlencode }}&sort={{ sort }}&brand={{ brand.slug|urlencode }}">{{ brand.name }}</a>
+      {% endfor %}
+    </div>
+  {% endif %}
   <form class="catalog-controls" method="get" action="{% url 'catalog' %}">
     <label class="search-field" aria-label="Поиск товаров">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
         <circle cx="10.8" cy="10.8" r="7.2"/><path d="m16 16 5 5"/>
       </svg>
-      <input type="search" name="q" placeholder="Поиск по коллекции..." value="{{ query }}">
+      <input type="search" name="q" placeholder="Название, цвет, бренд..." value="{{ query }}">
+      {% if selected_brand %}<input type="hidden" name="brand" value="{{ selected_brand }}">{% endif %}
       <button type="submit">Найти ↗</button>
     </label>
     <label class="sort-field">
@@ -29,15 +38,6 @@
         <option value="name" {% if sort == 'name' %}selected{% endif %}>По названию</option>
       </select>
     </label>
-    <label class="sort-field">
-      <span>Бренд</span>
-      <select name="brand" data-auto-submit>
-        <option value="">Все бренды</option>
-        {% for brand in brands %}
-          <option value="{{ brand.slug }}" {% if selected_brand == brand.slug %}selected{% endif %}>{{ brand.name }}</option>
-        {% endfor %}
-      </select>
-    </label>
   </form>
 
   {% if page.object_list %}
@@ -47,9 +47,14 @@
   {% else %}
     <div class="empty-panel">
       <span class="empty-symbol">∅</span>
-      <h3>Ничего не найдено</h3>
-      <p>Попробуй другой запрос или загляни в полный каталог.</p>
-      <a href="{% url 'catalog' %}" class="btn btn-dark">Сбросить фильтры ↗</a>
+      {% if query or selected_brand %}
+        <h3>По этому запросу пусто.</h3>
+        <p>Сбрось фильтр — полный зал всё ещё здесь.</p>
+        <a href="{% url 'catalog' %}" class="btn btn-dark">Смотреть все бренды ↗</a>
+      {% else %}
+        <h3>Зал ждёт первые вещи.</h3>
+        <p>Когда бренд выложит модель, она появится на этой стене.</p>
+      {% endif %}
     </div>
   {% endif %}
 

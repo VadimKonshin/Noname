@@ -304,7 +304,11 @@ class StoreTests(TestCase):
         for name in ('info_delivery', 'info_returns', 'info_contacts'):
             self.assertEqual(self.client.get(reverse(name)).status_code, 200)
         self.assertContains(self.client.get(reverse('home')), reverse('info_delivery'))
-        self.assertContains(self.client.get(reverse('info_delivery')), 'не расчёт')
+        delivery = self.client.get(reverse('info_delivery'))
+        self.assertContains(delivery, 'Один заказ')
+        self.assertContains(delivery, 'Самовывоз')
+        self.assertNotContains(delivery, 'не расчёт')
+        self.assertNotContains(self.client.get(reverse('info_contacts')), 'для разработки')
 
     def test_buyer_delivery_is_cdek_and_post(self):
         from .models import DeliveryMethod
@@ -312,7 +316,8 @@ class StoreTests(TestCase):
         self.assertFalse(DeliveryMethod.objects.get(name='Доставка по городу').is_active)
         pickup = DeliveryMethod.objects.get(name='Самовывоз из мастерской')
         self.assertEqual(pickup.code, DeliveryMethod.PICKUP)
-        self.assertFalse(pickup.is_active)
+        self.assertTrue(pickup.is_active)
+        self.assertEqual(pickup.price, Decimal('0.00'))
         cdek = DeliveryMethod.objects.get(code=DeliveryMethod.CDEK, is_active=True)
         post = DeliveryMethod.objects.get(code=DeliveryMethod.POST, is_active=True)
         self.assertEqual(cdek.name, 'СДЭК')
@@ -448,6 +453,7 @@ class BrandAccountTests(TestCase):
         self.assertRedirects(response, reverse('brand_create'))
         response = self.client.post(reverse('brand_create'), {
             'name': 'CREATED BRAND', 'description': 'Created after approval',
+            'offers_cdek': 'on', 'offers_post': 'on',
         })
         self.assertRedirects(response, reverse('brand_dashboard'))
         manager.refresh_from_db()
@@ -520,10 +526,11 @@ class BrandAccountTests(TestCase):
     def test_product_form_chooses_carrier_and_disables_pickup_address(self):
         self.client.force_login(self.manager_user)
         page = self.client.get(reverse('product_create'))
-        self.assertContains(page, '03 / Способ получения')
+        self.assertContains(page, '03 / Как отдать вещь')
         self.assertContains(page, 'name="offers_cdek"')
         self.assertContains(page, 'name="offers_post"')
-        self.assertContains(page, '<button type="button" class="small-action" disabled>Добавить адрес самовывоза</button>')
+        self.assertContains(page, 'name="offers_pickup"')
+        self.assertNotContains(page, 'Добавить адрес самовывоза')
         missing = variant_payload()
         missing.pop('offers_cdek')
         missing.pop('offers_post')
@@ -551,6 +558,20 @@ class BrandAccountTests(TestCase):
         self.assertRedirects(saved, product.get_absolute_url())
         self.assertFalse(product.offers_cdek)
         self.assertTrue(product.offers_post)
+        pickup_only = variant_payload()
+        pickup_only.pop('offers_cdek')
+        pickup_only.pop('offers_post')
+        pickup_only['offers_pickup'] = 'on'
+        without_address = self.client.post(reverse('product_create'), {
+            'title': 'Самовывоз без адреса',
+            'description': 'Адреса мастерской нет',
+            'price': '4500',
+            'color': 'Чёрный',
+            **pickup_only,
+        })
+        self.assertEqual(without_address.status_code, 200)
+        self.assertFalse(Product.objects.filter(title='Самовывоз без адреса').exists())
+        self.assertContains(without_address, 'адрес самовывоза')
 
     def test_manager_cannot_change_or_delete_other_brand_product(self):
         self.client.force_login(self.manager_user)
@@ -565,7 +586,7 @@ class BrandAccountTests(TestCase):
         response = self.client.get(reverse('brand_products'))
         self.assertContains(response, self.product.title)
         self.assertNotContains(response, self.other_product.title)
-        self.assertContains(response, 'Изменить')
+        self.assertContains(response, 'Цена и карточка')
         self.assertContains(response, 'Удалить')
 
     def test_manager_can_delete_and_restore_own_product(self):
@@ -669,6 +690,8 @@ class BrandAccountTests(TestCase):
             'name': 'HIJACKED',
             'description': 'Новое описание мастерской',
             'size_chart': 'M — грудь 96–100',
+            'offers_cdek': 'on',
+            'offers_post': 'on',
         })
         self.assertRedirects(response, reverse('brand_dashboard'))
         self.brand.refresh_from_db()

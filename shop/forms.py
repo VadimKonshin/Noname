@@ -122,24 +122,56 @@ class EmailChangeForm(forms.Form):
 class BrandProfileForm(forms.ModelForm):
     class Meta:
         model = Brand
-        fields = ('description', 'size_chart')
+        fields = (
+            'description', 'size_chart',
+            'offers_cdek', 'offers_post', 'offers_pickup', 'pickup_address',
+        )
         widgets = {
-            'description': forms.Textarea(attrs={'rows': 5, 'placeholder': 'Коротко расскажите о бренде'}),
-            'size_chart': forms.Textarea(attrs={'rows': 6, 'placeholder': 'Например: M — грудь 96–100 см, длина 72 см'}),
+            'description': forms.Textarea(attrs={'rows': 5, 'placeholder': 'Коротко, своим голосом: кто вы и что шьёте'}),
+            'size_chart': forms.Textarea(attrs={'rows': 6, 'placeholder': 'Каждая строка — размер. Например: M — грудь 96–100 см, длина 72 см'}),
+            'pickup_address': forms.TextInput(attrs={'placeholder': 'Город, улица, как вас найти'}),
         }
+
+    def clean(self):
+        cleaned = super().clean()
+        address = (cleaned.get('pickup_address') or '').strip()
+        pickup = cleaned.get('offers_pickup')
+        if not cleaned.get('offers_cdek') and not cleaned.get('offers_post') and not pickup:
+            raise forms.ValidationError('Оставьте хотя бы один способ: СДЭК, Почту России или самовывоз.')
+        needs_address = pickup
+        if self.instance.pk and self.instance.products.filter(offers_pickup=True, is_deleted=False).exists():
+            needs_address = True
+        if needs_address and not address:
+            self.add_error('pickup_address', 'Напишите, где забирать вещь. Без адреса самовывоз в корзине не появится.')
+        cleaned['pickup_address'] = address
+        return cleaned
 
 
 class BrandCreateForm(forms.ModelForm):
     class Meta:
         model = Brand
-        fields = ('name', 'description')
+        fields = (
+            'name', 'description',
+            'offers_cdek', 'offers_post', 'offers_pickup', 'pickup_address',
+        )
         widgets = {
             'name': forms.TextInput(attrs={'placeholder': 'Название вашего бренда'}),
-            'description': forms.Textarea(attrs={'rows': 5, 'placeholder': 'Коротко расскажите о бренде'}),
+            'description': forms.Textarea(attrs={'rows': 5, 'placeholder': 'Пара фраз, которые увидит покупатель'}),
+            'pickup_address': forms.TextInput(attrs={'placeholder': 'Где забирать, если включите самовывоз'}),
         }
 
     def clean_name(self):
         return self.cleaned_data['name'].strip()
+
+    def clean(self):
+        cleaned = super().clean()
+        address = (cleaned.get('pickup_address') or '').strip()
+        if not cleaned.get('offers_cdek') and not cleaned.get('offers_post') and not cleaned.get('offers_pickup'):
+            raise forms.ValidationError('Отметьте, как отдаёте вещи: СДЭК, Почта России или самовывоз.')
+        if cleaned.get('offers_pickup') and not address:
+            self.add_error('pickup_address', 'Для самовывоза нужен адрес мастерской.')
+        cleaned['pickup_address'] = address
+        return cleaned
 
 
 class BrandMessageForm(forms.Form):
@@ -264,7 +296,7 @@ class ProductForm(forms.ModelForm):
         model = Product
         fields = (
             'brand', 'title', 'description', 'composition', 'fit', 'care',
-            'offers_cdek', 'offers_post',
+            'offers_cdek', 'offers_post', 'offers_pickup',
             'price', 'cover', 'color', 'is_available', 'allow_preorder', 'preorder_days', 'is_published', 'is_featured',
         )
         widgets = {
@@ -289,6 +321,11 @@ class ProductForm(forms.ModelForm):
 
     def clean(self):
         cleaned = super().clean()
-        if not cleaned.get('offers_cdek') and not cleaned.get('offers_post'):
-            raise forms.ValidationError('Отметьте СДЭК, Почту России или оба способа.')
+        if not cleaned.get('offers_cdek') and not cleaned.get('offers_post') and not cleaned.get('offers_pickup'):
+            raise forms.ValidationError('Отметьте СДЭК, Почту России, самовывоз или несколько способов.')
+        if cleaned.get('offers_pickup'):
+            brand = self.managed_brand or cleaned.get('brand') or self.instance.brand
+            address = (brand.pickup_address or '').strip() if brand is not None else ''
+            if not address:
+                self.add_error('offers_pickup', 'Сначала укажите адрес самовывоза в настройках бренда.')
         return cleaned

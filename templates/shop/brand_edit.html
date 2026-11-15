@@ -4,19 +4,40 @@
 <section class="container commerce-page">
   <div class="eyebrow"><span class="tiny-dot"></span> КАБИНЕТ / {{ brand.name }}</div>
   <h1 class="commerce-heading">О БРЕНДЕ<span class="heading-period">.</span></h1>
-  <p class="page-lead">Название «{{ brand.name }}» меняет администратор. Здесь можно обновить текст о бренде и таблицу размеров.</p>
+  <p class="page-lead">Название «{{ brand.name }}» меняет администратор. Здесь — текст, который видит покупатель, таблица размеров и способы, которыми можно получить вещи бренда. Цену, фото и описание каждой вещи меняют в её карточке.</p>
   {% include 'includes/brand_nav.html' with active_page='profile' %}
   <form method="post" class="checkout-form" novalidate>
     {% csrf_token %}
     {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
     <div class="form-section">
-      {% for field in form %}
-        <div class="form-field">
-          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-          {{ field }}
-          {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
-        </div>
-      {% endfor %}
+      <h2>01 / Голос бренда</h2>
+      <div class="form-field">
+        <label for="{{ form.description.id_for_label }}">{{ form.description.label }}</label>
+        {{ form.description }}
+        {% if form.description.errors %}<div class="field-error">{{ form.description.errors }}</div>{% endif %}
+      </div>
+    </div>
+    <div class="form-section">
+      <h2>02 / Размеры</h2>
+      <p class="form-hint">Каждая строка — один размер. Покупатель увидит её таблицей на странице бренда и на вещи.</p>
+      <div class="form-field">
+        <label for="{{ form.size_chart.id_for_label }}">{{ form.size_chart.label }}</label>
+        {{ form.size_chart }}
+        {% if form.size_chart.errors %}<div class="field-error">{{ form.size_chart.errors }}</div>{% endif %}
+      </div>
+    </div>
+    <div class="form-section">
+      <h2>03 / Как вас получают</h2>
+      <p class="form-hint">Выключение снимает способ со всех вещей бренда. Самовывоз для всех вещей включается здесь. Для одной вещи его можно включить в карточке товара, если адрес уже указан.</p>
+      <label class="check-field">{{ form.offers_cdek }}<span>СДЭК</span></label>
+      <label class="check-field">{{ form.offers_post }}<span>Почта России</span></label>
+      <label class="check-field">{{ form.offers_pickup }}<span>Самовывоз для всех вещей</span></label>
+      {% if form.offers_pickup.errors %}<div class="field-error">{{ form.offers_pickup.errors }}</div>{% endif %}
+      <div class="form-field">
+        <label for="{{ form.pickup_address.id_for_label }}">Адрес мастерской</label>
+        {{ form.pickup_address }}
+        {% if form.pickup_address.errors %}<div class="field-error">{{ form.pickup_address.errors }}</div>{% endif %}
+      </div>
     </div>
     <button type="submit" class="btn btn-dark">Сохранить <span>↗</span></button>
   </form>

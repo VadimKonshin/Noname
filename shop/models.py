@@ -18,6 +18,10 @@ class Brand(models.Model):
     slug = models.SlugField('URL бренда', max_length=150, unique=True, blank=True, allow_unicode=True)
     description = models.TextField('О бренде', blank=True)
     size_chart = models.TextField('Таблица размеров', blank=True)
+    offers_cdek = models.BooleanField('СДЭК', default=True)
+    offers_post = models.BooleanField('Почта России', default=True)
+    offers_pickup = models.BooleanField('Самовывоз', default=False)
+    pickup_address = models.CharField('Адрес самовывоза', max_length=250, blank=True)
     is_active = models.BooleanField('Показывать бренд', default=True)
     sort_order = models.PositiveSmallIntegerField('Порядок в бегущей строке', default=0)
     is_deleted = models.BooleanField('Удалён менеджером', default=False)
@@ -47,6 +51,16 @@ class Brand(models.Model):
         ), None)
         if clash:
             raise ValidationError({'name': 'Бренд с таким или очень похожим названием уже есть.'})
+
+    def size_rows(self):
+        rows = []
+        for raw in (self.size_chart or '').splitlines():
+            line = raw.strip()
+            if not line:
+                continue
+            label, detail = _split_size_line(line)
+            rows.append({'label': label, 'detail': detail})
+        return rows
 
     def save(self, *args, **kwargs):
         if not self.slug:
@@ -129,6 +143,16 @@ class EmailToken(models.Model):
 SIZE_ORDER = ('XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL')
 
 
+def _split_size_line(line):
+    for separator in (' — ', ' – ', ' - ', ':', '—', '–'):
+        if separator in line:
+            label, detail = line.split(separator, 1)
+            label, detail = label.strip(), detail.strip()
+            if label and detail:
+                return label, detail
+    return line, ''
+
+
 class ProductQuerySet(models.QuerySet):
     def public(self):
         return self.filter(
@@ -148,6 +172,7 @@ class Product(models.Model):
     care = models.TextField('Уход', blank=True)
     offers_cdek = models.BooleanField('СДЭК', default=True)
     offers_post = models.BooleanField('Почта России', default=True)
+    offers_pickup = models.BooleanField('Самовывоз', default=False)
     price = models.DecimalField('Цена, ₽', max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
     cover = PreparedImageField('Главное фото', upload_to='products/covers/', blank=True, validators=[validate_product_image])
     color = models.CharField('Цвет', max_length=80, default='Чёрный')

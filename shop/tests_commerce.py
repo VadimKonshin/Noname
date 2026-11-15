@@ -281,6 +281,40 @@ class CommerceTests(TestCase):
         self.client.post(reverse('checkout'), self._checkout_payload(method=self.free, city='', address=''))
         self.assertEqual(Order.objects.get().total, Decimal('6000.00'))
 
+    def test_pickup_appears_from_the_brand_or_from_the_product(self):
+        Brand.objects.filter(pk=self.brand.pk).update(offers_pickup=True, pickup_address='двор марки, 2')
+        self._add(quantity=1)
+        cart = self.client.get(reverse('cart'))
+        self.assertIn(self.pickup.pk, [method.pk for method in cart.context['delivery_methods']])
+        self.assertContains(cart, 'двор марки, 2')
+        self._choose_delivery(self.pickup)
+        self.client.get(reverse('checkout'))
+        result = self.client.post(reverse('checkout'), self._checkout_payload(method=self.pickup, city='', address=''))
+        self.assertEqual(result.status_code, 302)
+        order = Order.objects.get()
+        self.assertEqual(order.pickup_address, 'двор марки, 2')
+        self.assertEqual(order.delivery_price, Decimal('0.00'))
+
+        Order.objects.all().delete()
+        self.client.session.flush()
+        Brand.objects.filter(pk=self.brand.pk).update(offers_pickup=False, pickup_address='переулок, 1')
+        Product.objects.filter(pk=self.shirt.pk).update(offers_pickup=True)
+        self._add(quantity=1)
+        cart = self.client.get(reverse('cart'))
+        self.assertIn(self.pickup.pk, [method.pk for method in cart.context['delivery_methods']])
+
+    def test_brand_switch_hides_a_carrier_the_product_still_offers(self):
+        post = DeliveryMethod.objects.create(
+            name='Почта тест', code=DeliveryMethod.POST, price=Decimal('390.00'), requires_address=True,
+        )
+        Brand.objects.filter(pk=self.brand.pk).update(offers_post=False)
+        self._add(quantity=1)
+        cart = self.client.get(reverse('cart'))
+        self.assertNotIn(post.pk, [method.pk for method in cart.context['delivery_methods']])
+        response = self._choose_delivery(post)
+        self.assertRedirects(response, reverse('cart'))
+        self.assertNotIn('noname_delivery_id', self.client.session)
+
     def test_pickup_cannot_be_chosen(self):
         self._add()
         cart = self.client.get(reverse('cart'))

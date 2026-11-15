@@ -19,14 +19,39 @@ def one_brand(lines):
 
 
 def method_offered_by(method, products):
-    """Pickup stays off the cart. СДЭК and Почта России follow the product flags."""
-    if method is None or not method.is_active or method.price < 0 or method.code == DeliveryMethod.PICKUP:
+    """СДЭК and Почта России need both the brand and every item. Pickup needs the brand address and a yes on the brand or on every item."""
+    if method is None or not method.is_active or method.price < 0 or not products:
         return False
     if method.code == DeliveryMethod.CDEK:
-        return all(product.offers_cdek for product in products)
+        return all(product.offers_cdek and _brand_allows(product, 'offers_cdek') for product in products)
     if method.code == DeliveryMethod.POST:
-        return all(product.offers_post for product in products)
+        return all(product.offers_post and _brand_allows(product, 'offers_post') for product in products)
+    if method.code == DeliveryMethod.PICKUP:
+        return all(_product_can_pickup(product) for product in products)
     return True
+
+
+def _brand_allows(product, flag):
+    brand = product.brand
+    if brand is None:
+        return True
+    return bool(getattr(brand, flag))
+
+
+def _product_can_pickup(product):
+    brand = product.brand
+    if brand is None or not (brand.pickup_address or '').strip():
+        return False
+    return bool(brand.offers_pickup or product.offers_pickup)
+
+
+def pickup_place(products):
+    if not products or not one_brand([{'product': product} for product in products]):
+        return ''
+    brand = products[0].brand
+    if brand is None:
+        return ''
+    return (brand.pickup_address or '').strip()
 
 
 def available_delivery_methods(products):

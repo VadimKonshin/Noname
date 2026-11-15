@@ -21,7 +21,7 @@ from .access import (
 from .commerce import (
     CART_SESSION_KEY, DELIVERY_SESSION_KEY, MAX_OPEN_PREORDER_PER_VARIANT, MAX_PER_VARIANT,
     available_delivery_methods, cart_products, get_cart, method_offered_by, one_brand,
-    open_preorder_map, put, set_quantity, update_order_status,
+    open_preorder_map, pickup_place, put, set_quantity, update_order_status,
 )
 from .cdek import CdekUnavailable, configured as cdek_configured, quote_delivery
 from .commerce_forms import CheckoutForm, OrderStatusForm
@@ -77,11 +77,12 @@ def _checkout_response(request, form, current_cart, method, token, quote=None, s
         'cdek_live': live,
         'cdek_quote': quote,
         'selected_point': selected_point,
+        'pickup_place': pickup_place(cart_products(current_cart)),
     })
 
 
 def selected_delivery(request, products):
-    """Load the session selection, rejecting pickup and methods the cart cannot use."""
+    """Load the session selection, dropping a method this cart can no longer use."""
     method_id = request.session.get(DELIVERY_SESSION_KEY)
     if type(method_id) is not int:
         return None
@@ -106,6 +107,7 @@ def cart(request):
         'grand_total': current['subtotal'] + shipping,
         'cdek_selected_live': live_selected,
         'single_brand': single_brand,
+        'pickup_place': pickup_place(products) if single_brand else '',
     })
 
 
@@ -268,6 +270,12 @@ def checkout(request):
                         eta = current_method.eta
                         point_code = ''
                         point_address = ''
+                    if current_method.code == DeliveryMethod.PICKUP:
+                        place = pickup_place(cart_products(verified_cart))
+                        if not place:
+                            raise ValueError('Самовывоз сейчас недоступен: у бренда нет адреса.')
+                    else:
+                        place = current_method.pickup_address
                     address = (data['address'] or '').strip() or point_address
                     preorder_lines = [item for item in verified_cart['lines'] if item['is_preorder']]
                     if preorder_lines:
@@ -295,7 +303,7 @@ def checkout(request):
                         checkout_token=token,
                         full_name=data['full_name'], email=data['email'], phone=data['phone'],
                         delivery_method=current_method, delivery_name=current_method.name,
-                        delivery_eta=eta, pickup_address=current_method.pickup_address,
+                        delivery_eta=eta, pickup_address=place,
                         delivery_point_code=point_code, delivery_point_address=point_address,
                         delivery_price=agreed, subtotal=subtotal,
                         total=subtotal + agreed,
