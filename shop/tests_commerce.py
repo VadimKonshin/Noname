@@ -72,6 +72,59 @@ class CommerceTests(TestCase):
         self.assertEqual(result.status_code, 302)
         return Order.objects.get()
 
+    def _other_brand_shirt(self):
+        brand = Brand.objects.create(name='ВТОРОЙ', slug='vtoroy')
+        shirt = Product.objects.create(
+            brand=brand, title='Вторая футболка', description='Хлопок', price=Decimal('2500.00'),
+            is_published=True, is_available=True,
+        )
+        ProductVariant.objects.create(product=shirt, size='M', stock_quantity=4)
+        return shirt
+
+    def test_cart_keeps_one_brand_and_one_delivery(self):
+        self._add()
+        other = self._other_brand_shirt()
+        response = self.client.post(reverse('cart_add', args=[other.slug]), {
+            'size': 'M', 'quantity': 1, 'order_type': 'stock',
+        }, follow=True)
+        self.assertContains(response, 'один бренд и одна доставка')
+        self.assertEqual(response.context['cart']['count'], 2)
+        self.assertTrue(response.context['single_brand'])
+        self.assertContains(response, 'name="delivery_method"')
+        same = Product.objects.create(
+            brand=self.brand, title='Вторая вещь бренда', description='Хлопок', price=Decimal('1000.00'),
+            is_published=True, is_available=True,
+        )
+        ProductVariant.objects.create(product=same, size='M', stock_quantity=4)
+        added = self.client.post(reverse('cart_add', args=[same.slug]), {
+            'size': 'M', 'quantity': 1, 'order_type': 'stock', 'go_to_cart': '1',
+        }, follow=True)
+        self.assertEqual(added.context['cart']['count'], 3)
+        self.assertContains(added, 'name="delivery_method"')
+
+    def test_mixed_cart_hides_delivery_until_one_brand_remains(self):
+        other = self._other_brand_shirt()
+        session = self.client.session
+        session['pustota_cart'] = {f'{self.shirt.pk}:M': 1, f'{other.pk}:M': 1}
+        session.save()
+        response = self.client.get(reverse('cart'))
+        self.assertFalse(response.context['single_brand'])
+        self.assertContains(response, 'Удалите лишние вещи')
+        self.assertNotContains(response, 'name="delivery_method"')
+
+    def test_checkout_refuses_a_cart_that_already_mixes_brands(self):
+        other = self._other_brand_shirt()
+        session = self.client.session
+        session['pustota_cart'] = {f'{self.shirt.pk}:M': 1, f'{other.pk}:M': 1}
+        session.save()
+        response = self.client.get(reverse('checkout'), follow=True)
+        self.assertContains(response, 'один бренд и одна доставка')
+        self.assertEqual(Order.objects.count(), 0)
+        self.assertEqual(self.client.post(reverse('cart_delivery'), {
+            'delivery_method': self.delivery.pk, 'next': '1',
+        }).status_code, 302)
+        self.assertEqual(Order.objects.count(), 0)
+
     def test_cart_guest_and_total(self):
         self.assertRedirects(self._add(), reverse('cart'))
         response = self.client.get(reverse('cart'))

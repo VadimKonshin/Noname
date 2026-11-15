@@ -13,6 +13,11 @@ def cart_products(cart):
     return [line['product'] for line in cart['lines']]
 
 
+def one_brand(lines):
+    """One order is one brand and therefore one delivery."""
+    return len({line['product'].brand_id for line in lines}) <= 1
+
+
 def method_offered_by(method, products):
     """Pickup stays off the cart. СДЭК and Почта России follow the product flags."""
     if method is None or not method.is_active or method.price < 0 or method.code == DeliveryMethod.PICKUP:
@@ -144,6 +149,8 @@ def cart_count(request):
 
 def put(request, product, size, qty, is_preorder=False):
     cart = get_cart(request)
+    if not one_brand(cart['lines'] + [{'product': product}]):
+        return False
     variant = next((item for item in product.variants.all() if item.size == size), None)
     if variant is None:
         return False

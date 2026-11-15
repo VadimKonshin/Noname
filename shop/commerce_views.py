@@ -20,8 +20,8 @@ from .access import (
 )
 from .commerce import (
     CART_SESSION_KEY, DELIVERY_SESSION_KEY, MAX_OPEN_PREORDER_PER_VARIANT, MAX_PER_VARIANT,
-    available_delivery_methods, cart_products, get_cart, method_offered_by, open_preorder_map,
-    put, set_quantity, update_order_status,
+    available_delivery_methods, cart_products, get_cart, method_offered_by, one_brand,
+    open_preorder_map, put, set_quantity, update_order_status,
 )
 from .cdek import CdekUnavailable, configured as cdek_configured, quote_delivery
 from .commerce_forms import CheckoutForm, OrderStatusForm
@@ -96,20 +96,25 @@ def selected_delivery(request, products):
 def cart(request):
     current = get_cart(request)
     products = cart_products(current)
-    delivery_methods = available_delivery_methods(products)
-    selected = selected_delivery(request, products)
+    single_brand = one_brand(current['lines'])
+    delivery_methods = available_delivery_methods(products) if single_brand else []
+    selected = selected_delivery(request, products) if single_brand else None
     live_selected = cdek_configured() and selected is not None and selected.code == DeliveryMethod.CDEK
     shipping = Decimal('0.00') if live_selected or selected is None else selected.price
     return render(request, 'shop/cart.html', {
         'cart': current, 'delivery_methods': delivery_methods, 'selected_method': selected,
         'grand_total': current['subtotal'] + shipping,
         'cdek_selected_live': live_selected,
+        'single_brand': single_brand,
     })
 
 
 @require_POST
 def cart_delivery(request):
     current = get_cart(request)
+    if not one_brand(current['lines']):
+        messages.error(request, 'В одном заказе — один бренд и одна доставка. Уберите вещи другого бренда.')
+        return redirect('cart')
     method_id = _integer(request.POST.get('delivery_method'))
     method = DeliveryMethod.objects.filter(pk=method_id, is_active=True, price__gte=0).first() if method_id else None
     if not method_offered_by(method, cart_products(current)):
@@ -144,6 +149,9 @@ def cart_add(request, slug):
         messages.error(request, 'Выберите доступный размер футболки.')
     elif quantity is None or not 1 <= quantity <= MAX_PER_VARIANT:
         messages.error(request, 'Выберите количество от 1 до 10.')
+    elif not one_brand(get_cart(request)['lines'] + [{'product': product}]):
+        messages.error(request, 'В одном заказе — один бренд и одна доставка. Оформите текущую корзину или уберите вещи другого бренда.')
+        return redirect('cart')
     elif not put(request, product, size, quantity, is_preorder):
         messages.error(request, 'Выбранный размер недоступен в этом количестве. Обновите остаток или режим заказа.')
     else:
@@ -175,6 +183,9 @@ def checkout(request):
     current_cart = get_cart(request)
     if not current_cart['lines']:
         messages.error(request, 'Добавьте товары в корзину перед оформлением.')
+        return redirect('cart')
+    if not one_brand(current_cart['lines']):
+        messages.error(request, 'В одном заказе — один бренд и одна доставка. Уберите вещи другого бренда.')
         return redirect('cart')
 
     method = selected_delivery(request, cart_products(current_cart))
@@ -241,6 +252,8 @@ def checkout(request):
                     if verified_lines != submitted_lines:
                         raise ValueError('Остатки или доступность предзаказа изменились. Проверьте корзину перед оформлением.')
                     current_method = DeliveryMethod.objects.filter(pk=method.pk, is_active=True).first()
+                    if not one_brand(verified_cart['lines']):
+                        raise ValueError('В одном заказе — один бренд и одна доставка.')
                     if not method_offered_by(current_method, cart_products(verified_cart)):
                         raise ValueError('Способ доставки недоступен. Выберите другой в корзине.')
                     if quote is not None:

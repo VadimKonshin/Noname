@@ -5,7 +5,7 @@
 <section class="container commerce-page noname-cart">
   <div class="eyebrow"><span class="tiny-dot"></span> CHECKOUT / 01</div>
   <h1 class="commerce-heading">ТВОЯ КОРЗИНА<span class="heading-period">.</span></h1>
-  <p class="page-lead">Сначала вещи, затем способ доставки. Регистрация не требуется.</p>
+  <p class="page-lead">Один заказ — один бренд и одна доставка. Регистрация не требуется.</p>
 
   {% if cart.lines %}
     <div class="cart-sequence">
@@ -44,6 +44,9 @@
       <div class="cart-subtotal-line">
         <span>СУММА ТОВАРОВ</span><strong>{{ cart.subtotal|floatformat:0 }} ₽</strong>
       </div>
+      {% if not single_brand %}
+        <p class="detail-notice">В корзине вещи разных брендов. Один заказ везёт один бренд одной доставкой. Удалите лишние вещи, затем выберите доставку.</p>
+      {% else %}
       <div class="checkout-step-title shipping-step-title">
         <span>02 / ДОСТАВКА</span><span>ВЫБЕРИ ОДИН ВАРИАНТ</span>
       </div>
@@ -88,6 +91,7 @@
           ПРОДОЛЖИТЬ ОФОРМЛЕНИЕ ↗
         </button>
       </form>
+      {% endif %}
       <p class="guest-hint">АККАУНТ НЕ НУЖЕН / КОНТАКТЫ УКАЖЕШЬ НА СЛЕДУЮЩЕМ ШАГЕ</p>
     </div>
   {% else %}
