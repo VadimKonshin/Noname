@@ -1,0 +1,4 @@
+{{ brand.name }} отвечает на ваше сообщение.
+{% if note.product %}Вещь: {{ note.product.title }}
+{% endif %}
+{{ reply }}

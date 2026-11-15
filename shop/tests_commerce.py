@@ -1,6 +1,11 @@
 """Run: python manage.py test shop"""
+import json
 from decimal import Decimal
+from unittest.mock import patch
+from urllib.error import URLError
+
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.http import HttpRequest
 from django.test import TestCase, override_settings
@@ -10,6 +15,15 @@ from .commerce import get_cart
 from .models import Brand, BrandManager, DeliveryMethod, Order, OrderItem, Product, ProductVariant
 
 User = get_user_model()
+
+CDEK_SETTINGS = {
+    'CDEK_CLIENT_ID': 'shop-client',
+    'CDEK_CLIENT_SECRET': 'cdek-secret-not-for-pages',
+    'CDEK_FROM_POSTAL_CODE': '101000',
+    'CDEK_API_URL': 'https://api.cdek.ru/v2',
+    'CDEK_TARIFF_CODE': 136,
+    'CDEK_ITEM_WEIGHT_GRAMS': 500,
+}
 
 
 @override_settings(RATELIMIT_ENABLE=False)
@@ -25,7 +39,10 @@ class CommerceTests(TestCase):
             ProductVariant(product=cls.shirt, size='L', stock_quantity=10),
         ])
         cls.delivery = DeliveryMethod.objects.create(name='Пункт выдачи', price=Decimal('350.00'), requires_address=True)
-        cls.pickup = DeliveryMethod.objects.create(name='Самовывоз', price=Decimal('0.00'), requires_address=False)
+        cls.free = DeliveryMethod.objects.create(name='Без адреса', price=Decimal('0.00'), requires_address=False)
+        cls.pickup = DeliveryMethod.objects.create(
+            name='Самовывоз', price=Decimal('0.00'), requires_address=False, code=DeliveryMethod.PICKUP,
+        )
 
     def _add(self, size='M', quantity=2, order_type='stock'):
         return self.client.post(reverse('cart_add', args=[self.shirt.slug]), {
@@ -203,19 +220,43 @@ class CommerceTests(TestCase):
         self.client.post(reverse('checkout'), self._checkout_payload(city='', address=''))
         self.assertEqual(Order.objects.count(), 0)
 
-    def test_pickup_allows_no_address(self):
+    def test_method_without_address_allows_empty_city(self):
         self.client.force_login(self.member)
         self._add()
-        self._choose_delivery(self.pickup)
+        self._choose_delivery(self.free)
         self.client.get(reverse('checkout'))
-        self.client.post(reverse('checkout'), self._checkout_payload(method=self.pickup, city='', address=''))
+        self.client.post(reverse('checkout'), self._checkout_payload(method=self.free, city='', address=''))
         self.assertEqual(Order.objects.get().total, Decimal('6000.00'))
+
+    def test_pickup_cannot_be_chosen(self):
+        self._add()
+        cart = self.client.get(reverse('cart'))
+        self.assertNotIn(self.pickup.pk, [method.pk for method in cart.context['delivery_methods']])
+        response = self._choose_delivery(self.pickup)
+        self.assertRedirects(response, reverse('cart'))
+        self.assertNotIn('noname_delivery_id', self.client.session)
+
+    def test_cart_hides_carrier_the_product_does_not_offer(self):
+        cdek = DeliveryMethod.objects.create(
+            name='СДЭК тест', code=DeliveryMethod.CDEK, price=Decimal('350.00'), requires_address=True,
+        )
+        self.shirt.offers_cdek = False
+        self.shirt.save(update_fields=['offers_cdek'])
+        self._add()
+        response = self._choose_delivery(cdek)
+        self.assertRedirects(response, reverse('cart'))
+        self.assertNotIn('noname_delivery_id', self.client.session)
+        self.shirt.offers_cdek = True
+        self.shirt.offers_post = False
+        self.shirt.save(update_fields=['offers_cdek', 'offers_post'])
+        self._choose_delivery(cdek)
+        self.assertEqual(self.client.session['noname_delivery_id'], cdek.pk)
 
     def test_delivery_selection_and_prices_are_server_authoritative(self):
         self._add()
-        self._choose_delivery(self.pickup)
+        self._choose_delivery(self.free)
         cart = self.client.get(reverse('cart'))
-        self.assertEqual(cart.context['selected_method'].pk, self.pickup.pk)
+        self.assertEqual(cart.context['selected_method'].pk, self.free.pk)
         self.assertEqual(cart.context['grand_total'], Decimal('6000.00'))
         self.client.get(reverse('checkout'))
         payload = self._checkout_payload(delivery_method=self.delivery.pk, total='1')
@@ -312,13 +353,13 @@ class CommerceTests(TestCase):
         self.assertEqual(get_cart(self.client)['count'], 4)
 
     def test_checkout_snapshots_delivery_window_and_pickup(self):
-        self.pickup.eta = 'в согласованный день'
-        self.pickup.pickup_address = 'ул. Мастерская, 1'
-        self.pickup.save(update_fields=['eta', 'pickup_address'])
+        self.delivery.eta = 'в согласованный день'
+        self.delivery.pickup_address = 'ул. Мастерская, 1'
+        self.delivery.save(update_fields=['eta', 'pickup_address'])
         self._add()
-        self._choose_delivery(self.pickup)
+        self._choose_delivery(self.delivery)
         self.client.get(reverse('checkout'))
-        result = self.client.post(reverse('checkout'), self._checkout_payload(method=self.pickup))
+        result = self.client.post(reverse('checkout'), self._checkout_payload(method=self.delivery))
         self.assertEqual(result.status_code, 302)
         order = Order.objects.get()
         self.assertEqual(order.delivery_eta, 'в согласованный день')
@@ -374,6 +415,156 @@ class CommerceTests(TestCase):
         self.assertEqual(self.client.get(order.get_absolute_url()).status_code, 404)
         response = self.client.post(reverse('change_order_status', args=[order.pk]), {'status': Order.CANCELLED})
         self.assertEqual(response.status_code, 403)
+
+    def test_cdek_without_keys_keeps_the_fixed_price(self):
+        self.delivery.code = DeliveryMethod.CDEK
+        self.delivery.save(update_fields=['code', 'price'])
+        with patch('shop.cdek.urllib.request.build_opener') as opener:
+            order = self._create_order()
+        opener.assert_not_called()
+        self.assertEqual(order.delivery_price, Decimal('350.00'))
+        self.assertEqual(order.delivery_point_code, '')
+
+    @override_settings(**CDEK_SETTINGS)
+    def test_cart_labels_live_cdek_without_a_fixed_total(self):
+        self._add()
+        response = self.client.get(reverse('cart'))
+        self.assertContains(response, 'по индексу')
+        self.assertContains(response, 'data-method-price="quote"')
+
+    @override_settings(**CDEK_SETTINGS)
+    def test_cdek_quote_is_stored_and_a_posted_price_is_ignored(self):
+        cache.clear()
+        self.delivery.code = DeliveryMethod.CDEK
+        self.delivery.save(update_fields=['code'])
+        opener = _CdekOpener([480, 480])
+        with patch('shop.cdek.urllib.request.build_opener', return_value=opener):
+            self._add()
+            self._choose_delivery()
+            self.client.get(reverse('checkout'))
+            first = self.client.post(reverse('checkout'), self._checkout_payload(price='1', total='1'))
+            self.assertEqual(first.status_code, 200)
+            self.assertContains(first, 'На Тверской')
+            self.assertContains(first, '480')
+            self.assertNotContains(first, 'cdek-secret-not-for-pages')
+            self.assertEqual(Order.objects.count(), 0)
+            second = self.client.post(reverse('checkout'), self._checkout_payload(
+                price='1', total='1', delivery_point='MSK1',
+            ))
+        self.assertEqual(second.status_code, 302)
+        order = Order.objects.get()
+        self.assertEqual(order.delivery_price, Decimal('480.00'))
+        self.assertEqual(order.total, Decimal('6480.00'))
+        self.assertEqual(order.delivery_point_code, 'MSK1')
+        self.assertIn('Тверская, 1', order.delivery_point_address)
+        self.assertEqual(order.delivery_eta, '2–5 дн.')
+        self.assertContains(self.client.get(order.get_absolute_url()), 'MSK1')
+        self.assertNotIn('cdek-secret-not-for-pages', opener.bodies)
+
+    @override_settings(**CDEK_SETTINGS)
+    def test_cdek_failure_does_not_create_an_order_or_zero_the_price(self):
+        cache.clear()
+        self.delivery.code = DeliveryMethod.CDEK
+        self.delivery.save(update_fields=['code'])
+        self._add()
+        self._choose_delivery()
+        self.client.get(reverse('checkout'))
+        with patch('shop.cdek.urllib.request.build_opener', return_value=_BrokenOpener()):
+            response = self.client.post(reverse('checkout'), self._checkout_payload())
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'не ответил')
+        self.assertEqual(Order.objects.count(), 0)
+        self.delivery.refresh_from_db()
+        self.assertEqual(self.delivery.price, Decimal('350.00'))
+
+    @override_settings(**CDEK_SETTINGS)
+    def test_cdek_zero_price_is_rejected(self):
+        cache.clear()
+        self.delivery.code = DeliveryMethod.CDEK
+        self.delivery.save(update_fields=['code'])
+        self._add()
+        self._choose_delivery()
+        self.client.get(reverse('checkout'))
+        with patch('shop.cdek.urllib.request.build_opener', return_value=_CdekOpener([0])):
+            response = self.client.post(reverse('checkout'), self._checkout_payload())
+        self.assertContains(response, 'не ответил')
+        self.assertEqual(Order.objects.count(), 0)
+
+    @override_settings(**{**CDEK_SETTINGS, 'CDEK_API_URL': 'https://evil.example/v2'})
+    def test_cdek_secret_is_not_sent_to_an_unknown_host(self):
+        cache.clear()
+        self.delivery.code = DeliveryMethod.CDEK
+        self.delivery.save(update_fields=['code'])
+        self._add()
+        self._choose_delivery()
+        self.client.get(reverse('checkout'))
+        with patch('shop.cdek.urllib.request.build_opener') as opener:
+            response = self.client.post(reverse('checkout'), self._checkout_payload())
+        opener.assert_not_called()
+        self.assertContains(response, 'не ответил')
+        self.assertEqual(Order.objects.count(), 0)
+
+    @override_settings(**CDEK_SETTINGS)
+    def test_changed_cdek_price_is_shown_again_before_the_order(self):
+        cache.clear()
+        self.delivery.code = DeliveryMethod.CDEK
+        self.delivery.save(update_fields=['code'])
+        opener = _CdekOpener([480, 510, 510])
+        with patch('shop.cdek.urllib.request.build_opener', return_value=opener):
+            self._add()
+            self._choose_delivery()
+            self.client.get(reverse('checkout'))
+            self.client.post(reverse('checkout'), self._checkout_payload())
+            second = self.client.post(reverse('checkout'), self._checkout_payload(delivery_point='MSK1'))
+            self.assertEqual(second.status_code, 200)
+            self.assertContains(second, '510')
+            self.assertEqual(Order.objects.count(), 0)
+            third = self.client.post(reverse('checkout'), self._checkout_payload(delivery_point='MSK1'))
+        self.assertEqual(third.status_code, 302)
+        self.assertEqual(Order.objects.get().delivery_price, Decimal('510.00'))
+
+
+class _Body:
+    def __init__(self, payload):
+        self.raw = json.dumps(payload).encode()
+
+    def read(self, limit):
+        return self.raw
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+class _CdekOpener:
+    def __init__(self, prices):
+        self.prices = list(prices)
+        self.bodies = []
+
+    def open(self, request, timeout):
+        if request.data:
+            self.bodies.append(request.data.decode())
+        if request.full_url.endswith('/oauth/token'):
+            return _Body({'access_token': 'tok', 'expires_in': 3600})
+        if request.full_url.endswith('/calculator/tariff'):
+            body = json.loads(request.data.decode())
+            if body['from_location']['postal_code'] != '101000' or 'price' in body:
+                raise AssertionError(body)
+            return _Body({'total_sum': self.prices.pop(0), 'period_min': 2, 'period_max': 5})
+        if '/deliverypoints?' in request.full_url:
+            return _Body([{
+                'code': 'MSK1',
+                'name': 'На Тверской',
+                'location': {'city': 'Москва', 'address': 'Тверская, 1'},
+            }])
+        raise AssertionError(request.full_url)
+
+
+class _BrokenOpener:
+    def open(self, request, timeout):
+        raise URLError('down')
 
 
 @override_settings(RATELIMIT_ENABLE=False)

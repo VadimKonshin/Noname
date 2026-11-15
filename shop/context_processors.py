@@ -1,4 +1,5 @@
 from .access import get_brand_manager
+from .cdek import configured as cdek_configured
 from .accounts import user_email_verified
 from .commerce import cart_count
 from .models import Brand, BrandMessage
@@ -23,4 +24,5 @@ def store_context(request):
         'brand_unread_count': unread,
         'telegram_news_url': news_url(),
         'telegram_bot_url': public_bot_url(),
+        'cdek_live': cdek_configured(),
     }

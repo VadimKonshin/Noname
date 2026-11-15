@@ -8,7 +8,7 @@
 {% else %}
 <p><strong>Заказ №{{ order.pk }} отменён.</strong></p>
 {% endif %}
-<p>Получатель: {{ order.full_name }}<br>Доставка: {{ order.delivery_name }}</p>
+<p>Получатель: {{ order.full_name }}<br>Доставка: {{ order.delivery_name }}{% if order.delivery_point_code %}<br>Пункт: {{ order.delivery_point_code }} {{ order.delivery_point_address }}{% endif %}</p>
 <ul>
   {% for item in items %}
     <li>{{ item.product_title }}, размер {{ item.size }}, {{ item.quantity }} шт. — {{ item.line_total }} ₽{% if item.is_preorder %} (предзаказ){% endif %}</li>

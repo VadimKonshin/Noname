@@ -3,10 +3,32 @@ from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import F, Sum
-from .models import Order, OrderItem, Product, ProductVariant
+from .models import DeliveryMethod, Order, OrderItem, Product, ProductVariant
 
 CART_SESSION_KEY = 'pustota_cart'
 DELIVERY_SESSION_KEY = 'noname_delivery_id'
+
+
+def cart_products(cart):
+    return [line['product'] for line in cart['lines']]
+
+
+def method_offered_by(method, products):
+    """Pickup stays off the cart. СДЭК and Почта России follow the product flags."""
+    if method is None or not method.is_active or method.price < 0 or method.code == DeliveryMethod.PICKUP:
+        return False
+    if method.code == DeliveryMethod.CDEK:
+        return all(product.offers_cdek for product in products)
+    if method.code == DeliveryMethod.POST:
+        return all(product.offers_post for product in products)
+    return True
+
+
+def available_delivery_methods(products):
+    return [
+        method for method in DeliveryMethod.objects.filter(is_active=True, price__gte=0)
+        if method_offered_by(method, products)
+    ]
 MAX_PER_VARIANT = 10
 MAX_TOTAL_ITEMS = 50
 MAX_OPEN_PREORDER_PER_VARIANT = 10

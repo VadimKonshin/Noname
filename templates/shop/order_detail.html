@@ -36,6 +36,7 @@
         <p><strong>{{ order.delivery_name }}</strong></p>
         {% if order.delivery_eta %}<p>Срок: {{ order.delivery_eta }}</p>{% endif %}
         {% if order.pickup_address %}<p>Самовывоз: {{ order.pickup_address }}</p>{% endif %}
+        {% if order.delivery_point_code %}<p>Пункт: {{ order.delivery_point_code }}{% if order.delivery_point_address %}, {{ order.delivery_point_address }}{% endif %}</p>{% endif %}
         {% if order.city or order.address %}<p>{{ order.postal_code }} {{ order.city }}, {{ order.address }}</p>{% endif %}
         {% if order.comment %}<p>Комментарий: {{ order.comment }}</p>{% endif %}
       </div>

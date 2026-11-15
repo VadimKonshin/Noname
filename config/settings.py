@@ -3,13 +3,16 @@ import os
 import sys
 from pathlib import Path
 
+from .runtime import cache_settings, database_settings
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 def _env_allowed(key):
-    return key.startswith('TELEGRAM_') or key in {
+    return key.startswith(('TELEGRAM_', 'DJANGO_DB_', 'CDEK_')) or key in {
         'DJANGO_EMAIL_HOST', 'DJANGO_EMAIL_PORT', 'DJANGO_EMAIL_USER', 'DJANGO_EMAIL_PASSWORD',
         'DJANGO_EMAIL_USE_TLS', 'DJANGO_DEFAULT_FROM_EMAIL', 'DJANGO_ORDER_EMAIL', 'DJANGO_SITE_URL',
+        'DJANGO_CACHE_URL',
     }
 
 
@@ -39,6 +42,15 @@ if 'test' not in sys.argv:
 
 def env_bool(name, default=False):
     return os.environ.get(name, str(default)).lower() in ('1', 'true', 'yes')
+
+
+def env_int(name, default, upper):
+    raw = os.environ.get(name, '').strip()
+    if not raw:
+        return default
+    if not raw.isdigit() or not 1 <= int(raw) <= upper:
+        raise RuntimeError(f'{name} должен быть целым числом от 1 до {upper}.')
+    return int(raw)
 
 
 # Development fallback only. Set DJANGO_SECRET_KEY and DJANGO_DEBUG=0 in production.
@@ -88,7 +100,8 @@ TEMPLATES = [
 ]
 WSGI_APPLICATION = 'config.wsgi.application'
 ASGI_APPLICATION = 'config.asgi.application'
-DATABASES = {'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': BASE_DIR / 'db.sqlite3'}}
+DATABASES = database_settings(os.environ, BASE_DIR)
+CACHES = cache_settings({} if 'test' in sys.argv else os.environ)
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator', 'OPTIONS': {'min_length': 10}},
@@ -147,3 +160,11 @@ if os.environ.get('DJANGO_EMAIL_HOST'):
     EMAIL_HOST_USER = os.environ.get('DJANGO_EMAIL_USER', '')
     EMAIL_HOST_PASSWORD = os.environ.get('DJANGO_EMAIL_PASSWORD', '')
     EMAIL_USE_TLS = env_bool('DJANGO_EMAIL_USE_TLS', True)
+
+# Empty credentials keep the fixed СДЭК tariff. A quote replaces that price only for the order being placed.
+CDEK_CLIENT_ID = os.environ.get('CDEK_CLIENT_ID', '').strip()
+CDEK_CLIENT_SECRET = os.environ.get('CDEK_CLIENT_SECRET', '').strip()
+CDEK_API_URL = os.environ.get('CDEK_API_URL', 'https://api.cdek.ru/v2').strip() or 'https://api.cdek.ru/v2'
+CDEK_FROM_POSTAL_CODE = os.environ.get('CDEK_FROM_POSTAL_CODE', '').strip()
+CDEK_TARIFF_CODE = env_int('CDEK_TARIFF_CODE', 136, 9999)
+CDEK_ITEM_WEIGHT_GRAMS = env_int('CDEK_ITEM_WEIGHT_GRAMS', 500, 30000)

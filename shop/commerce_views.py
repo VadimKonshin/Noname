@@ -20,47 +20,106 @@ from .access import (
 )
 from .commerce import (
     CART_SESSION_KEY, DELIVERY_SESSION_KEY, MAX_OPEN_PREORDER_PER_VARIANT, MAX_PER_VARIANT,
-    get_cart, open_preorder_map, put, set_quantity, update_order_status,
+    available_delivery_methods, cart_products, get_cart, method_offered_by, open_preorder_map,
+    put, set_quantity, update_order_status,
 )
+from .cdek import CdekUnavailable, configured as cdek_configured, quote_delivery
 from .commerce_forms import CheckoutForm, OrderStatusForm
 from .models import DeliveryMethod, Order, OrderItem, Product, ProductVariant
 from .mail import notify_order_created
 from .telegram import cabinet_context, issue_bind_token, notify_new_order
 
 
-def selected_delivery(request):
-    """Load the session selection, rejecting removed or disabled delivery methods."""
+CDEK_QUOTE_SESSION = 'cdek_quote'
+
+
+def _cdek_decision(request, postal_code, pieces, selected_code):
+    """Quote again on the server. The first matching view is shown; the next identical one is stored."""
+    quote = quote_delivery(postal_code, pieces)
+    match = next((point for point in quote.points if point['code'] == selected_code), None)
+    held = request.session.get(CDEK_QUOTE_SESSION)
+    held = held if isinstance(held, dict) else {}
+    same_quote = (
+        held.get('postal_code') == quote.postal_code
+        and held.get('pieces') == quote.pieces
+        and held.get('price') == str(quote.price)
+    )
+    confirmed = bool(match) and same_quote and held.get('point') in ('', match['code'])
+    request.session[CDEK_QUOTE_SESSION] = {
+        'postal_code': quote.postal_code,
+        'pieces': quote.pieces,
+        'price': str(quote.price),
+        'point': match['code'] if match else '',
+    }
+    request.session.modified = True
+    return quote, match, confirmed
+
+
+def _checkout_response(request, form, current_cart, method, token, quote=None, selected_point=''):
+    live = cdek_configured() and method.code == DeliveryMethod.CDEK
+    if quote is not None:
+        shipping = quote.price
+        known = True
+    elif live:
+        shipping = None
+        known = False
+    else:
+        shipping = method.price
+        known = True
+    return render(request, 'shop/checkout.html', {
+        'form': form,
+        'cart': current_cart,
+        'selected_method': method,
+        'grand_total': current_cart['subtotal'] + (shipping or Decimal('0.00')),
+        'shipping_price': shipping,
+        'shipping_known': known,
+        'checkout_token': token,
+        'cdek_live': live,
+        'cdek_quote': quote,
+        'selected_point': selected_point,
+    })
+
+
+def selected_delivery(request, products):
+    """Load the session selection, rejecting pickup and methods the cart cannot use."""
     method_id = request.session.get(DELIVERY_SESSION_KEY)
     if type(method_id) is not int:
         return None
     method = DeliveryMethod.objects.filter(pk=method_id, is_active=True, price__gte=0).first()
-    if method is None:
+    if not method_offered_by(method, products):
         request.session.pop(DELIVERY_SESSION_KEY, None)
+        return None
     return method
 
 
 @require_GET
 def cart(request):
     current = get_cart(request)
-    delivery_methods = list(DeliveryMethod.objects.filter(is_active=True, price__gte=0))
-    selected = selected_delivery(request)
+    products = cart_products(current)
+    delivery_methods = available_delivery_methods(products)
+    selected = selected_delivery(request, products)
+    live_selected = cdek_configured() and selected is not None and selected.code == DeliveryMethod.CDEK
+    shipping = Decimal('0.00') if live_selected or selected is None else selected.price
     return render(request, 'shop/cart.html', {
         'cart': current, 'delivery_methods': delivery_methods, 'selected_method': selected,
-        'grand_total': current['subtotal'] + (selected.price if selected else Decimal('0.00')),
+        'grand_total': current['subtotal'] + shipping,
+        'cdek_selected_live': live_selected,
     })
 
 
 @require_POST
 def cart_delivery(request):
+    current = get_cart(request)
     method_id = _integer(request.POST.get('delivery_method'))
     method = DeliveryMethod.objects.filter(pk=method_id, is_active=True, price__gte=0).first() if method_id else None
-    if not method:
+    if not method_offered_by(method, cart_products(current)):
         messages.error(request, 'Выберите доступный способ доставки.')
         return redirect('cart')
-    if not get_cart(request)['lines']:
+    if not current['lines']:
         messages.error(request, 'Сначала добавьте товар в корзину.')
         return redirect('cart')
     request.session[DELIVERY_SESSION_KEY] = method.pk
+    request.session.pop(CDEK_QUOTE_SESSION, None)
     request.session.modified = True
     return redirect('checkout') if request.POST.get('next') == '1' else redirect('cart')
 
@@ -118,9 +177,9 @@ def checkout(request):
         messages.error(request, 'Добавьте товары в корзину перед оформлением.')
         return redirect('cart')
 
-    method = selected_delivery(request)
+    method = selected_delivery(request, cart_products(current_cart))
     if not method:
-        messages.info(request, 'Сначала выберите доставку или самовывоз в корзине.')
+        messages.info(request, 'Сначала выберите доставку в корзине.')
         return redirect('cart')
 
     token = request.session.get('checkout_token')
@@ -131,8 +190,11 @@ def checkout(request):
     initial = {}
     if request.user.is_authenticated:
         initial = {'email': request.user.email, 'full_name': request.user.get_full_name() or request.user.username}
-    form = CheckoutForm(request.POST if request.method == 'POST' else None,
-                        initial=initial, delivery_method=method)
+    live_cdek = cdek_configured() and method.code == DeliveryMethod.CDEK
+    form = CheckoutForm(
+        request.POST if request.method == 'POST' else None,
+        initial=initial, delivery_method=method, cdek_live=live_cdek,
+    )
 
     if request.method == 'POST' and form.is_valid():
         submitted_token = request.POST.get('checkout_token', '')
@@ -145,6 +207,30 @@ def checkout(request):
             messages.error(request, 'Форма устарела. Обновите страницу и повторите оформление.')
         else:
             data = form.cleaned_data
+            quote = None
+            match = None
+            if live_cdek:
+                selected_code = (request.POST.get('delivery_point') or '').strip()[:64]
+                pieces = sum(line['quantity'] for line in current_cart['lines'])
+                try:
+                    quote, match, confirmed = _cdek_decision(request, data['postal_code'], pieces, selected_code)
+                except CdekUnavailable:
+                    messages.error(
+                        request,
+                        'СДЭК не ответил. Заказ не создан, цена не стала нулевой. Можно выбрать Почту России или повторить расчёт.',
+                    )
+                    return _checkout_response(request, form, current_cart, method, token)
+                if not confirmed:
+                    if selected_code and match is None:
+                        messages.error(request, 'Этот пункт выдачи не пришёл от СДЭК. Выберите пункт из списка.')
+                    elif match is None:
+                        messages.info(request, f'СДЭК посчитал доставку: {quote.price} ₽. Выберите пункт и отправьте заказ ещё раз.')
+                    else:
+                        messages.info(request, f'Стоимость СДЭК: {quote.price} ₽. Отправьте заказ ещё раз, чтобы подтвердить пункт.')
+                    return _checkout_response(
+                        request, form, current_cart, method, token,
+                        quote=quote, selected_point=match['code'] if match else '',
+                    )
             try:
                 with transaction.atomic():
                     verified_cart = get_cart(request)
@@ -155,8 +241,21 @@ def checkout(request):
                     if verified_lines != submitted_lines:
                         raise ValueError('Остатки или доступность предзаказа изменились. Проверьте корзину перед оформлением.')
                     current_method = DeliveryMethod.objects.filter(pk=method.pk, is_active=True).first()
-                    if not current_method or current_method.price < 0:
+                    if not method_offered_by(current_method, cart_products(verified_cart)):
                         raise ValueError('Способ доставки недоступен. Выберите другой в корзине.')
+                    if quote is not None:
+                        if sum(item['quantity'] for item in verified_cart['lines']) != quote.pieces:
+                            raise ValueError('Корзина изменилась. Рассчитайте доставку ещё раз.')
+                        agreed = quote.price
+                        eta = quote.eta or current_method.eta
+                        point_code = match['code']
+                        point_address = match['address']
+                    else:
+                        agreed = current_method.price
+                        eta = current_method.eta
+                        point_code = ''
+                        point_address = ''
+                    address = (data['address'] or '').strip() or point_address
                     preorder_lines = [item for item in verified_cart['lines'] if item['is_preorder']]
                     if preorder_lines:
                         variant_ids = sorted({item['variant'].pk for item in preorder_lines})
@@ -183,10 +282,11 @@ def checkout(request):
                         checkout_token=token,
                         full_name=data['full_name'], email=data['email'], phone=data['phone'],
                         delivery_method=current_method, delivery_name=current_method.name,
-                        delivery_eta=current_method.eta, pickup_address=current_method.pickup_address,
-                        delivery_price=current_method.price, subtotal=subtotal,
-                        total=subtotal + current_method.price,
-                        city=data['city'], address=data['address'], postal_code=data['postal_code'],
+                        delivery_eta=eta, pickup_address=current_method.pickup_address,
+                        delivery_point_code=point_code, delivery_point_address=point_address,
+                        delivery_price=agreed, subtotal=subtotal,
+                        total=subtotal + agreed,
+                        city=data['city'], address=address, postal_code=data['postal_code'],
                         comment=data['comment'],
                     )
                     OrderItem.objects.bulk_create([
@@ -208,6 +308,7 @@ def checkout(request):
                 messages.error(request, 'Заказ не был создан. Попробуйте повторить оформление.')
             except ValueError as exc:
                 messages.error(request, str(exc))
+                request.session.pop(CDEK_QUOTE_SESSION, None)
             else:
                 if not request.user.is_authenticated:
                     previous_ids = request.session.get('guest_order_ids', [])
@@ -215,14 +316,12 @@ def checkout(request):
                 request.session.pop(CART_SESSION_KEY, None)
                 request.session.pop(DELIVERY_SESSION_KEY, None)
                 request.session.pop('checkout_token', None)
+                request.session.pop(CDEK_QUOTE_SESSION, None)
                 request.session.modified = True
                 messages.success(request, f'Заказ №{order.pk} принят. Оплата онлайн не списывалась: мы свяжемся по телефону или почте, чтобы подтвердить его. Сохраните номер.')
                 return redirect(order.get_absolute_url())
 
-    return render(request, 'shop/checkout.html', {
-        'form': form, 'cart': current_cart, 'selected_method': method,
-        'grand_total': current_cart['subtotal'] + method.price, 'checkout_token': token,
-    })
+    return _checkout_response(request, form, current_cart, method, token)
 
 
 @login_required

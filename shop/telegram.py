@@ -362,6 +362,10 @@ def _brand_order_text(order, brand, items):
         lines.append(f'Срок: {_html(order.delivery_eta)}')
     if order.pickup_address:
         lines.append(f'Самовывоз: {_html(order.pickup_address)}')
+    if order.delivery_point_code:
+        lines.append(f'Пункт: {_html(order.delivery_point_code)}')
+    if order.delivery_point_address:
+        lines.append(f'Адрес пункта: {_html(order.delivery_point_address)}')
     address = ', '.join(part for part in (order.postal_code, order.city, order.address) if part)
     if address:
         lines.append(f'Адрес: {_html(address)}')

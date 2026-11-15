@@ -146,6 +146,8 @@ class Product(models.Model):
     composition = models.CharField('Состав', max_length=200, blank=True)
     fit = models.CharField('Посадка', max_length=120, blank=True)
     care = models.TextField('Уход', blank=True)
+    offers_cdek = models.BooleanField('СДЭК', default=True)
+    offers_post = models.BooleanField('Почта России', default=True)
     price = models.DecimalField('Цена, ₽', max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
     cover = PreparedImageField('Главное фото', upload_to='products/covers/', blank=True, validators=[validate_product_image])
     color = models.CharField('Цвет', max_length=80, default='Чёрный')
@@ -264,7 +266,17 @@ class ProductImage(models.Model):
 
 
 class DeliveryMethod(models.Model):
+    CDEK = 'cdek'
+    POST = 'post'
+    PICKUP = 'pickup'
+    CODE_CHOICES = [
+        ('', 'Другой'),
+        (CDEK, 'СДЭК'),
+        (POST, 'Почта России'),
+        (PICKUP, 'Самовывоз'),
+    ]
     name = models.CharField('Название доставки', max_length=100)
+    code = models.CharField('Код способа', max_length=16, blank=True, default='', choices=CODE_CHOICES)
     description = models.CharField('Условия', max_length=220, blank=True)
     eta = models.CharField('Срок', max_length=80, blank=True)
     pickup_address = models.CharField('Адрес самовывоза', max_length=250, blank=True)
@@ -307,6 +319,8 @@ class Order(models.Model):
     delivery_name = models.CharField('Способ доставки на момент заказа', max_length=100)
     delivery_eta = models.CharField('Срок на момент заказа', max_length=80, blank=True)
     pickup_address = models.CharField('Адрес самовывоза на момент заказа', max_length=250, blank=True)
+    delivery_point_code = models.CharField('Код пункта выдачи', max_length=64, blank=True)
+    delivery_point_address = models.CharField('Адрес пункта выдачи', max_length=250, blank=True)
     delivery_price = models.DecimalField('Доставка, ₽', max_digits=10, decimal_places=2)
     subtotal = models.DecimalField('Товары, ₽', max_digits=12, decimal_places=2)
     total = models.DecimalField('Итого, ₽', max_digits=12, decimal_places=2)
@@ -354,6 +368,12 @@ class BrandMessage(models.Model):
     sender_name = models.CharField('Имя', max_length=120)
     sender_email = models.EmailField('Почта')
     body = models.TextField('Сообщение')
+    reply_body = models.TextField('Ответ', blank=True)
+    replied_at = models.DateTimeField('Ответ отправлен', null=True, blank=True)
+    replied_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='brand_replies', verbose_name='Кто ответил',
+    )
     created_at = models.DateTimeField('Отправлено', auto_now_add=True)
     read_at = models.DateTimeField('Прочитано', null=True, blank=True)
 

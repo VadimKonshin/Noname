@@ -8,7 +8,7 @@
     {% if product %}ИЗМЕНИТЬ ТОВАР{% else %}НОВЫЙ ТОВАР{% endif %}<span class="heading-period">.</span>
   </h1>
   <p class="page-lead">
-    Заполни описание, цену, размеры и остатки. После сохранения товар появится в каталоге, если включена публикация.
+    Заполни описание, цену, размеры, остатки и способ получения. После сохранения товар появится в каталоге, если включена публикация.
   </p>
   {% if managed_brand %}{% include 'includes/brand_nav.html' with active_page='products' %}{% endif %}
 
@@ -48,7 +48,18 @@
         </div>
 
         <div class="form-section">
-          <h2>03 / Размеры и остатки</h2>
+          <h2>03 / Способ получения</h2>
+          <p class="form-hint">Покупатель в корзине выбирает одну из отмеченных служб. Самовывоз в корзине скрыт.</p>
+          <label class="check-field">{{ form.offers_cdek }}<span>{{ form.offers_cdek.label }}</span></label>
+          {% if form.offers_cdek.errors %}<div class="field-error">{{ form.offers_cdek.errors }}</div>{% endif %}
+          <label class="check-field">{{ form.offers_post }}<span>{{ form.offers_post.label }}</span></label>
+          {% if form.offers_post.errors %}<div class="field-error">{{ form.offers_post.errors }}</div>{% endif %}
+          <button type="button" class="small-action" disabled>Добавить адрес самовывоза</button>
+          <p class="form-hint">Адрес самовывоза пока нельзя сохранить: кнопка не работает.</p>
+        </div>
+
+        <div class="form-section">
+          <h2>04 / Размеры и остатки</h2>
           <p class="form-hint">Укажи количество каждого размера. Нулевой остаток можно принимать как предзаказ, если эта опция включена ниже.</p>
           {{ variant_formset.management_form }}
           {% if variant_formset.non_form_errors %}<div class="form-errors">{{ variant_formset.non_form_errors }}</div>{% endif %}
@@ -83,7 +94,7 @@
         </div>
 
         <div class="form-section">
-          <h2>04 / Фотографии</h2>
+          <h2>05 / Фотографии</h2>
           <p class="form-hint">JPG, PNG или WebP, до 8 МБ. Сайт сохранит уменьшенную WebP-копию без данных камеры. Добавь обложку и до {{ max_gallery }} дополнительных фотографий.</p>
           <div class="form-field">
             <label for="{{ form.cover.id_for_label }}">Главная фотография</label>
@@ -114,7 +125,7 @@
 
       <aside class="editor-sidebar">
         <div class="form-section">
-          <h2>05 / Публикация и предзаказ</h2>
+          <h2>06 / Публикация и предзаказ</h2>
           {% for field in form %}
             {% if field.name == 'is_available' or field.name == 'allow_preorder' or field.name == 'is_published' or field.name == 'is_featured' %}
               <label class="check-field">{{ field }}<span>{{ field.label }}</span></label>
