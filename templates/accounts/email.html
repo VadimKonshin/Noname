@@ -7,7 +7,7 @@
   {% if profile.email_verified_at %}
     <p class="page-lead">Почта {{ user.email }} подтверждена. Войти можно логином или этой почтой.</p>
   {% else %}
-    <p class="page-lead">Почта {{ user.email }} ещё не подтверждена. Ссылка в письме действует 24 часа. Пока письмо в пути, входите логином.</p>
+    <p class="page-lead">Почта {{ user.email }} ещё не подтверждена. Ссылка действует 24 часа. Пока почта не подтверждена, входите логином.</p>
     {% if manager %}
       <p class="page-lead">Кабинет бренда откроется после подтверждения почты. Одобрение администратора само по себе его не открывает.</p>
     {% endif %}
@@ -15,6 +15,7 @@
   {% if profile.pending_email %}
     <p class="page-lead">Новая почта {{ profile.pending_email }} ждёт ссылку из письма. Прежняя пока работает.</p>
   {% endif %}
+  {% include 'includes/console_mail_link.html' %}
   {% if not profile.email_verified_at or profile.pending_email %}
     <form method="post" action="{% url 'account_email_resend' %}">
       {% csrf_token %}

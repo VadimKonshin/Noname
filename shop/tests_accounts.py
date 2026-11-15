@@ -164,3 +164,34 @@ class AccountEmailTests(TestCase):
         user.refresh_from_db()
         self.assertEqual(user.email, 'buyer@example.com')
         self.assertContains(response, 'уже занята')
+
+    def test_mailbox_backend_keeps_the_confirmation_link_off_the_page(self):
+        self.client.post(reverse('register'), {
+            'username': 'inbox_person', 'email': 'inbox@example.com',
+            'password1': self.password, 'password2': self.password,
+        }, follow=True)
+        page = self.client.get(reverse('account_email'))
+        self.assertNotContains(page, 'Открыть страницу из письма')
+        self.assertEqual(mail.outbox[0].to, ['inbox@example.com'])
+
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.console.EmailBackend')
+    def test_console_backend_shows_the_confirmation_link_until_the_button(self):
+        page = self.client.post(reverse('register'), {
+            'username': 'console_person', 'email': 'console@example.com',
+            'password1': self.password, 'password2': self.password,
+        }, follow=True)
+        self.assertContains(page, 'Открыть страницу из письма')
+        self.assertContains(page, '/account/email/confirm/')
+        link = self.client.session['console_mail_link']
+        self.client.post(link.removeprefix('http://127.0.0.1:8000'))
+        confirmed = self.client.get(reverse('account_email'))
+        self.assertContains(confirmed, 'Войти можно логином или этой почтой.')
+        self.assertNotContains(confirmed, 'Открыть страницу из письма')
+
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.console.EmailBackend')
+    def test_console_backend_shows_a_password_link_only_for_a_confirmed_mailbox(self):
+        User.objects.create_user('buyer', email='buyer@example.com', password=self.password)
+        missing = self.client.post(reverse('password_reset'), {'email': 'missing@example.com'}, follow=True)
+        self.assertNotContains(missing, 'Открыть страницу из письма')
+        found = self.client.post(reverse('password_reset'), {'email': 'buyer@example.com'}, follow=True)
+        self.assertContains(found, '/account/password/reset/')
