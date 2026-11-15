@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block title %}{% if changing %}Новая почта{% else %}Подтверждение почты{% endif %} — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page narrow-page">
+  <div class="eyebrow"><span class="tiny-dot"></span> АККАУНТ</div>
+  {% if changing %}
+    <h1 class="commerce-heading">НОВАЯ ПОЧТА<span class="heading-period">.</span></h1>
+    <p class="page-lead">Ссылка открыта, адрес ещё прежний. Нажмите кнопку, чтобы сохранить {{ email }}.</p>
+  {% else %}
+    <h1 class="commerce-heading">ПОДТВЕРДИТЕ ПОЧТУ<span class="heading-period">.</span></h1>
+    <p class="page-lead">Ссылка открыта, почта ещё не подтверждена. Нажмите кнопку, чтобы подтвердить {{ email }}.</p>
+  {% endif %}
+  <form method="post">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-dark">{% if changing %}Сохранить новую почту{% else %}Подтвердить почту{% endif %}</button>
+  </form>
+</section>
+{% endblock %}

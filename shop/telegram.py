@@ -277,10 +277,11 @@ def order_brands(order):
 
 
 def _manager_chats(brand):
-    from .models import BrandManager
+    from .access import confirmed_managers
 
     return list(
-        BrandManager.objects.filter(brand=brand, is_approved=True, telegram_chat_id__isnull=False)
+        confirmed_managers(brand)
+        .exclude(telegram_chat_id__isnull=True)
         .exclude(telegram_chat_id='')
         .values_list('telegram_chat_id', flat=True)
     )

@@ -6,7 +6,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.urls import reverse
 from django.utils import timezone
 
@@ -17,7 +17,31 @@ logger = logging.getLogger(__name__)
 
 CONFIRM_HOURS = 24
 RESET_HOURS = 1
+CONSOLE_MAIL_SESSION_KEY = 'console_mail_link'
 User = get_user_model()
+
+
+def uses_console_mail():
+    return settings.EMAIL_BACKEND == 'django.core.mail.backends.console.EmailBackend'
+
+
+def remember_console_link(request, link):
+    """Keep the latest local letter on the page. A real mailbox does not need this."""
+    if uses_console_mail() and link:
+        request.session[CONSOLE_MAIL_SESSION_KEY] = link
+    else:
+        request.session.pop(CONSOLE_MAIL_SESSION_KEY, None)
+
+
+def console_mail_link(request):
+    if not uses_console_mail():
+        request.session.pop(CONSOLE_MAIL_SESSION_KEY, None)
+        return ''
+    return request.session.get(CONSOLE_MAIL_SESSION_KEY, '')
+
+
+def clear_console_link(request):
+    request.session.pop(CONSOLE_MAIL_SESSION_KEY, None)
 
 
 def user_email_verified(user):
@@ -96,8 +120,13 @@ def apply_email_token(token):
         if User.objects.filter(email__iexact=token.email).exclude(pk=user.pk).exists():
             return 'taken'
         user.email = token.email
-        user.save(update_fields=['email'])
+        try:
+            with transaction.atomic():
+                user.save(update_fields=['email'])
+        except IntegrityError:
+            return 'taken'
         profile.pending_email = ''
+        EmailToken.objects.filter(user=user, purpose=EmailToken.RESET, used_at__isnull=True).delete()
         result = 'changed'
     elif (user.email or '').lower() != token.email.lower():
         return 'mismatch'
@@ -108,25 +137,36 @@ def apply_email_token(token):
     return result
 
 
+def save_new_account(form):
+    """Save a registration form. A lost race on the mailbox returns None and a field error."""
+    try:
+        return form.save()
+    except IntegrityError as exc:
+        if 'email' not in str(exc).lower():
+            raise
+        form.add_error('email', 'Этот e-mail уже зарегистрирован.')
+        return None
+
+
 def send_confirmation(user):
     if not user.email:
-        return
+        return ''
     raw = issue_email_token(user, EmailToken.CONFIRM, user.email, CONFIRM_HOURS)
-    _send_link(user, user.email, raw, 'account_email_confirm', CONFIRM_HOURS, 'NoName: подтвердите почту', 'emails/confirm_email')
+    return _send_link(user, user.email, raw, 'account_email_confirm', CONFIRM_HOURS, 'NoName: подтвердите почту', 'emails/confirm_email')
 
 
 def send_email_change(user, email):
     raw = issue_email_token(user, EmailToken.CHANGE, email, CONFIRM_HOURS)
-    _send_link(user, email, raw, 'account_email_confirm', CONFIRM_HOURS, 'NoName: подтвердите новую почту', 'emails/change_email')
+    return _send_link(user, email, raw, 'account_email_confirm', CONFIRM_HOURS, 'NoName: подтвердите новую почту', 'emails/change_email')
 
 
 def send_password_reset(email):
     verified = [user for user in User.objects.filter(email__iexact=email, is_active=True)[:5] if user_email_verified(user)]
     if len(verified) != 1:
-        return
+        return ''
     user = verified[0]
     raw = issue_email_token(user, EmailToken.RESET, user.email, RESET_HOURS)
-    _send_link(user, user.email, raw, 'password_reset_confirm', RESET_HOURS, 'NoName: новый пароль', 'emails/password_reset')
+    return _send_link(user, user.email, raw, 'password_reset_confirm', RESET_HOURS, 'NoName: новый пароль', 'emails/password_reset')
 
 
 def _send_link(user, recipient, raw, url_name, hours, subject, template):
@@ -138,6 +178,7 @@ def _send_link(user, recipient, raw, url_name, hours, subject, template):
         {'username': user.username, 'link': link, 'hours': hours, 'email': recipient},
         [recipient],
     )
+    return link
 
 
 def _digest(raw):

@@ -90,6 +90,15 @@ def scoped_products(request, queryset):
     return queryset.filter(brand=manager.brand) if manager else queryset
 
 
+def confirmed_managers(brand):
+    """Approved managers with a confirmed mailbox. Buyer contacts go only to them."""
+    return BrandManager.objects.filter(
+        brand=brand,
+        is_approved=True,
+        user__profile__email_verified_at__isnull=False,
+    )
+
+
 def scoped_order_items(brand, queryset):
     return queryset.filter(Q(product__brand=brand) | Q(product__isnull=True, brand_name=brand.name))
 

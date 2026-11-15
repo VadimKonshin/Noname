@@ -5,18 +5,26 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.shortcuts import redirect, render
-from django.views.decorators.http import require_GET, require_http_methods, require_POST
+from django.views.decorators.http import require_http_methods, require_POST
 from django_ratelimit.decorators import ratelimit
 
 from .access import brand_account_home, get_brand_manager
 from .accounts import (
-    apply_email_token, consume_email_token, ensure_profile, find_email_token,
-    send_confirmation, send_email_change, send_password_reset,
+    apply_email_token, clear_console_link, console_mail_link, consume_email_token, ensure_profile,
+    find_email_token, remember_console_link, send_confirmation, send_email_change, send_password_reset,
+    uses_console_mail,
 )
 from .forms import EmailChangeForm, PasswordResetRequestForm, StoreSetPasswordForm
 from .models import EmailToken
 
 logger = logging.getLogger(__name__)
+
+
+def _resent_message(sent):
+    if uses_console_mail():
+        return 'Почтовый сервер не подключён: новая ссылка напечатана в консоли сервера и показана на этой странице. Предыдущая больше не действует.'
+    return f'{sent} Предыдущая больше не действует.'
+
 
 TOKEN_RESULTS = {
     'confirmed': 'Почта подтверждена.',
@@ -37,17 +45,22 @@ def account_email(request):
         profile.pending_email = email
         profile.save(update_fields=['pending_email'])
         try:
-            send_email_change(request.user, email)
+            link = send_email_change(request.user, email)
         except Exception:
             logger.exception('Email change mail failed')
             messages.warning(request, 'Новая почта ещё не сохранена, и письмо не ушло. Запросите ссылку ещё раз.')
         else:
-            messages.success(request, 'Ссылка для новой почты отправлена. Прежняя почта работает, пока вы не откроете ссылку.')
+            remember_console_link(request, link)
+            if uses_console_mail():
+                messages.success(request, 'Почтовый сервер не подключён: ссылка для новой почты напечатана в консоли сервера и показана на этой странице. Прежняя почта работает, пока вы не нажмёте кнопку.')
+            else:
+                messages.success(request, 'Ссылка для новой почты отправлена. Прежняя почта работает, пока вы не нажмёте кнопку в письме.')
         return redirect('account_email')
     return render(request, 'accounts/email.html', {
         'form': form,
         'profile': profile,
         'manager': get_brand_manager(request.user, approved_only=False),
+        'console_mail_link': console_mail_link(request),
     })
 
 
@@ -58,11 +71,13 @@ def account_email_resend(request):
     profile = ensure_profile(request.user)
     try:
         if profile.pending_email:
-            send_email_change(request.user, profile.pending_email)
-            messages.success(request, 'Ссылка для новой почты отправлена ещё раз. Предыдущая больше не действует.')
+            link = send_email_change(request.user, profile.pending_email)
+            remember_console_link(request, link)
+            messages.success(request, _resent_message('Ссылка для новой почты отправлена ещё раз.'))
         elif profile.email_verified_at is None and request.user.email:
-            send_confirmation(request.user)
-            messages.success(request, 'Ссылка отправлена ещё раз. Предыдущая больше не действует.')
+            link = send_confirmation(request.user)
+            remember_console_link(request, link)
+            messages.success(request, _resent_message('Ссылка отправлена ещё раз.'))
         elif profile.email_verified_at is None:
             messages.error(request, 'У аккаунта нет почты. Укажите её в форме ниже.')
         else:
@@ -73,9 +88,17 @@ def account_email_resend(request):
     return redirect('account_email')
 
 
-@ratelimit(group='email_confirm', key='ip', rate='30/h', method='GET')
-@require_GET
+@ratelimit(group='email_confirm', key='ip', rate='30/h', method=['GET', 'POST'])
+@require_http_methods(['GET', 'POST'])
 def account_email_confirm(request, token):
+    found = find_email_token(token, (EmailToken.CONFIRM, EmailToken.CHANGE))
+    if found is None:
+        return render(request, 'accounts/token_invalid.html', {'purpose': 'почты'})
+    if request.method != 'POST':
+        return render(request, 'accounts/email_confirm.html', {
+            'email': found.email,
+            'changing': found.purpose == EmailToken.CHANGE,
+        })
     with transaction.atomic():
         taken = consume_email_token(token, (EmailToken.CONFIRM, EmailToken.CHANGE))
         if taken is None:
@@ -83,6 +106,7 @@ def account_email_confirm(request, token):
         result = apply_email_token(taken)
     text = TOKEN_RESULTS[result]
     if result in ('confirmed', 'changed'):
+        clear_console_link(request)
         messages.success(request, text)
     else:
         messages.error(request, text)
@@ -97,17 +121,27 @@ def password_reset(request):
     form = PasswordResetRequestForm(request.POST if request.method == 'POST' else None)
     if request.method == 'POST' and form.is_valid():
         try:
-            send_password_reset(form.cleaned_data['email'])
+            link = send_password_reset(form.cleaned_data['email'])
         except Exception:
             logger.exception('Password reset mail failed')
             messages.error(request, 'Письмо не отправилось. Попробуйте ещё раз чуть позже.')
         else:
-            messages.success(
-                request,
-                'Если эта почта подтверждена, мы отправили ссылку для нового пароля. Она действует один час и сгорает после смены пароля.',
-            )
+            remember_console_link(request, link)
+            if uses_console_mail():
+                messages.success(
+                    request,
+                    'Если эта почта подтверждена, ссылка напечатана в консоли сервера и показана на этой странице. Она действует один час и сгорает после смены пароля.',
+                )
+            else:
+                messages.success(
+                    request,
+                    'Если эта почта подтверждена, мы отправили ссылку для нового пароля. Она действует один час и сгорает после смены пароля.',
+                )
         return redirect('password_reset')
-    return render(request, 'accounts/password_reset.html', {'form': form})
+    return render(request, 'accounts/password_reset.html', {
+        'form': form,
+        'console_mail_link': console_mail_link(request),
+    })
 
 
 @ratelimit(group='password_reset_confirm', key='ip', rate='10/h', method='POST')
@@ -124,6 +158,7 @@ def password_reset_confirm(request, token):
                 return render(request, 'accounts/token_invalid.html', {'purpose': 'пароля'})
             form.user = taken.user
             form.save()
+        clear_console_link(request)
         messages.success(request, 'Пароль обновлён. Войдите с новым паролем.')
         return redirect('login')
     return render(request, 'accounts/password_reset_confirm.html', {'form': form})

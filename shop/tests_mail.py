@@ -29,9 +29,13 @@ class OrderMailTests(TestCase):
         cls.alpha_user = User.objects.create_user('alpha_manager', email='alpha@example.com', password='PassWithLength#178')
         cls.beta_user = User.objects.create_user('beta_manager', email='beta@example.com', password='PassWithLength#178')
         cls.quiet_user = User.objects.create_user('quiet_manager', email='quiet@example.com', password='PassWithLength#178')
+        cls.unconfirmed = User.objects.create_user('unconfirmed_manager', email='unconfirmed@example.com', password='PassWithLength#178')
+        cls.unconfirmed.profile.email_verified_at = None
+        cls.unconfirmed.profile.save(update_fields=['email_verified_at'])
         BrandManager.objects.create(user=cls.alpha_user, brand=cls.alpha, is_approved=True)
         BrandManager.objects.create(user=cls.beta_user, brand=cls.beta, is_approved=True)
         BrandManager.objects.create(user=cls.quiet_user, brand=cls.alpha, is_approved=False)
+        BrandManager.objects.create(user=cls.unconfirmed, brand=cls.alpha, is_approved=True)
         cls.delivery = DeliveryMethod.objects.create(name='По городу', price=Decimal('0.00'), requires_address=True)
 
     def _add(self, product, size):
@@ -55,6 +59,7 @@ class OrderMailTests(TestCase):
         by_recipient = {message.to[0]: message for message in mail.outbox}
         self.assertEqual(set(by_recipient), {'buyer@example.com', 'alpha@example.com', 'beta@example.com', 'store@example.com'})
         self.assertNotIn('quiet@example.com', by_recipient)
+        self.assertNotIn('unconfirmed@example.com', by_recipient)
         buyer = by_recipient['buyer@example.com']
         self.assertIn('не списывалась', buyer.body)
         self.assertIn('Свитер Альфы', buyer.body)

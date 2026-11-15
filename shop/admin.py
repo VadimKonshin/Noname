@@ -5,6 +5,7 @@ from django.urls import reverse
 from django.utils.html import format_html
 
 from .commerce import update_order_status
+from .forms import StoreUserChangeForm
 from .commerce_forms import OrderStatusForm
 from .models import Brand, BrandManager, BrandMessage, DeliveryMethod, Order, OrderItem, Product, ProductImage, ProductVariant, UserProfile
 
@@ -141,6 +142,7 @@ admin.site.unregister(User)
 
 @admin.register(User)
 class StoreUserAdmin(UserAdmin):
+    form = StoreUserChangeForm
     list_display = (*UserAdmin.list_display, 'manager_account', 'email_verified')
     list_filter = (*UserAdmin.list_filter, ManagerAccountFilter)
 

@@ -1,5 +1,5 @@
 from django import forms
-from django.contrib.auth.forms import AuthenticationForm, SetPasswordForm, UserCreationForm
+from django.contrib.auth.forms import AuthenticationForm, SetPasswordForm, UserChangeForm, UserCreationForm
 from django.contrib.auth.models import User
 from django.db import transaction
 from django.forms import BaseInlineFormSet, inlineformset_factory
@@ -44,6 +44,14 @@ class BrandManagerRegisterForm(RegisterForm):
         if commit:
             BrandManager.objects.create(user=user)
         return user
+
+
+class StoreUserChangeForm(UserChangeForm):
+    def clean_email(self):
+        email = (self.cleaned_data.get('email') or '').strip().lower()
+        if email and User.objects.filter(email__iexact=email).exclude(pk=self.instance.pk).exists():
+            raise forms.ValidationError('Этот e-mail уже зарегистрирован.')
+        return email
 
 
 class EmailOrUsernameAuthenticationForm(AuthenticationForm):

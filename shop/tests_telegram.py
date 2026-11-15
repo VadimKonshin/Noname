@@ -213,6 +213,19 @@ class TelegramTests(TestCase):
         self.assertIn('Чужая вещь', by_chat['7777'])
         self.assertNotIn('MOON', by_chat['7777'])
 
+    def test_unconfirmed_manager_is_not_notified(self):
+        from unittest.mock import patch
+        quiet = User.objects.create_user('quiet_manager', email='quiet@example.org', password='PassWithLength#178')
+        quiet.profile.email_verified_at = None
+        quiet.profile.save(update_fields=['email_verified_at'])
+        BrandManager.objects.create(user=quiet, brand=self.brand, is_approved=True, telegram_chat_id='9090')
+        with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
+            with self.captureOnCommitCallbacks(execute=True):
+                self._order()
+        chats = [sent_payload(call.args[0])['chat_id'] for call in urlopen.call_args_list]
+        self.assertIn('4242', chats)
+        self.assertNotIn('9090', chats)
+
     def test_unapproved_manager_is_not_notified(self):
         from unittest.mock import patch
         BrandManager.objects.filter(pk=self.manager.pk).update(is_approved=False)
