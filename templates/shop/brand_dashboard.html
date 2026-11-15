@@ -26,7 +26,7 @@
       <button class="btn btn-dark" type="submit">Получить ссылку</button>
     </form>
     {% if telegram_link %}
-      <p><a href="{{ telegram_link }}" rel="noopener noreferrer" target="_blank">Открыть бота и включить уведомления</a></p>
+      <p><a href="{{ telegram_link }}">Открыть бота и включить уведомления</a></p>
     {% elif telegram_start_code %}
       <p>Откройте бота и отправьте: /start {{ telegram_start_code }}</p>
     {% endif %}

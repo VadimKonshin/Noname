@@ -1,11 +1,15 @@
 """Telegram bot: personal manager alerts and buyer order-status checks."""
 import hashlib
+import http.client
 import json
 import logging
 import re
+import socket
 import ssl
+import sys
 import threading
 import time
+import urllib.request
 from decimal import Decimal
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -20,20 +24,46 @@ from django.utils import timezone
 logger = logging.getLogger(__name__)
 
 MESSAGE_LIMIT = 3900
+_API_HOST = 'api.telegram.org'
+# The handshake still goes to api.telegram.org. This label is only the SNI
+# value: some networks reset the connection when the ClientHello names Telegram.
+_DECOY_SNI = 'example.com'
 _POLLER_STARTED = False
+_direct_tls_blocked = False
+_route_checked = False
 
 
 def news_url():
-    url = getattr(settings, 'TELEGRAM_NEWS_URL', '').strip()
-    if url.startswith(('https://t.me/', 'https://telegram.me/')) and len(url) <= 300 and ' ' not in url:
-        return url
-    return ''
+    """App link for the buyers group. https://t.me is blocked on this network, so the page opens Telegram directly."""
+    return _telegram_app_link(getattr(settings, 'TELEGRAM_NEWS_URL', ''))
 
 
 def public_bot_url():
     username = getattr(settings, 'TELEGRAM_BOT_USERNAME', '').strip().lstrip('@')
     if re.fullmatch(r'[A-Za-z0-9_]{5,32}', username or ''):
-        return f'https://t.me/{username}'
+        return f'tg://resolve?domain={username}'
+    return ''
+
+
+def _telegram_app_link(url):
+    url = str(url or '').strip()
+    if len(url) > 300 or any(char.isspace() for char in url):
+        return ''
+    if url.startswith('https://t.me/'):
+        rest = url[len('https://t.me/'):]
+    elif url.startswith('https://telegram.me/'):
+        rest = url[len('https://telegram.me/'):]
+    else:
+        return ''
+    rest = rest.split('#', 1)[0].split('?', 1)[0].strip('/')
+    if rest.startswith('+') or rest.startswith('joinchat/'):
+        code = rest[1:] if rest.startswith('+') else rest[len('joinchat/'):]
+        if re.fullmatch(r'[A-Za-z0-9_-]{10,64}', code or ''):
+            return f'tg://join?invite={code}'
+        return ''
+    username = rest.split('/', 1)[0]
+    if re.fullmatch(r'[A-Za-z0-9_]{5,32}', username or ''):
+        return f'tg://resolve?domain={username}'
     return ''
 
 
@@ -70,7 +100,7 @@ def cabinet_context(manager, session_token):
         code = token
         username = bot_username()
         if username:
-            link = f'https://t.me/{username}?start={token}'
+            link = f'tg://resolve?domain={username}&start={token}'
     return {
         'telegram_connected': bool(manager.telegram_chat_id),
         'telegram_link': link,
@@ -494,18 +524,115 @@ def _send(chat_id, text):
     return sent
 
 
+def _certificate_matches(cert, hostname):
+    """True when a DNS name on the certificate covers hostname, including one wildcard label."""
+    hostname = str(hostname or '').lower().rstrip('.')
+    if not hostname or not isinstance(cert, dict):
+        return False
+    names = [value for kind, value in cert.get('subjectAltName', ()) if kind == 'DNS' and value]
+    for pattern in names:
+        pattern = pattern.lower().rstrip('.')
+        if pattern == hostname:
+            return True
+        if pattern.startswith('*.') and pattern.count('*') == 1:
+            rest = pattern[2:]
+            label, dot, tail = hostname.partition('.')
+            if dot and label and tail == rest:
+                return True
+    return False
+
+
+def _blocked_handshake(exc):
+    reason = getattr(exc, 'reason', exc)
+    if isinstance(reason, TimeoutError) or isinstance(exc, TimeoutError):
+        return True
+    text = str(reason)
+    return 'UNEXPECTED_EOF_WHILE_READING' in text or 'handshake operation timed out' in text
+
+
+def _note_direct_route():
+    """One short handshake. A reset or a stall means the server name itself is being dropped."""
+    global _route_checked, _direct_tls_blocked
+    if _route_checked or _direct_tls_blocked or 'test' in sys.argv:
+        return
+    _route_checked = True
+    raw = None
+    try:
+        raw = socket.create_connection((_API_HOST, 443), 4)
+        context = ssl.create_default_context(cafile=certifi.where())
+        secure = context.wrap_socket(raw, server_hostname=_API_HOST)
+        secure.close()
+        raw = None
+    except Exception as exc:
+        if raw is not None:
+            raw.close()
+        if not _blocked_handshake(exc):
+            return
+        _direct_tls_blocked = True
+        logger.warning(
+            'Telegram resets the TLS handshake when the server name is visible; '
+            'requests to %s keep the certificate check',
+            _API_HOST,
+        )
+
+
+def _open(request, timeout):
+    global _direct_tls_blocked
+    _note_direct_route()
+    if not _direct_tls_blocked:
+        try:
+            return urlopen(
+                request,
+                timeout=timeout,
+                context=ssl.create_default_context(cafile=certifi.where()),
+            )
+        except URLError as exc:
+            if not _blocked_handshake(exc):
+                raise
+            _direct_tls_blocked = True
+            logger.warning(
+                'Telegram resets the TLS handshake when the server name is visible; '
+                'retrying %s with the certificate check unchanged',
+                _API_HOST,
+            )
+    return _decoy_urlopen(request, timeout)
+
+
+def _decoy_urlopen(request, timeout):
+    context = ssl.create_default_context(cafile=certifi.where())
+    context.check_hostname = False
+    opener = urllib.request.build_opener(_DecoySNIHandler(context=context))
+    return opener.open(request, timeout=timeout)
+
+
+class _DecoySNIHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(_DecoySNIConnection, req, context=self._context)
+
+
+class _DecoySNIConnection(http.client.HTTPSConnection):
+    def connect(self):
+        http.client.HTTPConnection.connect(self)
+        expected = self._tunnel_host or self.host
+        self.sock = self._context.wrap_socket(self.sock, server_hostname=_DECOY_SNI)
+        if expected != _API_HOST or not _certificate_matches(self.sock.getpeercert(), _API_HOST):
+            self.sock.close()
+            self.sock = None
+            raise ssl.SSLCertVerificationError(f'certificate is not valid for {_API_HOST}')
+
+
 def _api(method, payload, timeout=5):
     token = getattr(settings, 'TELEGRAM_BOT_TOKEN', '')
     if not token:
         return None
     request = Request(
-        f'https://api.telegram.org/bot{token}/{method}',
+        f'https://{_API_HOST}/bot{token}/{method}',
         data=json.dumps(payload).encode(),
         headers={'Content-Type': 'application/json'},
         method='POST',
     )
     try:
-        with urlopen(request, timeout=timeout, context=ssl.create_default_context(cafile=certifi.where())) as response:
+        with _open(request, timeout) as response:
             body = json.loads(response.read().decode())
     except HTTPError as exc:
         detail = exc.read().decode(errors='replace')[:500]

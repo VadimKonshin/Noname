@@ -28,7 +28,7 @@ def load_env_file(path):
         value = value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
             value = value[1:-1]
-        if _env_allowed(key) and key not in os.environ:
+        if _env_allowed(key) and not os.environ.get(key):
             os.environ[key] = value
 
 

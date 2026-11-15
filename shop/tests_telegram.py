@@ -9,7 +9,7 @@ from django.core.cache import cache
 from django.utils import timezone
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
 from .models import Brand, BrandManager, BrandMessage, DeliveryMethod, Order, OrderItem, Product, ProductVariant
@@ -78,12 +78,14 @@ class TelegramTests(TestCase):
 
     def test_news_link_is_visible_only_for_a_telegram_url(self):
         home = self.client.get(reverse('home'))
-        self.assertContains(home, 'https://t.me/noname_news')
+        self.assertContains(home, 'tg://resolve?domain=noname_news')
         self.assertContains(self.client.get(reverse('info_contacts')), 'Группа для покупателей')
         with override_settings(TELEGRAM_NEWS_URL=''):
             self.assertNotContains(self.client.get(reverse('home')), 't.me')
         with override_settings(TELEGRAM_NEWS_URL='javascript:alert(1)'):
             self.assertNotContains(self.client.get(reverse('home')), 'javascript:')
+        with override_settings(TELEGRAM_NEWS_URL='https://t.me/+abcdefghij123456'):
+            self.assertContains(self.client.get(reverse('info_contacts')), 'tg://join?invite=abcdefghij123456')
 
     @override_settings(TELEGRAM_BOT_TOKEN='')
     def test_checkout_without_telegram_does_not_call_the_api(self):
@@ -120,7 +122,7 @@ class TelegramTests(TestCase):
         self.assertIn('123456, Москва, ул. Тестовая, д. 1', text)
         self.assertIn('Позвоните перед доставкой', text)
         self.assertIn('в наличии', text)
-        self.assertContains(self.client.get(Order.objects.get().get_absolute_url()), 'https://t.me/NoNameNotificationsBot')
+        self.assertContains(self.client.get(Order.objects.get().get_absolute_url()), 'tg://resolve?domain=NoNameNotificationsBot')
 
     def test_telegram_outage_still_keeps_the_order(self):
         from unittest.mock import patch
@@ -303,7 +305,7 @@ class TelegramTests(TestCase):
     def test_cabinet_gives_the_manager_a_personal_link(self):
         self.client.force_login(self.manager_user)
         response = self.client.post(reverse('brand_telegram_connect'), follow=True)
-        self.assertContains(response, 'https://t.me/NoNameNotificationsBot?start=')
+        self.assertContains(response, 'tg://resolve?domain=NoNameNotificationsBot&amp;start=')
         self.manager.refresh_from_db()
         self.assertTrue(self.manager.telegram_bind_hash)
         self.client.post(reverse('brand_telegram_disconnect'))
@@ -423,3 +425,67 @@ class TelegramTests(TestCase):
                     'message': {'text': '/start nope-c', 'chat': {'id': 6400, 'type': 'private'}},
                 })
             self.assertIn('Слишком много', sent_payload(urlopen.call_args.args[0])['text'])
+
+
+TELEGRAM_CERT = {'subjectAltName': (('DNS', '*.telegram.org'), ('DNS', 'telegram.org'))}
+
+
+@override_settings(**TELEGRAM)
+class TelegramTlsTests(SimpleTestCase):
+    def setUp(self):
+        from shop import telegram
+        telegram._direct_tls_blocked = False
+        self.telegram = telegram
+
+    def tearDown(self):
+        self.telegram._direct_tls_blocked = False
+
+    def test_certificate_must_name_the_api_host(self):
+        self.assertTrue(self.telegram._certificate_matches(TELEGRAM_CERT, 'api.telegram.org'))
+        self.assertTrue(self.telegram._certificate_matches(TELEGRAM_CERT, 'telegram.org'))
+        self.assertFalse(self.telegram._certificate_matches(TELEGRAM_CERT, 'example.com'))
+        self.assertFalse(self.telegram._certificate_matches(TELEGRAM_CERT, 'a.b.telegram.org'))
+        self.assertFalse(self.telegram._certificate_matches(TELEGRAM_CERT, 'api.telegram.org.evil'))
+        self.assertFalse(self.telegram._certificate_matches({}, 'api.telegram.org'))
+
+    def test_handshake_reset_retries_without_leaving_the_api_host(self):
+        from unittest.mock import patch
+        from urllib.error import URLError
+        reset = URLError(OSError('[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol'))
+        payload = b'{"ok": true, "result": {"username": "NoNameNotificationsBot"}}'
+        with patch('shop.telegram.urlopen', side_effect=reset) as direct:
+            with patch('shop.telegram._decoy_urlopen', return_value=FakeResponse(payload)) as decoy:
+                result = self.telegram._api('getMe', {})
+        self.assertEqual(result, {'username': 'NoNameNotificationsBot'})
+        self.assertEqual(direct.call_count, 1)
+        self.assertEqual(decoy.call_count, 1)
+        self.assertIn('https://api.telegram.org/', direct.call_args.args[0].full_url)
+        self.assertTrue(self.telegram._direct_tls_blocked)
+        with patch('shop.telegram.urlopen') as direct:
+            with patch('shop.telegram._decoy_urlopen', return_value=FakeResponse(payload)) as decoy:
+                again = self.telegram._api('getMe', {})
+        self.assertEqual(again['username'], 'NoNameNotificationsBot')
+        direct.assert_not_called()
+        decoy.assert_called_once()
+
+    def test_handshake_timeout_uses_the_same_retry(self):
+        from unittest.mock import patch
+        from urllib.error import URLError
+        stalled = URLError(TimeoutError('The handshake operation timed out'))
+        payload = b'{"ok": true, "result": {"ok": true}}'
+        with patch('shop.telegram.urlopen', side_effect=stalled):
+            with patch('shop.telegram._decoy_urlopen', return_value=FakeResponse(payload)) as decoy:
+                result = self.telegram._api('getMe', {})
+        self.assertEqual(result, {'ok': True})
+        decoy.assert_called_once()
+        self.assertTrue(self.telegram._direct_tls_blocked)
+
+    def test_other_network_errors_stay_on_the_direct_connection(self):
+        from unittest.mock import patch
+        from urllib.error import URLError
+        with patch('shop.telegram.urlopen', side_effect=URLError('down')):
+            with patch('shop.telegram._decoy_urlopen') as decoy:
+                result = self.telegram._api('getMe', {})
+        decoy.assert_not_called()
+        self.assertIsNone(result)
+        self.assertFalse(self.telegram._direct_tls_blocked)
