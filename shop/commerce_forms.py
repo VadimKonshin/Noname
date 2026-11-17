@@ -48,10 +48,41 @@ class CheckoutForm(forms.Form):
 class OrderStatusForm(forms.ModelForm):
     class Meta:
         model = Order
-        fields = ('status',)
+        fields = ('status', 'tracking_number')
+        widgets = {
+            'tracking_number': forms.TextInput(attrs={
+                'placeholder': 'Например, 10012345678901',
+                'autocomplete': 'off',
+                'spellcheck': 'false',
+            }),
+        }
 
     def clean_status(self):
         status = self.cleaned_data['status']
         if self.instance.pk and self.instance.status == Order.CANCELLED and status != Order.CANCELLED:
             raise forms.ValidationError('Отменённый заказ нельзя открыть повторно.')
         return status
+
+    def clean_tracking_number(self):
+        value = ''.join((self.cleaned_data.get('tracking_number') or '').split())
+        if value and not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9\-]{0,39}', value):
+            raise forms.ValidationError('Трек: буквы, цифры и дефис, до 40 символов.')
+        return value
+
+
+class OrderLookupForm(forms.Form):
+    order_id = forms.IntegerField(
+        label='Номер заказа', min_value=1, max_value=10**10 - 1,
+        widget=forms.NumberInput(attrs={'min': 1, 'inputmode': 'numeric', 'autocomplete': 'off'}),
+    )
+    phone = forms.CharField(
+        label='Телефон из заказа', max_length=40,
+        widget=forms.TextInput(attrs={'autocomplete': 'tel', 'inputmode': 'tel'}),
+    )
+
+    def clean_phone(self):
+        value = self.cleaned_data['phone'].strip()
+        digits = re.sub(r'\D', '', value)
+        if not 10 <= len(digits) <= 15:
+            raise forms.ValidationError('Введите телефон: от 10 до 15 цифр, можно с +, пробелами и скобками.')
+        return value

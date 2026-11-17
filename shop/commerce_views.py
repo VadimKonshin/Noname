@@ -23,31 +23,33 @@ from .commerce import (
     available_delivery_methods, cart_products, get_cart, method_offered_by, one_brand,
     open_preorder_map, pickup_place, put, set_quantity, update_order_status,
 )
-from .cdek import CdekUnavailable, configured as cdek_configured, quote_delivery
-from .commerce_forms import CheckoutForm, OrderStatusForm
-from .models import DeliveryMethod, Order, OrderItem, Product, ProductVariant
+from .cdek import CdekUnavailable, configured as cdek_configured, parcel_weight, quote_delivery
+from .commerce_forms import CheckoutForm, OrderLookupForm, OrderStatusForm
+from .models import DeliveryMethod, Order, OrderItem, OrderRead, Product, ProductVariant
 from .mail import notify_order_created
-from .telegram import cabinet_context, issue_bind_token, notify_new_order
+from .telegram import cabinet_context, consume_phone_lookup, issue_bind_token, notify_new_order, order_for_phone
 
 
 CDEK_QUOTE_SESSION = 'cdek_quote'
 
 
-def _cdek_decision(request, postal_code, pieces, selected_code):
+def _cdek_decision(request, postal_code, pieces, weight, selected_code):
     """Quote again on the server. The first matching view is shown; the next identical one is stored."""
-    quote = quote_delivery(postal_code, pieces)
+    quote = quote_delivery(postal_code, pieces, weight_grams=weight)
     match = next((point for point in quote.points if point['code'] == selected_code), None)
     held = request.session.get(CDEK_QUOTE_SESSION)
     held = held if isinstance(held, dict) else {}
     same_quote = (
         held.get('postal_code') == quote.postal_code
         and held.get('pieces') == quote.pieces
+        and held.get('weight') == quote.weight
         and held.get('price') == str(quote.price)
     )
     confirmed = bool(match) and same_quote and held.get('point') in ('', match['code'])
     request.session[CDEK_QUOTE_SESSION] = {
         'postal_code': quote.postal_code,
         'pieces': quote.pieces,
+        'weight': quote.weight,
         'price': str(quote.price),
         'point': match['code'] if match else '',
     }
@@ -226,7 +228,9 @@ def checkout(request):
                 selected_code = (request.POST.get('delivery_point') or '').strip()[:64]
                 pieces = sum(line['quantity'] for line in current_cart['lines'])
                 try:
-                    quote, match, confirmed = _cdek_decision(request, data['postal_code'], pieces, selected_code)
+                    quote, match, confirmed = _cdek_decision(
+                        request, data['postal_code'], pieces, parcel_weight(current_cart['lines']), selected_code,
+                    )
                 except CdekUnavailable:
                     messages.error(
                         request,
@@ -259,7 +263,10 @@ def checkout(request):
                     if not method_offered_by(current_method, cart_products(verified_cart)):
                         raise ValueError('Способ доставки недоступен. Выберите другой в корзине.')
                     if quote is not None:
-                        if sum(item['quantity'] for item in verified_cart['lines']) != quote.pieces:
+                        if (
+                            sum(item['quantity'] for item in verified_cart['lines']) != quote.pieces
+                            or parcel_weight(verified_cart['lines']) != quote.weight
+                        ):
                             raise ValueError('Корзина изменилась. Рассчитайте доставку ещё раз.')
                         agreed = quote.price
                         eta = quote.eta or current_method.eta
@@ -345,6 +352,21 @@ def checkout(request):
     return _checkout_response(request, form, current_cart, method, token)
 
 
+@ratelimit(group='order_lookup', key='ip', rate='8/h', method='POST')
+@require_http_methods(['GET', 'POST'])
+def order_lookup(request):
+    form = OrderLookupForm(request.POST if request.method == 'POST' else None)
+    order = None
+    outcome = ''
+    if request.method == 'POST' and form.is_valid():
+        if consume_phone_lookup('web', form.cleaned_data['phone']):
+            outcome = 'limited'
+        else:
+            order = order_for_phone(form.cleaned_data['order_id'], form.cleaned_data['phone'])
+            outcome = 'found' if order else 'missing'
+    return render(request, 'shop/order_lookup.html', {'form': form, 'order': order, 'outcome': outcome})
+
+
 @login_required
 @require_GET
 def my_orders(request):
@@ -378,6 +400,8 @@ def order_detail(request, pk):
     if not (can_view_any_order or owns_order or owns_guest_order or can_view_brand_order):
         raise Http404('Заказ не найден.')
     can_change_order = request.user.has_perm('shop.change_order') and not brand_order_view
+    if request.user.is_authenticated and not owns_order and not owns_guest_order and (can_view_any_order or can_view_brand_order):
+        OrderRead.objects.update_or_create(order=order, user=request.user)
     return render(request, 'shop/order_detail.html', {
         'order': order,
         'order_items': brand_items if brand_order_view else order.items.all(),
@@ -386,6 +410,7 @@ def order_detail(request, pk):
         'can_view_any_order': can_view_any_order,
         'can_change_order': can_change_order,
         'status_form': OrderStatusForm(instance=order) if can_change_order else None,
+        'order_reads': order.reads.select_related('user') if can_view_any_order else None,
     })
 
 
@@ -534,14 +559,15 @@ def change_order_status(request, pk):
     order = get_object_or_404(Order, pk=pk)
     form = OrderStatusForm(request.POST, instance=order)
     if form.is_valid():
+        tracking = form.cleaned_data['tracking_number'] if 'tracking_number' in request.POST else None
         try:
-            update_order_status(order.pk, form.cleaned_data['status'])
+            update_order_status(order.pk, form.cleaned_data['status'], tracking_number=tracking)
         except ValidationError as exc:
             messages.error(request, exc.message)
         else:
             messages.success(request, f'Статус заказа №{order.pk} обновлён.')
     else:
-        messages.error(request, 'Выбран недопустимый статус заказа.')
+        messages.error(request, ' '.join(error for errors in form.errors.values() for error in errors))
     return redirect(order.get_absolute_url())
 
 

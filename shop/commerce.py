@@ -228,16 +228,20 @@ def set_quantity(request, product_id, size, qty, is_preorder=False):
     return True
 
 
-def update_order_status(order_id, status):
+def update_order_status(order_id, status, tracking_number=None):
     with transaction.atomic():
         order = Order.objects.select_for_update().prefetch_related('items__product').get(pk=order_id)
         if status not in dict(Order.STATUS_CHOICES):
             raise ValidationError('Выбран недопустимый статус заказа.')
         if order.status == Order.CANCELLED and status != Order.CANCELLED:
             raise ValidationError('Отменённый заказ нельзя открыть повторно.')
-        if order.status == status:
+        previous_tracking = order.tracking_number
+        tracking = previous_tracking if tracking_number is None else tracking_number
+        status_changed = order.status != status
+        tracking_changed = tracking != previous_tracking
+        if not status_changed and not tracking_changed:
             return order
-        if status == Order.CANCELLED:
+        if status_changed and status == Order.CANCELLED:
             for item in order.items.all():
                 if item.is_preorder or item.product_id is None:
                     continue
@@ -246,8 +250,12 @@ def update_order_status(order_id, status):
                     size=item.size,
                 ).update(stock_quantity=F('stock_quantity') + item.quantity)
         order.status = status
-        order.save(update_fields=['status', 'updated_at'])
-        if status in (Order.SHIPPED, Order.CANCELLED):
+        order.tracking_number = tracking
+        order.save(update_fields=['status', 'tracking_number', 'updated_at'])
+        tell_buyer = (status_changed and status in (Order.SHIPPED, Order.CANCELLED)) or (
+            tracking_changed and status == Order.SHIPPED
+        )
+        if tell_buyer:
             from .mail import notify_order_status
             from .telegram import notify_status_change
             notify_order_status(order.pk)

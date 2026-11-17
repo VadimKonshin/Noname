@@ -7,8 +7,9 @@
   <p class="page-lead">
     Статус: <span class="status-pill status-{{ order.status }}">{{ order.get_status_display }}</span>.
     Заказ принят, оплата онлайн не списывалась. Сохраните номер: магазин свяжется по телефону или почте, чтобы подтвердить его.
-    {% if telegram_bot_url and not brand_order_view %}
-      Статус можно проверить в <a href="{{ telegram_bot_url }}">Telegram-боте</a>: отправьте номер заказа и телефон, указанный при оформлении.
+    {% if not brand_order_view %}
+      Если эта страница пропадёт вместе с браузером, статус можно <a href="{% url 'order_lookup' %}">проверить по номеру и телефону</a>.
+      {% if telegram_bot_url %}То же самое принимает <a href="{{ telegram_bot_url }}">бот</a>.{% endif %}
     {% endif %}
   </p>
 
@@ -37,6 +38,7 @@
         {% if order.delivery_eta %}<p>Срок: {{ order.delivery_eta }}</p>{% endif %}
         {% if order.pickup_address %}<p>Самовывоз: {{ order.pickup_address }}</p>{% endif %}
         {% if order.delivery_point_code %}<p>Пункт: {{ order.delivery_point_code }}{% if order.delivery_point_address %}, {{ order.delivery_point_address }}{% endif %}</p>{% endif %}
+        {% if order.tracking_number %}<p>Трек: <strong>{{ order.tracking_number }}</strong></p>{% endif %}
         {% if order.city or order.address %}<p>{{ order.postal_code }} {{ order.city }}, {{ order.address }}</p>{% endif %}
         {% if order.comment %}<p>Комментарий: {{ order.comment }}</p>{% endif %}
       </div>
@@ -46,9 +48,27 @@
           <h2>Управление статусом</h2>
           <form method="post" action="{% url 'change_order_status' pk=order.pk %}" class="status-form">
             {% csrf_token %}
-            {{ status_form.status }}
+            <div class="form-field">
+              <label for="{{ status_form.status.id_for_label }}">Статус</label>
+              {{ status_form.status }}
+            </div>
+            <div class="form-field">
+              <label for="{{ status_form.tracking_number.id_for_label }}">Трек</label>
+              {{ status_form.tracking_number }}
+              <small>Попадёт в письмо «отправлен» и в проверку статуса. Для самовывоза можно оставить пустым.</small>
+            </div>
             <button class="btn btn-dark" type="submit">Сохранить статус</button>
           </form>
+        </div>
+      {% endif %}
+      {% if can_view_any_order %}
+        <div class="form-section">
+          <h2>Кто открывал карточку</h2>
+          {% for read in order_reads %}
+            <p>{{ read.user.username }} · {{ read.opened_at|date:'d.m.Y H:i' }}</p>
+          {% empty %}
+            <p>Пока карточку не открывал никто, кроме покупателя.</p>
+          {% endfor %}
         </div>
       {% endif %}
     </div>

@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
@@ -170,6 +170,9 @@ class Product(models.Model):
     composition = models.CharField('Состав', max_length=200, blank=True)
     fit = models.CharField('Посадка', max_length=120, blank=True)
     care = models.TextField('Уход', blank=True)
+    weight_grams = models.PositiveIntegerField(
+        'Вес, г', default=500, validators=[MinValueValidator(100), MaxValueValidator(30000)],
+    )
     offers_cdek = models.BooleanField('СДЭК', default=True)
     offers_post = models.BooleanField('Почта России', default=True)
     offers_pickup = models.BooleanField('Самовывоз', default=False)
@@ -350,6 +353,7 @@ class Order(models.Model):
     subtotal = models.DecimalField('Товары, ₽', max_digits=12, decimal_places=2)
     total = models.DecimalField('Итого, ₽', max_digits=12, decimal_places=2)
     status = models.CharField('Статус', max_length=16, choices=STATUS_CHOICES, default=NEW)
+    tracking_number = models.CharField('Трек', max_length=40, blank=True, default='')
     buyer_telegram_chat_id = models.CharField('Telegram покупателя', max_length=32, blank=True, default='')
     created_at = models.DateTimeField('Создан', auto_now_add=True)
     updated_at = models.DateTimeField('Изменён', auto_now=True)
@@ -364,6 +368,22 @@ class Order(models.Model):
 
     def get_absolute_url(self):
         return reverse('order_detail', kwargs={'pk': self.pk})
+
+
+class OrderRead(models.Model):
+    """Last time a manager or store admin opened someone else's order card."""
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='reads', verbose_name='Заказ')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='order_reads', verbose_name='Кто открыл')
+    opened_at = models.DateTimeField('Открыта', auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=('order', 'user'), name='unique_order_reader')]
+        ordering = ['-opened_at']
+        verbose_name = 'Просмотр заказа'
+        verbose_name_plural = 'Просмотры заказа'
+
+    def __str__(self):
+        return f'Заказ №{self.order_id} — {self.user_id}'
 
 
 class OrderItem(models.Model):

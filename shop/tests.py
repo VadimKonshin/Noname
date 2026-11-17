@@ -59,6 +59,7 @@ def variant_payload(product=None):
         data[f'variants-{index}-stock_quantity'] = str(variant.stock_quantity if variant else 5)
     data['offers_cdek'] = 'on'
     data['offers_post'] = 'on'
+    data['weight_grams'] = '500'
     return data
 
 
@@ -83,6 +84,7 @@ class StoreTests(TestCase):
         response = self.client.get(self.product.get_absolute_url())
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Мягкий хлопок')
+        self.assertContains(response, '500 г')
 
     def test_search(self):
         self.assertContains(self.client.get(reverse('catalog'), {'q': 'хлопок'}), self.product.title)

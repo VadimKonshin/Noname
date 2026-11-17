@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block title %}Статус заказа — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page">
+  <div class="eyebrow"><span class="tiny-dot"></span> ЗАКАЗ</div>
+  <h1 class="commerce-heading">СТАТУС<span class="heading-period">.</span></h1>
+  <p class="page-lead">Номер и телефон из оформления. Чужой телефон ничего не откроет. Имя, почта и адрес здесь не показываются.</p>
+
+  {% if outcome == 'limited' %}
+    <div class="form-section">
+      <h2>Слишком много проверок</h2>
+      <p>Попробуйте через час. Другой браузер запас этого телефона не обновляет.</p>
+    </div>
+  {% elif outcome == 'missing' %}
+    <div class="form-section">
+      <h2>Не найден</h2>
+      <p>Заказ с таким номером и телефоном не найден.</p>
+    </div>
+  {% elif outcome == 'found' %}
+    <div class="form-section">
+      <h2>Заказ №{{ order.pk }}</h2>
+      <p>Статус: <span class="status-pill status-{{ order.status }}">{{ order.get_status_display }}</span></p>
+      {% for item in order.items.all %}
+        <div class="order-line">
+          <div>
+            <strong>{{ item.product_title }}</strong>
+            <small>Размер {{ item.size }} · {{ item.quantity }} шт.{% if item.is_preorder %} · предзаказ{% endif %}</small>
+          </div>
+          <strong>{{ item.line_total|floatformat:0 }} ₽</strong>
+        </div>
+      {% endfor %}
+      <p>Доставка: {{ order.delivery_name }}</p>
+      <p>Итого: <strong>{{ order.total|floatformat:0 }} ₽</strong></p>
+      {% if order.tracking_number %}<p>Трек: <strong>{{ order.tracking_number }}</strong></p>{% endif %}
+    </div>
+  {% endif %}
+
+  <form method="post" class="editor-form">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    <div class="form-section">
+      <div class="form-field">
+        <label for="{{ form.order_id.id_for_label }}">{{ form.order_id.label }}</label>
+        {{ form.order_id }}
+        {% if form.order_id.errors %}<div class="field-error">{{ form.order_id.errors }}</div>{% endif %}
+      </div>
+      <div class="form-field">
+        <label for="{{ form.phone.id_for_label }}">{{ form.phone.label }}</label>
+        {{ form.phone }}
+        {% if form.phone.errors %}<div class="field-error">{{ form.phone.errors }}</div>{% endif %}
+      </div>
+      <button class="btn btn-dark" type="submit">Проверить</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

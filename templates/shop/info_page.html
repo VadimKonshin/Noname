@@ -59,8 +59,15 @@
   {% else %}
     <div class="eyebrow"><span class="tiny-dot"></span> КОНТАКТЫ</div>
     <h1 class="commerce-heading">КТО ОТВЕЧАЕТ<span class="heading-period">.</span></h1>
-    <p class="page-lead">Вопрос о вещи — прямо бренду. Вопрос о заказе — сюда. Статус можно спросить у бота.</p>
+    <p class="page-lead">Вопрос о вещи — прямо бренду. Вопрос о заказе — сюда. Статус можно проверить на сайте или у бота.</p>
     <div class="delivery-board">
+      <a class="delivery-card" href="{% url 'order_lookup' %}">
+        <div>
+          <strong>Статус на сайте</strong>
+          <small>Номер заказа и телефон. Имя, почта и адрес здесь не открываются.</small>
+        </div>
+        <b>↗</b>
+      </a>
       {% if telegram_bot_url %}
         <a class="delivery-card" href="{{ telegram_bot_url }}">
           <div>

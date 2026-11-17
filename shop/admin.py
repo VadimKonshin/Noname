@@ -7,7 +7,10 @@ from django.utils.html import format_html
 from .commerce import update_order_status
 from .forms import StoreUserChangeForm
 from .commerce_forms import OrderStatusForm
-from .models import Brand, BrandManager, BrandMessage, DeliveryMethod, Order, OrderItem, Product, ProductImage, ProductVariant, UserProfile
+from .models import (
+    Brand, BrandManager, BrandMessage, DeliveryMethod, Order, OrderItem, OrderRead,
+    Product, ProductImage, ProductVariant, UserProfile,
+)
 
 
 class ProductImageInline(admin.TabularInline):
@@ -199,6 +202,17 @@ class DeliveryMethodAdmin(admin.ModelAdmin):
     fields = ('name', 'code', 'description', 'eta', 'price', 'requires_address', 'pickup_address', 'is_active', 'sort_order')
 
 
+class OrderReadInline(admin.TabularInline):
+    model = OrderRead
+    extra = 0
+    can_delete = False
+    readonly_fields = ('user', 'opened_at')
+    fields = ('user', 'opened_at')
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
 class OrderItemInline(admin.TabularInline):
     model = OrderItem
     extra = 0
@@ -222,14 +236,15 @@ class OrderAdmin(admin.ModelAdmin):
         'delivery_point_code', 'delivery_point_address', 'delivery_price',
         'subtotal', 'total', 'created_at', 'updated_at',
     )
-    fields = ('status', 'created_at', 'updated_at', 'full_name', 'phone', 'user', 'delivery_method', 'delivery_name', 'delivery_eta', 'pickup_address', 'delivery_point_code', 'delivery_point_address', 'city', 'address', 'postal_code', 'comment', 'subtotal', 'delivery_price', 'total', 'checkout_token')
-    inlines = [OrderItemInline]
+    fields = ('status', 'tracking_number', 'created_at', 'updated_at', 'full_name', 'phone', 'user', 'delivery_method', 'delivery_name', 'delivery_eta', 'pickup_address', 'delivery_point_code', 'delivery_point_address', 'city', 'address', 'postal_code', 'comment', 'subtotal', 'delivery_price', 'total', 'checkout_token')
+    inlines = [OrderItemInline, OrderReadInline]
     form = OrderStatusForm
 
     def save_model(self, request, obj, form, change):
-        if change and 'status' in form.changed_data:
-            update_order_status(obj.pk, obj.status)
-        else:
+        if change and ('status' in form.changed_data or 'tracking_number' in form.changed_data):
+            tracking = obj.tracking_number if 'tracking_number' in form.changed_data else None
+            update_order_status(obj.pk, obj.status, tracking_number=tracking)
+        elif change:
             super().save_model(request, obj, form, change)
 
     def has_add_permission(self, request):

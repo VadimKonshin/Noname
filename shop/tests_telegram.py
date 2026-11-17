@@ -280,6 +280,20 @@ class TelegramTests(TestCase):
         order.refresh_from_db()
         self.assertEqual(order.buyer_telegram_chat_id, '50')
 
+    def test_status_check_includes_the_tracking_number(self):
+        from unittest.mock import patch
+        order = Order.objects.create(
+            checkout_token='status-track', full_name='Секретное имя', email='buyer@example.org',
+            phone='+79991234567', delivery_name='СДЭК', delivery_price=Decimal('350'),
+            subtotal=Decimal('3000'), total=Decimal('3350'), status=Order.SHIPPED,
+            tracking_number='RA123456789RU',
+        )
+        with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
+            handle_update({'message': {'text': f'{order.pk} +79991234567', 'chat': {'id': 50, 'type': 'private'}}})
+        text = sent_payload(urlopen.call_args.args[0])['text']
+        self.assertIn('Трек: RA123456789RU', text)
+        self.assertNotIn('Секретное имя', text)
+
     def test_manager_connects_from_private_start_link(self):
         from unittest.mock import patch
         token = 'personal-bind-token'

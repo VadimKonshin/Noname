@@ -295,7 +295,7 @@ class ProductForm(forms.ModelForm):
     class Meta:
         model = Product
         fields = (
-            'brand', 'title', 'description', 'composition', 'fit', 'care',
+            'brand', 'title', 'description', 'composition', 'fit', 'care', 'weight_grams',
             'offers_cdek', 'offers_post', 'offers_pickup',
             'price', 'cover', 'color', 'is_available', 'allow_preorder', 'preorder_days', 'is_published', 'is_featured',
         )
@@ -304,6 +304,7 @@ class ProductForm(forms.ModelForm):
             'composition': forms.TextInput(attrs={'placeholder': 'Например, 100% хлопок, 240 г/м²'}),
             'fit': forms.TextInput(attrs={'placeholder': 'Например, свободная'}),
             'care': forms.Textarea(attrs={'rows': 3, 'placeholder': 'Стирка, глажка, сушка'}),
+            'weight_grams': forms.NumberInput(attrs={'min': 100, 'max': 30000, 'step': 1}),
             'title': forms.TextInput(attrs={'placeholder': 'Например, ECLIPSE / Oversized Tee'}),
             'price': forms.NumberInput(attrs={'min': '0.01', 'step': '0.01'}),
             'cover': forms.ClearableFileInput(attrs={'accept': 'image/jpeg,image/png,image/webp'}),
@@ -318,6 +319,14 @@ class ProductForm(forms.ModelForm):
 
     def clean_preorder_days(self):
         return self.cleaned_data.get('preorder_days') or 14
+
+    def clean_weight_grams(self):
+        weight = self.cleaned_data.get('weight_grams')
+        if weight is None:
+            raise forms.ValidationError('Укажите вес вещи в граммах.')
+        if not 100 <= weight <= 30000:
+            raise forms.ValidationError('Вес укажите в граммах: от 100 до 30000.')
+        return weight
 
     def clean(self):
         cleaned = super().clean()

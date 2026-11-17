@@ -5,6 +5,7 @@
 <p>Оплата онлайн не списывалась. Сохраните номер заказа.</p>
 {% elif kind == 'shipped' %}
 <p><strong>Заказ №{{ order.pk }} отправлен.</strong></p>
+{% if order.tracking_number %}<p>Трек: {{ order.tracking_number }}</p>{% endif %}
 {% else %}
 <p><strong>Заказ №{{ order.pk }} отменён.</strong></p>
 {% endif %}

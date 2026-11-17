@@ -95,13 +95,12 @@
       <h2>О ВЕЩИ</h2>
       <p>{{ product.description|linebreaksbr }}</p>
     </div>
-    {% if product.composition or product.fit or product.care %}
-      <div class="detail-facts">
-        {% if product.composition %}<div class="detail-stat"><span>СОСТАВ</span><strong>{{ product.composition }}</strong></div>{% endif %}
-        {% if product.fit %}<div class="detail-stat"><span>ПОСАДКА</span><strong>{{ product.fit }}</strong></div>{% endif %}
-        {% if product.care %}<div class="detail-stat"><span>УХОД</span><strong>{{ product.care|linebreaksbr }}</strong></div>{% endif %}
-      </div>
-    {% endif %}
+    <div class="detail-facts">
+      {% if product.composition %}<div class="detail-stat"><span>СОСТАВ</span><strong>{{ product.composition }}</strong></div>{% endif %}
+      {% if product.fit %}<div class="detail-stat"><span>ПОСАДКА</span><strong>{{ product.fit }}</strong></div>{% endif %}
+      {% if product.care %}<div class="detail-stat"><span>УХОД</span><strong>{{ product.care|linebreaksbr }}</strong></div>{% endif %}
+      <div class="detail-stat"><span>ВЕС</span><strong>{{ product.weight_grams }} г</strong></div>
+    </div>
     {% if product.brand and product.brand.size_rows %}
       <div class="detail-description">
         <h2>РАЗМЕРЫ {{ product.brand.name }}</h2>

@@ -165,6 +165,30 @@ def bind_manager(chat_id, code):
     return f'Готово. Заказы и сообщения бренда «{brand_name}» будут приходить в этот чат.'
 
 
+def order_for_phone(order_id, phone):
+    """Order that matches the number and the last 10 phone digits. Does not bind a chat."""
+    from .models import Order
+
+    try:
+        order_id = int(order_id)
+    except (TypeError, ValueError):
+        return None
+    if order_id < 1 or order_id >= 10 ** 10:
+        return None
+    order = Order.objects.prefetch_related('items').filter(pk=order_id).first()
+    if order is None or not _phones_match(order.phone, phone):
+        return None
+    return order
+
+
+def consume_phone_lookup(scope, phone):
+    """True when this phone has already been checked too often. A new IP does not reset the budget."""
+    phone_key = _phone_limit_key(phone)
+    if not phone_key:
+        return False
+    return _bump(f'{scope}-status-phone-{phone_key}', PHONE_STATUS_LIMIT)
+
+
 def order_status(chat_id, order_id, phone):
     from django.db.models import Q
     from .models import Order
@@ -203,6 +227,10 @@ def order_status(chat_id, order_id, phone):
         '',
         f'Доставка: {_html(order.delivery_name)}',
         f'Итого: {_money(order.total)}',
+    ])
+    if order.tracking_number:
+        lines.append(f'Трек: {_html(order.tracking_number)}')
+    lines.extend([
         '',
         footer,
     ])
@@ -397,6 +425,8 @@ def _buyer_status_text(order):
         lines.append(f'• {_html(item.product_title)}, размер {_html(item.size)}, {item.quantity} шт.')
     if order.delivery_name:
         lines.extend(['', f'Доставка: {_html(order.delivery_name)}'])
+    if order.tracking_number:
+        lines.append(f'Трек: {_html(order.tracking_number)}')
     return '\n'.join(lines)
 
 
@@ -405,9 +435,13 @@ def _brand_status_text(order, brand, items):
         f'<b>Статус заказа №{order.pk} изменился</b>',
         f'Бренд: {_html(brand.name)}',
         f'Статус: {_html(order.get_status_display())}',
+    ]
+    if order.tracking_number:
+        lines.append(f'Трек: {_html(order.tracking_number)}')
+    lines.extend([
         '',
         '<b>Ваши позиции</b>',
-    ]
+    ])
     subtotal = Decimal('0')
     for item in items:
         subtotal += item.line_total

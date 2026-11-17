@@ -1,7 +1,8 @@
 {% if kind == 'created' %}Заказ №{{ order.pk }} принят.
 Оплата онлайн не списывалась. Сохраните номер заказа.
 {% elif kind == 'shipped' %}Заказ №{{ order.pk }} отправлен.
-{% else %}Заказ №{{ order.pk }} отменён.
+{% if order.tracking_number %}Трек: {{ order.tracking_number }}
+{% endif %}{% else %}Заказ №{{ order.pk }} отменён.
 {% endif %}
 Получатель: {{ order.full_name }}
 Доставка: {{ order.delivery_name }}

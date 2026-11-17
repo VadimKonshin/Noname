@@ -12,7 +12,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from .commerce import get_cart
-from .models import Brand, BrandManager, DeliveryMethod, Order, OrderItem, Product, ProductVariant
+from .models import Brand, BrandManager, DeliveryMethod, Order, OrderItem, OrderRead, Product, ProductVariant
 
 User = get_user_model()
 
@@ -384,6 +384,59 @@ class CommerceTests(TestCase):
         self.client.post(reverse('checkout'), data)  # stale token
         self.assertEqual(Order.objects.count(), 1)
 
+    def test_order_lookup_hides_contacts_and_does_not_bind_a_chat(self):
+        order = self._create_order()
+        order.tracking_number = 'RA123456789RU'
+        order.save(update_fields=['tracking_number'])
+        self.client.logout()
+        missing = self.client.post(reverse('order_lookup'), {'order_id': order.pk, 'phone': '+79990000000'})
+        unknown = self.client.post(reverse('order_lookup'), {'order_id': 999999, 'phone': '+79991234567'})
+        found = self.client.post(reverse('order_lookup'), {'order_id': order.pk, 'phone': '8 999 123-45-67'})
+        for page in (missing, unknown):
+            self.assertContains(page, 'не найден')
+            self.assertNotContains(page, 'Тестовый покупатель')
+            self.assertNotContains(page, 'ул. Тестовая')
+            self.assertNotContains(page, 'client@example.org')
+        self.assertContains(found, 'Новый')
+        self.assertContains(found, self.shirt.title)
+        self.assertContains(found, 'RA123456789RU')
+        self.assertNotContains(found, 'Тестовый покупатель')
+        self.assertNotContains(found, 'ул. Тестовая')
+        self.assertNotContains(found, 'client@example.org')
+        order.refresh_from_db()
+        self.assertEqual(order.buyer_telegram_chat_id, '')
+
+    def test_order_lookup_phone_budget_is_shared_across_clients(self):
+        cache.clear()
+        order = self._create_order()
+        self.client.logout()
+        with patch('shop.telegram.PHONE_STATUS_LIMIT', 1):
+            first = self.client.post(reverse('order_lookup'), {'order_id': order.pk, 'phone': '+79991234567'})
+            second = self.client.post(reverse('order_lookup'), {'order_id': order.pk, 'phone': '+7 (999) 123-45-67'})
+        self.assertContains(first, self.shirt.title)
+        self.assertContains(second, 'Слишком много проверок')
+        self.assertNotContains(second, self.shirt.title)
+
+    def test_tracking_number_is_saved_and_a_bad_one_is_kept_out(self):
+        order = self._create_order()
+        self.client.force_login(self.staff)
+        self.client.post(reverse('change_order_status', args=[order.pk]), {
+            'status': Order.SHIPPED, 'tracking_number': 'RA123456789RU',
+        })
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.SHIPPED)
+        self.assertEqual(order.tracking_number, 'RA123456789RU')
+        self.assertContains(self.client.get(order.get_absolute_url()), 'RA123456789RU')
+        self.client.post(reverse('change_order_status', args=[order.pk]), {
+            'status': Order.SHIPPED, 'tracking_number': '<script>',
+        })
+        order.refresh_from_db()
+        self.assertEqual(order.tracking_number, 'RA123456789RU')
+        self.client.post(reverse('change_order_status', args=[order.pk]), {'status': Order.COMPLETED})
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.COMPLETED)
+        self.assertEqual(order.tracking_number, 'RA123456789RU')
+
     def test_order_access_private(self):
         order = self._create_order()
         self.assertEqual(self.client.get(order.get_absolute_url()).status_code, 200)
@@ -542,6 +595,8 @@ class CommerceTests(TestCase):
         order = Order.objects.get()
         self.assertEqual(order.delivery_price, Decimal('480.00'))
         self.assertEqual(order.total, Decimal('6480.00'))
+        weights = [json.loads(body)['packages'][0]['weight'] for body in opener.bodies if 'packages' in body]
+        self.assertEqual(weights, [1000, 1000])
         self.assertEqual(order.delivery_point_code, 'MSK1')
         self.assertIn('Тверская, 1', order.delivery_point_address)
         self.assertEqual(order.delivery_eta, '2–5 дн.')
@@ -751,6 +806,24 @@ class BrandOrderTests(TestCase):
         self.assertEqual(self.client.post(reverse('change_order_status', args=[self.mixed_order.pk]), {
             'status': Order.SHIPPED,
         }).status_code, 403)
+
+    def test_manager_open_is_recorded_for_the_store_only(self):
+        self.client.force_login(self.customer)
+        own = self.client.get(self.alpha_order.get_absolute_url())
+        self.assertNotContains(own, 'Кто открывал')
+        self.assertFalse(OrderRead.objects.filter(order=self.alpha_order, user=self.customer).exists())
+        self.client.force_login(self.manager_user)
+        hidden = self.client.get(self.alpha_order.get_absolute_url())
+        self.assertNotContains(hidden, 'Кто открывал')
+        self.assertTrue(OrderRead.objects.filter(order=self.alpha_order, user=self.manager_user).exists())
+        self.client.force_login(self.other_manager_user)
+        self.assertEqual(self.client.get(self.alpha_order.get_absolute_url()).status_code, 404)
+        self.assertFalse(OrderRead.objects.filter(order=self.alpha_order, user=self.other_manager_user).exists())
+        staff = User.objects.create_superuser('store_reader', 'store@example.com', 'StorePass#813')
+        self.client.force_login(staff)
+        seen = self.client.get(self.alpha_order.get_absolute_url())
+        self.assertContains(seen, 'Кто открывал')
+        self.assertContains(seen, self.manager_user.username)
 
     def test_manager_cannot_view_order_without_own_items(self):
         self.client.force_login(self.manager_user)

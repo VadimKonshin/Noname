@@ -107,5 +107,22 @@ class OrderMailTests(TestCase):
             update_order_status(order.pk, Order.CANCELLED)
         self.assertEqual([message.to for message in mail.outbox], [['buyer@example.com'], ['buyer@example.com']])
         self.assertIn('отправлен', mail.outbox[0].subject)
+        self.assertNotIn('Трек:', mail.outbox[0].body)
         self.assertIn('отменён', mail.outbox[1].subject)
         self.assertNotIn('alpha@example.com', [message.to[0] for message in mail.outbox])
+
+    def test_tracking_added_after_shipment_is_mailed_once(self):
+        order = Order.objects.create(
+            checkout_token='mail-track', full_name='Покупатель', email='buyer@example.com',
+            phone='+79991234567', delivery_name='СДЭК', delivery_price=Decimal('350'),
+            subtotal=Decimal('3000'), total=Decimal('3350'), status=Order.SHIPPED,
+        )
+        with self.captureOnCommitCallbacks(execute=True):
+            update_order_status(order.pk, Order.SHIPPED, tracking_number='RA123456789RU')
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('отправлен', mail.outbox[0].subject)
+        self.assertIn('Трек: RA123456789RU', mail.outbox[0].body)
+        mail.outbox.clear()
+        with self.captureOnCommitCallbacks(execute=True):
+            update_order_status(order.pk, Order.SHIPPED, tracking_number='RA123456789RU')
+        self.assertEqual(len(mail.outbox), 0)
