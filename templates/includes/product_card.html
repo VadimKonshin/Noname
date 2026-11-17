@@ -1,5 +1,5 @@
 {% load shop_images static %}
-<article class="product-card">
+<article class="product-card" data-slug="{{ product.slug }}">
   <a class="product-image-link" href="{{ product.get_absolute_url }}" aria-label="Открыть {{ product.title }}">
     <div class="product-visual">
       {% with photo=product.photo %}
@@ -26,7 +26,7 @@
     <span class="price">{{ product.price|floatformat:0 }} ₽</span>
   </div>
   <div class="card-actions">
-    {% if product.all_size_options %}
+    {% if show_sizes != False and product.all_size_options %}
       <p class="card-sizes">
         {% for option in product.all_size_options %}
           <span class="{% if option.is_preorder %}is-preorder{% elif not option.available %}is-unavailable{% endif %}">{{ option.name }}{% if option.is_preorder %}*{% endif %}</span>

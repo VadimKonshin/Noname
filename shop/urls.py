@@ -27,6 +27,7 @@ urlpatterns = [
     path('brand/orders/', commerce_views.brand_orders, name='brand_orders'),
     path('brand/products/', views.brand_products, name='brand_products'),
     path('catalog/', views.catalog, name='catalog'),
+    path('collaboration/', views.collaboration, name='info_collaboration'),
     path('delivery/', views.info_page, {'page': 'delivery'}, name='info_delivery'),
     path('returns/', views.info_page, {'page': 'returns'}, name='info_returns'),
     path('contacts/', views.info_page, {'page': 'contacts'}, name='info_contacts'),

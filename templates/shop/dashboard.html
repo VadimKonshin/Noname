@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}Статистика — NoName{% endblock %}
 {% block content %}
-<section class="container commerce-page">
+<section class="container commerce-page staff-stats">
   <div class="eyebrow"><span class="tiny-dot"></span> STAFF / АНАЛИТИКА</div>
   <h1 class="commerce-heading">ПАНЕЛЬ МАГАЗИНА<span class="heading-period">.</span></h1>
   {% include 'includes/dashboard_nav.html' with active_page='dashboard' show_admin=1 %}
@@ -97,7 +97,7 @@
       <tbody>
         {% for order in recent_orders %}
           <tr>
-            <td><a class="table-link" href="{{ order.get_absolute_url }}">#{{ order.pk }} ↗</a></td>
+            <td><a class="table-link" href="{{ order.get_absolute_url }}">#{{ order.public_number }} ↗</a></td>
             <td>{{ order.full_name }}</td>
             <td><span class="status-pill status-{{ order.status }}">{{ order.get_status_display }}</span></td>
             <td>{{ order.total|floatformat:0 }} ₽</td>

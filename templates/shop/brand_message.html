@@ -4,7 +4,7 @@
 <section class="container commerce-page">
   <div class="eyebrow"><span class="tiny-dot"></span> BRAND / СООБЩЕНИЕ</div>
   <h1 class="commerce-heading">НАПИСАТЬ {{ brand.name }}<span class="heading-period">.</span></h1>
-  <p class="page-lead">Сообщение увидит менеджер этого бренда. Сайт письмо не отправляет: ответ придёт на почту, которую вы оставите.</p>
+  <p class="page-lead">Сообщение увидит менеджер этого бренда. Оставьте почту или Telegram — достаточно одного. Это контакт, который вы сами пишете, не привязка чата бота.</p>
   <form method="post" class="checkout-form" novalidate>
     {% csrf_token %}
     {% if product %}<input type="hidden" name="product" value="{{ product.slug }}">{% endif %}

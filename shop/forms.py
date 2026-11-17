@@ -1,3 +1,5 @@
+import re
+
 from django import forms
 from django.contrib.auth.forms import AuthenticationForm, SetPasswordForm, UserChangeForm, UserCreationForm
 from django.contrib.auth.models import User
@@ -176,7 +178,11 @@ class BrandCreateForm(forms.ModelForm):
 
 class BrandMessageForm(forms.Form):
     sender_name = forms.CharField(label='Имя', max_length=120)
-    sender_email = forms.EmailField(label='Почта для ответа')
+    sender_email = forms.EmailField(label='Почта для ответа', required=False)
+    sender_telegram = forms.CharField(
+        label='Telegram', required=False, max_length=64,
+        widget=forms.TextInput(attrs={'placeholder': '@имя', 'autocomplete': 'off'}),
+    )
     body = forms.CharField(
         label='Сообщение',
         max_length=2000,
@@ -185,6 +191,8 @@ class BrandMessageForm(forms.Form):
 
     def __init__(self, *args, lock_email=False, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields['sender_email'].help_text = 'Достаточно почты или Telegram.'
+        self.fields['sender_telegram'].help_text = 'Имя, которое вы сами напишете. Это не привязка чата бота.'
         if lock_email:
             self.fields['sender_email'].disabled = True
             self.fields['sender_email'].help_text = 'Ответ придёт на почту аккаунта. Подменить её в письме нельзя.'
@@ -196,13 +204,33 @@ class BrandMessageForm(forms.Form):
         return name
 
     def clean_sender_email(self):
-        return self.cleaned_data['sender_email'].strip().lower()
+        return (self.cleaned_data.get('sender_email') or '').strip().lower()
+
+    def clean_sender_telegram(self):
+        raw = (self.cleaned_data.get('sender_telegram') or '').strip()
+        if not raw:
+            return ''
+        handle = raw
+        for prefix in ('https://t.me/', 'http://t.me/', 'https://telegram.me/', 'tg://resolve?domain='):
+            if handle.lower().startswith(prefix):
+                handle = handle[len(prefix):]
+                break
+        handle = handle.split('?', 1)[0].split('/', 1)[0].lstrip('@')
+        if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{4,31}', handle):
+            raise forms.ValidationError('Напишите Telegram как @имя: латиница, цифры и _, от 5 символов.')
+        return f'@{handle}'
 
     def clean_body(self):
         body = self.cleaned_data['body'].strip()
         if len(body) < 10:
             raise forms.ValidationError('Напишите вопрос чуть подробнее, хотя бы пару слов.')
         return body
+
+    def clean(self):
+        cleaned = super().clean()
+        if not cleaned.get('sender_email') and not cleaned.get('sender_telegram'):
+            raise forms.ValidationError('Оставьте почту или Telegram — достаточно одного.')
+        return cleaned
 
 
 class BrandReplyForm(forms.Form):

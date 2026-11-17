@@ -65,20 +65,46 @@
     {% if product.is_available %}
       <form method="post" action="{% url 'cart_add' slug=product.slug %}" class="buy-form" data-size-picker>
         {% csrf_token %}
-        <input type="hidden" name="order_type" value="stock">
+        {% if product.allow_preorder %}
+          <fieldset class="sizes-fieldset order-mode">
+            <legend>КАК БРАТЬ</legend>
+            <div class="size-grid">
+              <label class="size-choice">
+                <input type="radio" name="order_type" value="stock" {% if product.total_stock %}checked{% else %}disabled{% endif %}>
+                <span>В НАЛИЧИИ</span>
+              </label>
+              <label class="size-choice">
+                <input type="radio" name="order_type" value="preorder" {% if not product.total_stock %}checked{% endif %}>
+                <span>ПРЕДЗАКАЗ</span>
+              </label>
+            </div>
+            <p class="size-help">Из наличия — не больше остатка. Предзаказ количеством склада не ограничен и не списывает его, пока менеджер не согласует.</p>
+          </fieldset>
+        {% else %}
+          <input type="hidden" name="order_type" value="stock">
+        {% endif %}
         <fieldset class="sizes-fieldset detail-sizes">
-          <legend>ВЫБЕРИ РАЗМЕР <small>— ТОЛЬКО РАЗМЕРЫ ЭТОЙ ВЕЩИ</small></legend>
+          <legend>ВЫБЕРИ РАЗМЕР <small>— СКОЛЬКО ОСТАЛОСЬ</small></legend>
+          {% if product.all_size_options %}
+            <ul class="size-stock">
+              {% for option in product.all_size_options %}
+                <li>
+                  <span>{{ option.name }}</span>
+                  <strong>{% if option.stock_quantity %}осталось {{ option.stock_quantity }}{% else %}нет в наличии{% endif %}</strong>
+                </li>
+              {% endfor %}
+            </ul>
+          {% endif %}
           <div class="size-grid">
             {% for option in product.all_size_options %}
               <label class="size-choice">
-                <input type="radio" name="size" value="{{ option.name }}" data-preorder="{% if option.is_preorder %}1{% else %}0{% endif %}" {% if not option.available %}disabled{% endif %}>
-                <span>{{ option.name }}{% if option.is_preorder %}*{% endif %}</span>
+                <input type="radio" name="size" value="{{ option.name }}" data-stock="{{ option.stock_quantity }}" {% if product.allow_preorder %}data-preorder-size="1"{% else %}data-preorder="{% if option.is_preorder %}1{% else %}0{% endif %}"{% endif %} {% if not product.allow_preorder and not option.available %}disabled{% endif %}>
+                <span>{{ option.name }}</span>
               </label>
             {% empty %}
               <p class="size-help">Размеры пока не заданы.</p>
             {% endfor %}
           </div>
-          {% if product.allow_preorder %}<p class="size-help">Звёздочка — этот размер сошьют под заказ.</p>{% endif %}
           <p class="size-help" data-size-status aria-live="polite">Размер пока не выбран</p>
         </fieldset>
         <div class="quantity-line">

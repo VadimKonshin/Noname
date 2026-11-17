@@ -34,15 +34,15 @@
       {% empty %}
         <span>СКОРО ЗДЕСЬ ПОЯВЯТСЯ НЕЗАВИСИМЫЕ БРЕНДЫ ✳</span>
       {% endfor %}
-      {% for brand in ticker_brands %}<span>{{ brand.name }} <span>✳</span></span>{% endfor %}
+      {% for brand in ticker_brands %}<a href="{% url 'brand_storefront' brand.slug %}" tabindex="-1">{{ brand.name }} <span aria-hidden="true">✳</span></a>{% endfor %}
     </div>
     <div class="ticker-run" aria-hidden="true">
       {% for brand in ticker_brands %}
-        <span>{{ brand.name }} <span>✳</span></span>
+        <a href="{% url 'brand_storefront' brand.slug %}" tabindex="-1">{{ brand.name }} <span aria-hidden="true">✳</span></a>
       {% empty %}
         <span>СКОРО ЗДЕСЬ ПОЯВЯТСЯ НЕЗАВИСИМЫЕ БРЕНДЫ ✳</span>
       {% endfor %}
-      {% for brand in ticker_brands %}<span>{{ brand.name }} <span>✳</span></span>{% endfor %}
+      {% for brand in ticker_brands %}<a href="{% url 'brand_storefront' brand.slug %}" tabindex="-1">{{ brand.name }} <span aria-hidden="true">✳</span></a>{% endfor %}
     </div>
   </div>
 </section>
@@ -58,7 +58,7 @@
     </div>
     {% if featured %}
       <div class="product-grid">
-        {% for product in featured %}{% include 'includes/product_card.html' %}{% endfor %}
+        {% for product in featured %}{% include 'includes/product_card.html' with show_sizes=False %}{% endfor %}
       </div>
     {% else %}
       <div class="empty-panel">
@@ -85,9 +85,11 @@
   </div>
 </section>
 
-<section class="container facts-row">
-  <div><span>01 /</span><h3>Независимые бренды</h3><p>На одной площадке — разные имена и эстетики.</p></div>
-  <div><span>02 /</span><h3>Малые тиражи</h3><p>Никакого обязательного массового производства.</p></div>
-  <div><span>03 /</span><h3>Без регистрации</h3><p>Добавляй вещи в корзину и оформляй заказ как гость.</p></div>
+<section class="facts-band">
+  <div class="container facts-row">
+    <div><span>01 /</span><h3>Независимые бренды</h3><p>На одной площадке — разные имена и эстетики.</p></div>
+    <div><span>02 /</span><h3>Малые тиражи</h3><p>Никакого обязательного массового производства.</p></div>
+    <div><span>03 /</span><h3>Без регистрации</h3><p>Добавляй вещи в корзину и оформляй заказ как гость.</p></div>
+  </div>
 </section>
 {% endblock %}

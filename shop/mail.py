@@ -75,7 +75,7 @@ def _deliver_created(order_id):
     notice = getattr(settings, 'ORDER_NOTICE_EMAIL', '').strip()
     if notice:
         deliver_mail(
-            f'NoName: новый заказ №{order.pk}',
+            f'NoName: новый заказ №{order.public_number}',
             'emails/order_admin.txt',
             'emails/order_admin.html',
             {'order': order, 'items': items},
@@ -92,7 +92,7 @@ def _deliver_created(order_id):
             if email and email.strip()
         ))
         deliver_mail(
-            f'NoName: в заказе №{order.pk} есть позиции {brand.name}',
+            f'NoName: в заказе №{order.public_number} есть позиции {brand.name}',
             'emails/order_brand.txt',
             'emails/order_brand.html',
             {'order': order, 'brand': brand, 'items': brand_items, 'subtotal': subtotal},
@@ -114,7 +114,7 @@ def _buyer(order, items, kind):
     if not order.email:
         return
     deliver_mail(
-        f'NoName: заказ №{order.pk} {BUYER_SUBJECT[kind]}',
+        f'NoName: заказ №{order.public_number} {BUYER_SUBJECT[kind]}',
         'emails/order_buyer.txt',
         'emails/order_buyer.html',
         {'order': order, 'items': items, 'kind': kind},

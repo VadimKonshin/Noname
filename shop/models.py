@@ -1,3 +1,4 @@
+import secrets
 from decimal import Decimal
 
 from django.conf import settings
@@ -322,6 +323,18 @@ class DeliveryMethod(models.Model):
         return f'{self.name} — {self.price} ₽'
 
 
+def allocate_public_number(exclude_pk=None):
+    """Eight digits, never the sequential row id, so a guessed «заказ 3» opens nothing."""
+    qs = Order.objects.all()
+    if exclude_pk:
+        qs = qs.exclude(pk=exclude_pk)
+    for _ in range(12):
+        number = f'{secrets.randbelow(90_000_000) + 10_000_000}'
+        if not qs.filter(public_number=number).exists():
+            return number
+    raise ValidationError('Не удалось выдать номер заказа. Повторите оформление.')
+
+
 class Order(models.Model):
     NEW = 'new'
     CONFIRMED = 'confirmed'
@@ -335,6 +348,7 @@ class Order(models.Model):
         (COMPLETED, 'Завершён'), (CANCELLED, 'Отменён'),
     ]
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='shop_orders', verbose_name='Покупатель')
+    public_number = models.CharField('Номер для покупателя', max_length=8, unique=True, editable=False)
     checkout_token = models.CharField('Ключ оформления', max_length=80, unique=True, editable=False)
     full_name = models.CharField('Получатель', max_length=150)
     email = models.EmailField('E-mail')
@@ -363,8 +377,16 @@ class Order(models.Model):
         verbose_name = 'Заказ'
         verbose_name_plural = 'Заказы'
 
+    def save(self, *args, **kwargs):
+        if not self.public_number:
+            self.public_number = allocate_public_number(exclude_pk=self.pk)
+            update_fields = kwargs.get('update_fields')
+            if update_fields is not None:
+                kwargs['update_fields'] = set(update_fields) | {'public_number'}
+        super().save(*args, **kwargs)
+
     def __str__(self):
-        return f'Заказ №{self.pk or "—"}'
+        return f'Заказ №{self.public_number or "—"}'
 
     def get_absolute_url(self):
         return reverse('order_detail', kwargs={'pk': self.pk})
@@ -411,7 +433,8 @@ class BrandMessage(models.Model):
     product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, blank=True, related_name='messages', verbose_name='Вещь')
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='brand_messages', verbose_name='Аккаунт')
     sender_name = models.CharField('Имя', max_length=120)
-    sender_email = models.EmailField('Почта')
+    sender_email = models.EmailField('Почта', blank=True)
+    sender_telegram = models.CharField('Telegram', max_length=64, blank=True)
     body = models.TextField('Сообщение')
     reply_body = models.TextField('Ответ', blank=True)
     replied_at = models.DateTimeField('Ответ отправлен', null=True, blank=True)

@@ -270,10 +270,14 @@ class StoreTests(TestCase):
         self.assertNotContains(detail, 'value="S"')
         self.assertNotContains(detail, 'name="size" value="M" checked')
         self.assertContains(detail, 'ВЫБЕРИ РАЗМЕР')
+        self.assertContains(detail, 'осталось 2')
+        self.assertContains(detail, 'осталось 3')
         catalog = self.client.get(reverse('catalog'))
         self.assertNotContains(catalog, 'data-size-picker')
         self.assertContains(catalog, 'СМОТРЕТЬ')
+        self.assertContains(catalog, 'card-sizes')
         self.assertContains(catalog, reverse('brand_storefront', args=[self.brand.slug]))
+        self.assertNotContains(self.client.get(reverse('home')), 'card-sizes')
 
     def test_inactive_brand_hides_products(self):
         self.brand.is_active = False
@@ -703,6 +707,14 @@ class BrandAccountTests(TestCase):
         self.client.force_login(self.customer)
         self.assertEqual(self.client.get(reverse('brand_edit')).status_code, 403)
 
+    def test_collaboration_page_hides_contacts_until_hover(self):
+        response = self.client.get(reverse('info_collaboration'))
+        self.assertContains(response, 'Если хотите присоединиться к команде NoName')
+        self.assertContains(response, 'mailto:vdmkonshin@gmail.com')
+        self.assertContains(response, 'tg://resolve?domain=vadimKonshin')
+        self.assertContains(response, 'collab-void')
+        self.assertContains(self.client.get(reverse('home')), reverse('info_collaboration'))
+
     def test_customer_message_stays_with_own_brand(self):
         self.customer.email = 'buyer@example.com'
         self.customer.save(update_fields=['email'])
@@ -754,6 +766,24 @@ class BrandAccountTests(TestCase):
             'sender_email': 'guest@example.com',
             'body': 'коротко',
         }).status_code, 200)
+        telegram_only = self.client.post(reverse('brand_message', args=[self.brand.slug]), {
+            'sender_name': 'Гость',
+            'sender_telegram': 'https://t.me/vadimKonshin',
+            'body': 'Можно написать в Telegram вместо почты?',
+        })
+        self.assertRedirects(telegram_only, reverse('brand_storefront', args=[self.brand.slug]))
+        note = BrandMessage.objects.get(sender_telegram='@vadimKonshin')
+        self.assertEqual(note.sender_email, '')
+        self.client.force_login(self.manager_user)
+        detail = self.client.get(reverse('brand_message_detail', args=[note.pk]))
+        self.assertContains(detail, '@vadimKonshin')
+        self.assertNotContains(detail, 'Отправить ответ')
+        neither = self.client.post(reverse('brand_message', args=[self.brand.slug]), {
+            'sender_name': 'Гость',
+            'body': 'Ни почты, ни Telegram здесь нет вообще.',
+        })
+        self.assertEqual(neither.status_code, 200)
+        self.assertContains(neither, 'почту или Telegram')
         self.brand.is_active = False
         self.brand.save(update_fields=['is_active'])
         self.assertEqual(self.client.get(reverse('brand_message', args=[self.brand.slug])).status_code, 404)

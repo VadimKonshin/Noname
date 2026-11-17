@@ -4,7 +4,7 @@
 <section class="container commerce-page">
   <div class="eyebrow"><span class="tiny-dot"></span> ЗАКАЗ</div>
   <h1 class="commerce-heading">СТАТУС<span class="heading-period">.</span></h1>
-  <p class="page-lead">Номер и телефон из оформления. Чужой телефон ничего не откроет. Имя, почта и адрес здесь не показываются.</p>
+  <p class="page-lead">Восьмизначный номер и телефон из оформления. Чужой телефон ничего не откроет. Имя, почта и адрес здесь не показываются.</p>
 
   {% if outcome == 'limited' %}
     <div class="form-section">
@@ -18,7 +18,7 @@
     </div>
   {% elif outcome == 'found' %}
     <div class="form-section">
-      <h2>Заказ №{{ order.pk }}</h2>
+      <h2>Заказ №{{ order.public_number }}</h2>
       <p>Статус: <span class="status-pill status-{{ order.status }}">{{ order.get_status_display }}</span></p>
       {% for item in order.items.all %}
         <div class="order-line">

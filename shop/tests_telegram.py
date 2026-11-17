@@ -252,14 +252,14 @@ class TelegramTests(TestCase):
             quantity=1, unit_price=Decimal('3000'), line_total=Decimal('3000'),
         )
         with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
-            handle_update({'message': {'text': f'{order.pk} +79990000000', 'chat': {'id': 51, 'type': 'private'}}})
+            handle_update({'message': {'text': f'{order.public_number} +79990000000', 'chat': {'id': 51, 'type': 'private'}}})
         hidden = sent_payload(urlopen.call_args.args[0])['text']
         self.assertIn('не найден', hidden)
         self.assertNotIn('Секретное имя', hidden)
         order.refresh_from_db()
         self.assertEqual(order.buyer_telegram_chat_id, '')
         with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
-            handle_update({'message': {'text': f'{order.pk} 89991234567', 'chat': {'id': 50, 'type': 'private'}}})
+            handle_update({'message': {'text': f'{order.public_number} 89991234567', 'chat': {'id': 50, 'type': 'private'}}})
         text = sent_payload(urlopen.call_args.args[0])['text']
         self.assertIn('Отправлен', text)
         self.assertIn('MOON / Черная футболка', text)
@@ -268,7 +268,7 @@ class TelegramTests(TestCase):
         order.refresh_from_db()
         self.assertEqual(order.buyer_telegram_chat_id, '50')
         with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
-            handle_update({'message': {'text': f'{order.pk} 89991234567', 'chat': {'id': 52, 'type': 'private'}}})
+            handle_update({'message': {'text': f'{order.public_number} 89991234567', 'chat': {'id': 52, 'type': 'private'}}})
         kept = sent_payload(urlopen.call_args.args[0])['text']
         self.assertIn('Отправлен', kept)
         self.assertIn('первым проверил', kept)
@@ -276,7 +276,7 @@ class TelegramTests(TestCase):
         order.refresh_from_db()
         self.assertEqual(order.buyer_telegram_chat_id, '50')
         with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
-            handle_update({'message': {'text': f'{order.pk} +79990000000', 'chat': {'id': 51, 'type': 'private'}}})
+            handle_update({'message': {'text': f'{order.public_number} +79990000000', 'chat': {'id': 51, 'type': 'private'}}})
         order.refresh_from_db()
         self.assertEqual(order.buyer_telegram_chat_id, '50')
 
@@ -289,7 +289,7 @@ class TelegramTests(TestCase):
             tracking_number='RA123456789RU',
         )
         with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
-            handle_update({'message': {'text': f'{order.pk} +79991234567', 'chat': {'id': 50, 'type': 'private'}}})
+            handle_update({'message': {'text': f'{order.public_number} +79991234567', 'chat': {'id': 50, 'type': 'private'}}})
         text = sent_payload(urlopen.call_args.args[0])['text']
         self.assertIn('Трек: RA123456789RU', text)
         self.assertNotIn('Секретное имя', text)
@@ -391,19 +391,19 @@ class TelegramTests(TestCase):
                 with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
                     handle_update({
                         'message': {
-                            'text': f'{700000 + offset} {phone}',
+                            'text': f'{17000000 + offset} {phone}',
                             'chat': {'id': 9000 + offset, 'type': 'private'},
                         },
                     })
                 self.assertIn('не найден', sent_payload(urlopen.call_args.args[0])['text'])
             with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
                 handle_update({
-                    'message': {'text': f'700099 {phone}', 'chat': {'id': 9099, 'type': 'private'}},
+                    'message': {'text': f'17000099 {phone}', 'chat': {'id': 9099, 'type': 'private'}},
                 })
             self.assertIn('Слишком много', sent_payload(urlopen.call_args.args[0])['text'])
         with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
             handle_update({
-                'message': {'text': '700100 +70001110002', 'chat': {'id': 9100, 'type': 'private'}},
+                'message': {'text': '17000100 +70001110002', 'chat': {'id': 9100, 'type': 'private'}},
             })
         self.assertIn('не найден', sent_payload(urlopen.call_args.args[0])['text'])
 
@@ -414,14 +414,14 @@ class TelegramTests(TestCase):
                 with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
                     handle_update({
                         'message': {
-                            'text': f'{710000 + offset} +7000222000{offset}',
+                            'text': f'{17100000 + offset} +7000222000{offset}',
                             'chat': {'id': 7200, 'type': 'private'},
                         },
                     })
                 self.assertIn('не найден', sent_payload(urlopen.call_args.args[0])['text'])
             with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
                 handle_update({
-                    'message': {'text': '710099 +70002220009', 'chat': {'id': 7200, 'type': 'private'}},
+                    'message': {'text': '17100099 +70002220009', 'chat': {'id': 7200, 'type': 'private'}},
                 })
             self.assertIn('Слишком много', sent_payload(urlopen.call_args.args[0])['text'])
 

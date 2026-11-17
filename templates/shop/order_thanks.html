@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block title %}Спасибо за заказ — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page thanks-page">
+  <div class="thanks-burst" aria-hidden="true">
+    <i>✳</i><i>✳</i><i>✳</i><i>✳</i><i>✳</i><i>✳</i>
+  </div>
+  <div class="eyebrow"><span class="tiny-dot"></span> ЗАКАЗ ПРИНЯТ</div>
+  <h1 class="commerce-heading thanks-mark">Благодарим вас за заказ, NoName<span class="heading-period">.</span></h1>
+  <p class="thanks-number">{{ order.public_number }}</p>
+  <p class="page-lead thanks-lead">
+    Оплата онлайн не списывалась. Сохраните номер: он из восьми цифр, и вместе с телефоном открывает статус на сайте
+    {% if telegram_bot_url %}и в <a href="{{ telegram_bot_url }}">боте</a>{% endif %}.
+  </p>
+  <p class="thanks-actions">
+    <a class="btn btn-dark" href="{% url 'order_lookup' %}">Проверить статус <span>↗</span></a>
+    <a class="btn btn-quiet" href="{% url 'catalog' %}">В каталог</a>
+  </p>
+</section>
+{% endblock %}

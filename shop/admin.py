@@ -78,11 +78,11 @@ class BrandAdmin(admin.ModelAdmin):
 
 @admin.register(BrandMessage)
 class BrandMessageAdmin(admin.ModelAdmin):
-    list_display = ('created_at', 'brand', 'sender_name', 'sender_email', 'product', 'read_at')
+    list_display = ('created_at', 'brand', 'sender_name', 'sender_email', 'sender_telegram', 'product', 'read_at')
     list_filter = ('brand',)
-    search_fields = ('sender_name', 'sender_email', 'body', 'brand__name')
+    search_fields = ('sender_name', 'sender_email', 'sender_telegram', 'body', 'brand__name')
     readonly_fields = (
-        'brand', 'product', 'user', 'sender_name', 'sender_email', 'body', 'created_at', 'read_at',
+        'brand', 'product', 'user', 'sender_name', 'sender_email', 'sender_telegram', 'body', 'created_at', 'read_at',
         'reply_body', 'replied_at', 'replied_by',
     )
     list_select_related = ('brand', 'product')
@@ -226,17 +226,17 @@ class OrderItemInline(admin.TabularInline):
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
-    list_display = ('id', 'created_at', 'full_name', 'phone', 'delivery_name', 'total', 'status', 'open_store_order')
+    list_display = ('public_number', 'id', 'created_at', 'full_name', 'phone', 'delivery_name', 'total', 'status', 'open_store_order')
     list_filter = ('status', 'created_at', 'delivery_method', 'items__is_preorder')
-    search_fields = ('full_name', 'email', 'phone')
+    search_fields = ('public_number', 'full_name', 'email', 'phone')
     list_select_related = ('user', 'delivery_method')
     readonly_fields = (
-        'user', 'checkout_token', 'full_name', 'email', 'phone', 'city', 'address',
+        'public_number', 'user', 'checkout_token', 'full_name', 'email', 'phone', 'city', 'address',
         'postal_code', 'comment', 'delivery_method', 'delivery_name', 'delivery_eta', 'pickup_address',
         'delivery_point_code', 'delivery_point_address', 'delivery_price',
         'subtotal', 'total', 'created_at', 'updated_at',
     )
-    fields = ('status', 'tracking_number', 'created_at', 'updated_at', 'full_name', 'phone', 'user', 'delivery_method', 'delivery_name', 'delivery_eta', 'pickup_address', 'delivery_point_code', 'delivery_point_address', 'city', 'address', 'postal_code', 'comment', 'subtotal', 'delivery_price', 'total', 'checkout_token')
+    fields = ('public_number', 'status', 'tracking_number', 'created_at', 'updated_at', 'full_name', 'phone', 'user', 'delivery_method', 'delivery_name', 'delivery_eta', 'pickup_address', 'delivery_point_code', 'delivery_point_address', 'city', 'address', 'postal_code', 'comment', 'subtotal', 'delivery_price', 'total', 'checkout_token')
     inlines = [OrderItemInline, OrderReadInline]
     form = OrderStatusForm
 

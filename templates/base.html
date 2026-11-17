@@ -9,8 +9,8 @@
   <title>{% block title %}NoName — независимые бренды{% endblock %}</title>
   <link rel="icon" href="{% static 'img/favicon.svg' %}" type="image/svg+xml">
   <link rel="stylesheet" href="{% static 'css/site.css' %}">
-  <link rel="stylesheet" href="{% static 'css/noname.css' %}?v=4">
-  <script src="{% static 'js/site.js' %}" defer></script>
+  <link rel="stylesheet" href="{% static 'css/noname.css' %}?v=12">
+  <script src="{% static 'js/site.js' %}?v=5" defer></script>
 </head>
 <body>
   <div class="announcement">
@@ -76,6 +76,7 @@
           <a href="{% url 'info_delivery' %}">Доставка</a>
           <a href="{% url 'info_returns' %}">Возврат</a>
           <a href="{% url 'info_contacts' %}">Контакты</a>
+          <a href="{% url 'info_collaboration' %}">О сотрудничестве</a>
           <a href="{% url 'order_lookup' %}">Статус заказа</a>
           {% if telegram_news_url %}<a href="{{ telegram_news_url }}">Группа для покупателей</a>{% endif %}
         </div>

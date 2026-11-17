@@ -35,20 +35,40 @@
   document.querySelectorAll('[data-size-picker]').forEach(form => {
     const button = form.querySelector('button[type="submit"]');
     const status = form.querySelector('[data-size-status]');
-    const orderType = form.querySelector('input[name="order_type"]');
+    const orderTypes = [...form.querySelectorAll('input[name="order_type"]')];
+    const chosenMode = () => {
+      const checked = orderTypes.find(input => input.checked && !input.disabled);
+      if (checked) return checked.value;
+      const hidden = orderTypes.find(input => input.type === 'hidden');
+      return hidden ? hidden.value : 'stock';
+    };
     const update = () => {
+      const explicit = orderTypes.some(input => input.type === 'radio');
+      const preorderMode = chosenMode() === 'preorder';
+      form.querySelectorAll('input[name="size"][data-preorder-size]').forEach(input => {
+        const stock = Number(input.dataset.stock || '0');
+        input.disabled = explicit && !preorderMode && stock <= 0;
+        if (input.disabled) input.checked = false;
+      });
       const chosen = form.querySelector('input[name="size"]:checked:not(:disabled)');
-      const preorder = chosen?.dataset.preorder === '1';
-      if (orderType) orderType.value = preorder ? 'preorder' : 'stock';
+      const preorder = explicit ? preorderMode : chosen?.dataset.preorder === '1';
+      const hidden = orderTypes.find(input => input.type === 'hidden');
+      if (hidden) hidden.value = preorder ? 'preorder' : 'stock';
+      const qty = form.querySelector('input[name="quantity"]');
+      if (qty) {
+        const stockLeft = Number(chosen?.dataset.stock || '10');
+        qty.max = preorder || !chosen ? '10' : String(Math.max(1, Math.min(10, stockLeft)));
+        if (Number(qty.value) > Number(qty.max)) qty.value = qty.max;
+      }
       if (button) {
         button.disabled = !chosen;
         const action = preorder ? 'ПОД ЗАКАЗ' : 'ДОБАВИТЬ';
         button.firstChild.textContent = chosen ? `${action} / ${chosen.value} ` : 'ВЫБЕРИ РАЗМЕР ';
       }
       if (status) {
-        status.textContent = chosen
-          ? (preorder ? `Размер ${chosen.value}: изготовление под заказ` : `Выбран размер ${chosen.value}`)
-          : 'Размер пока не выбран';
+        if (!chosen) status.textContent = 'Размер пока не выбран';
+        else if (preorder) status.textContent = `Размер ${chosen.value}: предзаказ, склад пока не списывается`;
+        else status.textContent = `Размер ${chosen.value}: в наличии ${chosen.dataset.stock} шт.`;
       }
     };
     form.addEventListener('change', update);

@@ -38,6 +38,10 @@ def public_products():
     return Product.objects.public()
 
 
+def collaboration(request):
+    return render(request, 'shop/collaboration.html')
+
+
 def info_page(request, page):
     if page not in {'delivery', 'returns', 'contacts'}:
         raise Http404
@@ -101,13 +105,14 @@ def brand_message(request, slug):
             user=user,
             sender_name=form.cleaned_data['sender_name'],
             sender_email=user.email.lower() if lock_email else form.cleaned_data['sender_email'],
+            sender_telegram=form.cleaned_data['sender_telegram'],
             body=form.cleaned_data['body'],
         )
         notify_brand_contact(note.pk)
-        messages.success(
-            request,
-            'Сообщение у менеджера бренда. Ответ придёт на указанную почту.',
-        )
+        if note.sender_email:
+            messages.success(request, 'Сообщение у менеджера бренда. Если оставили почту, ответ придёт на неё.')
+        else:
+            messages.success(request, 'Сообщение у менеджера бренда. Ответ придёт в Telegram, который вы написали.')
         return redirect('brand_storefront', slug=brand.slug)
     return render(request, 'shop/brand_message.html', {'brand': brand, 'product': product, 'form': form})
 
@@ -137,7 +142,9 @@ def brand_message_detail(request, pk):
         note.read_at = timezone.now()
         note.save(update_fields=['read_at'])
     form = BrandReplyForm(request.POST if request.method == 'POST' and note.replied_at is None else None)
-    if request.method == 'POST' and note.replied_at is None and form.is_valid():
+    if request.method == 'POST' and note.replied_at is None and not note.sender_email:
+        messages.error(request, 'Почты в сообщении нет. Напишите покупателю в Telegram, который он оставил.')
+    elif request.method == 'POST' and note.replied_at is None and form.is_valid():
         reply = form.cleaned_data['reply']
         reply_to = [request.user.email] if request.user.email else None
         try:

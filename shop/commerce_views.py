@@ -1,5 +1,6 @@
 """Cart, checkout, order history and staff analytics."""
 import secrets
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from django.contrib import messages
@@ -8,7 +9,8 @@ from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models import Count, F, Prefetch, Sum
-from django.db.models.functions import Coalesce
+from django.db.models.functions import Coalesce, TruncDate
+from django.utils import timezone
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
@@ -296,6 +298,7 @@ def checkout(request):
                                     f'Предзаказ «{item["product"].title}», размер {item["size"]}, уже набран. Уменьшите количество.'
                                 )
                     for item in verified_cart['lines']:
+                        # Предзаказ не списывает склад, пока менеджер его не согласует.
                         if item['is_preorder']:
                             continue
                         reserved = ProductVariant.objects.filter(
@@ -346,7 +349,7 @@ def checkout(request):
                 request.session.pop('checkout_token', None)
                 request.session.pop(CDEK_QUOTE_SESSION, None)
                 request.session.modified = True
-                messages.success(request, f'Заказ №{order.pk} принят. Оплата онлайн не списывалась: мы свяжемся по телефону или почте, чтобы подтвердить его. Сохраните номер.')
+                messages.success(request, f'Заказ №{order.public_number} принят. Оплата онлайн не списывалась: мы свяжемся по телефону или почте, чтобы подтвердить его. Сохраните номер.')
                 return redirect(order.get_absolute_url())
 
     return _checkout_response(request, form, current_cart, method, token)
@@ -381,6 +384,43 @@ def attach_brand_items(orders, brand):
     return orders.prefetch_related(Prefetch('items', queryset=items, to_attr='brand_items'))
 
 
+def purchase_bars(active_items, days=14):
+    """Daily totals for this brand only. Heights are SVG units, not inline CSS."""
+    today = timezone.localdate()
+    start = today - timedelta(days=days - 1)
+    totals = {}
+    rows = (
+        active_items.filter(order__created_at__date__gte=start)
+        .annotate(day=TruncDate('order__created_at'))
+        .values('day')
+        .annotate(amount=Sum('line_total'))
+    )
+    for row in rows:
+        day = row['day']
+        if isinstance(day, datetime):
+            day = day.date()
+        elif isinstance(day, str):
+            day = date.fromisoformat(day[:10])
+        totals[day] = row['amount'] or Decimal('0')
+    peak = max(totals.values(), default=Decimal('0'))
+    bars = []
+    slot = 44
+    for index in range(days):
+        day = start + timedelta(days=index)
+        amount = totals.get(day, Decimal('0'))
+        height = 0 if not peak or amount == 0 else max(6, int((amount / peak) * 120))
+        x = 8 + index * slot
+        bars.append({
+            'x': x,
+            'y': 148 - height,
+            'h': height,
+            'label': day.strftime('%d'),
+            'label_x': x + 2,
+            'amount': amount,
+        })
+    return bars
+
+
 def set_brand_totals(orders):
     for order in orders:
         order.brand_total = sum((item.line_total for item in order.brand_items), Decimal('0.00'))
@@ -399,6 +439,9 @@ def order_detail(request, pk):
     brand_order_view = can_view_brand_order and not (can_view_any_order or owns_order or owns_guest_order)
     if not (can_view_any_order or owns_order or owns_guest_order or can_view_brand_order):
         raise Http404('Заказ не найден.')
+    buyer_view = (owns_order or owns_guest_order) and not can_view_any_order and not can_view_brand_order
+    if buyer_view:
+        return render(request, 'shop/order_thanks.html', {'order': order})
     can_change_order = request.user.has_perm('shop.change_order') and not brand_order_view
     if request.user.is_authenticated and not owns_order and not owns_guest_order and (can_view_any_order or can_view_brand_order):
         OrderRead.objects.update_or_create(order=order, user=request.user)
@@ -502,6 +545,7 @@ def brand_dashboard(request):
         'recent_orders': set_brand_totals(recent),
         'cancelled_count': status_counts.get(Order.CANCELLED, 0),
         'new_count': status_counts.get(Order.NEW, 0),
+        'purchase_bars': purchase_bars(active_items),
     })
 
 
@@ -565,7 +609,7 @@ def change_order_status(request, pk):
         except ValidationError as exc:
             messages.error(request, exc.message)
         else:
-            messages.success(request, f'Статус заказа №{order.pk} обновлён.')
+            messages.success(request, f'Статус заказа №{order.public_number} обновлён.')
     else:
         messages.error(request, ' '.join(error for errors in form.errors.values() for error in errors))
     return redirect(order.get_absolute_url())

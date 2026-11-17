@@ -141,7 +141,9 @@ def bind_manager(chat_id, code):
     if not code or len(str(code)) > 200:
         return _bind_rejected()
     with transaction.atomic():
-        manager = (BrandManager.objects.select_for_update()
+        # Lock only this row. Brand is optional, and PostgreSQL rejects
+        # FOR UPDATE on the nullable side of that outer join.
+        manager = (BrandManager.objects.select_for_update(of=('self',))
                    .select_related('brand')
                    .filter(telegram_bind_hash=_digest(code), telegram_bind_expires__gt=timezone.now())
                    .first())
@@ -165,17 +167,14 @@ def bind_manager(chat_id, code):
     return f'Готово. Заказы и сообщения бренда «{brand_name}» будут приходить в этот чат.'
 
 
-def order_for_phone(order_id, phone):
-    """Order that matches the number and the last 10 phone digits. Does not bind a chat."""
+def order_for_phone(order_number, phone):
+    """Order that matches the public 8-digit number and the last 10 phone digits. Does not bind a chat."""
     from .models import Order
 
-    try:
-        order_id = int(order_id)
-    except (TypeError, ValueError):
+    number = str(order_number or '').strip()
+    if not re.fullmatch(r'[1-9]\d{7}', number):
         return None
-    if order_id < 1 or order_id >= 10 ** 10:
-        return None
-    order = Order.objects.prefetch_related('items').filter(pk=order_id).first()
+    order = Order.objects.prefetch_related('items').filter(public_number=number).first()
     if order is None or not _phones_match(order.phone, phone):
         return None
     return order
@@ -195,7 +194,8 @@ def order_status(chat_id, order_id, phone):
 
     if _status_limited(chat_id, phone):
         return 'Слишком много проверок. Попробуйте через час.'
-    order = Order.objects.prefetch_related('items').filter(pk=order_id).first()
+    number = str(order_id or '').strip()
+    order = Order.objects.prefetch_related('items').filter(public_number=number).first()
     if order is None or not _phones_match(order.phone, phone):
         return 'Заказ с таким номером и телефоном не найден.'
     chat = str(chat_id)
@@ -213,7 +213,7 @@ def order_status(chat_id, order_id, phone):
     else:
         footer = 'Уведомления об отправке и отмене остаются в чате, который первым проверил этот заказ.'
     lines = [
-        f'<b>Заказ №{order.pk}</b>',
+        f'<b>Заказ №{order.public_number}</b>',
         f'Статус: {_html(order.get_status_display())}',
         '',
     ]
@@ -376,7 +376,7 @@ def _manager_chats(brand):
 
 def _brand_order_text(order, brand, items):
     lines = [
-        f'<b>Новый заказ №{order.pk}</b>',
+        f'<b>Новый заказ №{order.public_number}</b>',
         f'Бренд: {_html(brand.name)}',
         f'Статус: {_html(order.get_status_display())}',
         '',
@@ -417,7 +417,7 @@ def _brand_order_text(order, brand, items):
 
 def _buyer_status_text(order):
     lines = [
-        f'<b>Заказ №{order.pk}</b>',
+        f'<b>Заказ №{order.public_number}</b>',
         f'Статус: {_html(order.get_status_display())}',
         '',
     ]
@@ -432,7 +432,7 @@ def _buyer_status_text(order):
 
 def _brand_status_text(order, brand, items):
     lines = [
-        f'<b>Статус заказа №{order.pk} изменился</b>',
+        f'<b>Статус заказа №{order.public_number} изменился</b>',
         f'Бренд: {_html(brand.name)}',
         f'Статус: {_html(order.get_status_display())}',
     ]
@@ -461,7 +461,8 @@ def _contact_text(note):
         f'Бренд: {_html(note.brand.name)}',
         f'Вещь: {_html(product)}',
         f'Имя: {_html(note.sender_name)}',
-        f'Почта: {_html(note.sender_email)}',
+        f'Почта: {_html(note.sender_email) or "не оставлена"}',
+        f'Telegram: {_html(note.sender_telegram) or "не оставлен"}',
         '',
         _html(note.body),
         '',
@@ -474,18 +475,18 @@ def _help_text():
     return (
         'Менеджер бренда подключает уведомления ссылкой из кабинета. '
         'Сюда приходят только заказы и сообщения его бренда.\n\n'
-        'Покупатель может проверить статус. Напишите номер заказа и телефон из заказа:\n'
-        '15 +79991234567\n\n'
+        'Покупатель может проверить статус. Напишите 8-значный номер заказа и телефон из заказа:\n'
+        '48291037 +79991234567\n\n'
         'После первой успешной проверки бот напишет в этот чат, когда заказ отправят или отменят.'
     )
 
 
 def _status_query(text):
     cleaned = re.sub(r'^/status(?:@\w+)?\s*', '', text.strip(), count=1, flags=re.I)
-    match = re.fullmatch(r'(\d{1,10})\s+(\+?\d[\d\s()\-]{8,40})', cleaned)
+    match = re.fullmatch(r'([1-9]\d{7})\s+(\+?\d[\d\s()\-]{8,40})', cleaned)
     if not match:
         return None
-    return int(match.group(1)), match.group(2)
+    return match.group(1), match.group(2)
 
 
 def _phones_match(stored, given):

@@ -71,14 +71,23 @@ class OrderStatusForm(forms.ModelForm):
 
 
 class OrderLookupForm(forms.Form):
-    order_id = forms.IntegerField(
-        label='Номер заказа', min_value=1, max_value=10**10 - 1,
-        widget=forms.NumberInput(attrs={'min': 1, 'inputmode': 'numeric', 'autocomplete': 'off'}),
+    order_id = forms.CharField(
+        label='Номер заказа', max_length=8,
+        widget=forms.TextInput(attrs={
+            'inputmode': 'numeric', 'autocomplete': 'off', 'maxlength': '8',
+            'placeholder': '8 цифр',
+        }),
     )
     phone = forms.CharField(
         label='Телефон из заказа', max_length=40,
         widget=forms.TextInput(attrs={'autocomplete': 'tel', 'inputmode': 'tel'}),
     )
+
+    def clean_order_id(self):
+        raw = re.sub(r'\s', '', self.cleaned_data['order_id'])
+        if not re.fullmatch(r'[1-9]\d{7}', raw):
+            raise forms.ValidationError('Номер заказа — 8 цифр. Его дают после оформления, это не порядковый номер.')
+        return raw
 
     def clean_phone(self):
         value = self.cleaned_data['phone'].strip()

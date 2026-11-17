@@ -1,6 +1,6 @@
 {% extends 'emails/base.html' %}
 {% block body %}
-<p><strong>В заказе №{{ order.pk }} есть позиции бренда {{ brand.name }}.</strong></p>
+<p><strong>В заказе №{{ order.public_number }} есть позиции бренда {{ brand.name }}.</strong></p>
 <p>Получатель: {{ order.full_name }}<br>Почта: {{ order.email }}<br>Телефон: {{ order.phone }}<br>Доставка: {{ order.delivery_name }}</p>
 <ul>
   {% for item in items %}

@@ -1,9 +1,9 @@
 {% extends 'base.html' %}
-{% block title %}Заказ №{{ order.pk }} — NoName{% endblock %}
+{% block title %}Заказ №{{ order.public_number }} — NoName{% endblock %}
 {% block content %}
 <section class="container commerce-page">
   <div class="eyebrow"><span class="tiny-dot"></span> ЗАКАЗ / {{ order.created_at|date:'d.m.Y H:i' }}</div>
-  <h1 class="commerce-heading">ЗАКАЗ #{{ order.pk }}<span class="heading-period">.</span></h1>
+  <h1 class="commerce-heading">ЗАКАЗ #{{ order.public_number }}<span class="heading-period">.</span></h1>
   <p class="page-lead">
     Статус: <span class="status-pill status-{{ order.status }}">{{ order.get_status_display }}</span>.
     Заказ принят, оплата онлайн не списывалась. Сохраните номер: магазин свяжется по телефону или почте, чтобы подтвердить его.
@@ -75,7 +75,7 @@
 
     <aside class="summary-box">
       <div class="eyebrow"><span class="tiny-dot"></span> ИТОГО</div>
-      <h2>ЗАКАЗ #{{ order.pk }}</h2>
+      <h2>ЗАКАЗ #{{ order.public_number }}</h2>
       {% if brand_order_view %}
         <div class="summary-total"><span>Товары вашего бренда</span><strong>{{ brand_subtotal|floatformat:0 }} ₽</strong></div>
         <p class="summary-note">Показаны только позиции вашего бренда. Доставка и товары других брендов скрыты. Статус общего заказа изменяет администратор.</p>

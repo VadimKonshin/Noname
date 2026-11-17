@@ -132,7 +132,7 @@ def get_cart(request):
         if not variant:
             continue
         if is_preorder:
-            if not product.allow_preorder or variant.stock_quantity != 0:
+            if not product.allow_preorder:
                 continue
             room = preorder_room(product.pk, size, preorder_taken)
             if room <= 0:
@@ -180,7 +180,7 @@ def put(request, product, size, qty, is_preorder=False):
     if variant is None:
         return False
     if is_preorder:
-        if not product.allow_preorder or variant.stock_quantity != 0:
+        if not product.allow_preorder:
             return False
     elif variant.stock_quantity <= 0:
         return False

@@ -4,7 +4,7 @@
 <section class="container commerce-page">
   <div class="eyebrow"><span class="tiny-dot"></span> КАБИНЕТ / {{ brand.name }}</div>
   <h1 class="commerce-heading">{{ note.sender_name }}<span class="heading-period">.</span></h1>
-  <p class="page-lead">{{ note.created_at|date:'d.m.Y H:i' }} · {{ note.sender_email }}</p>
+  <p class="page-lead">{{ note.created_at|date:'d.m.Y H:i' }}{% if note.sender_email %} · {{ note.sender_email }}{% endif %}{% if note.sender_telegram %} · {{ note.sender_telegram }}{% endif %}</p>
   {% include 'includes/brand_nav.html' with active_page='messages' %}
   <div class="form-section">
     {% if note.product %}
@@ -12,9 +12,9 @@
     {% endif %}
     <p class="message-body">{{ note.body|linebreaksbr }}</p>
     {% if note.replied_at %}
-      <p class="form-hint">Ответ отправлен {{ note.replied_at|date:'d.m.Y H:i' }} на {{ note.sender_email }}.</p>
+      <p class="form-hint">Ответ отправлен {{ note.replied_at|date:'d.m.Y H:i' }}{% if note.sender_email %} на {{ note.sender_email }}{% endif %}.</p>
       <p class="message-body">{{ note.reply_body|linebreaksbr }}</p>
-    {% else %}
+    {% elif note.sender_email %}
       <form method="post" class="checkout-form">
         {% csrf_token %}
         <div class="form-field">
@@ -24,7 +24,9 @@
         </div>
         <button type="submit" class="btn btn-dark">Отправить ответ</button>
       </form>
-      <p class="form-hint">Письмо уйдёт на {{ note.sender_email }}. В Telegram покупателя оно не дублируется.</p>
+      <p class="form-hint">Письмо уйдёт на {{ note.sender_email }}.{% if note.sender_telegram %} Telegram {{ note.sender_telegram }} в письмо не подставляется.{% else %} В Telegram покупателя оно не дублируется.{% endif %}</p>
+    {% else %}
+      <p class="form-hint">Почты нет. Напишите покупателю в {{ note.sender_telegram }}. Сайт этот чат не открывает и ответ туда не отправляет.</p>
     {% endif %}
   </div>
   <a class="back-catalog" href="{% url 'brand_messages' %}">← К сообщениям</a>

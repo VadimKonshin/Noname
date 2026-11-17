@@ -4,7 +4,7 @@
 <section class="container commerce-page">
   <div class="eyebrow"><span class="tiny-dot"></span> КАБИНЕТ / {{ brand.name }}</div>
   <h1 class="commerce-heading">СООБЩЕНИЯ<span class="heading-period">.</span></h1>
-  <p class="page-lead">Письма покупателям с сайта не уходят. Ответьте сами на почту из сообщения.</p>
+  <p class="page-lead">Если покупатель оставил почту, ответ уходит письмом. Если только Telegram — напишите ему туда сами.</p>
   {% include 'includes/brand_nav.html' with active_page='messages' %}
   <div class="table-scroll">
     <table class="store-table">
@@ -17,7 +17,7 @@
             <td>{{ note.created_at|date:'d.m.Y H:i' }}</td>
             <td>
               <strong>{{ note.sender_name }}</strong>
-              <small class="table-muted">{{ note.sender_email }}</small>
+              <small class="table-muted">{% if note.sender_email %}{{ note.sender_email }}{% endif %}{% if note.sender_telegram %} {{ note.sender_telegram }}{% endif %}</small>
             </td>
             <td>{% if note.product %}{{ note.product.title }}{% else %}—{% endif %}</td>
             <td>{{ note.body|truncatechars:80 }}</td>

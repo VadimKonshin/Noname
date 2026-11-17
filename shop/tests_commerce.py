@@ -144,10 +144,17 @@ class CommerceTests(TestCase):
         self._add(quantity=2)
         self.assertEqual(self.client.get(reverse('cart')).context['cart']['count'], 0)
 
-    def test_preorder_cannot_be_forced_for_stock_item(self):
+    def test_preorder_is_not_limited_by_remaining_stock(self):
         self.shirt.allow_preorder = True
         self.shirt.save(update_fields=['allow_preorder'])
-        self._add(order_type='preorder')
+        ProductVariant.objects.filter(product=self.shirt, size='M').update(stock_quantity=2)
+        self._add(quantity=4, order_type='preorder')
+        cart = self.client.get(reverse('cart')).context['cart']
+        self.assertEqual(cart['count'], 4)
+        self.assertTrue(cart['lines'][0]['is_preorder'])
+        self.assertEqual(ProductVariant.objects.get(product=self.shirt, size='M').stock_quantity, 2)
+        self.client.post(reverse('cart_update'), {'product_id': self.shirt.pk, 'size': 'M', 'quantity': 0, 'order_type': 'preorder'})
+        self._add(quantity=4, order_type='stock')
         self.assertEqual(self.client.get(reverse('cart')).context['cart']['count'], 0)
 
     def test_preorder_requires_manager_permission(self):
@@ -215,6 +222,8 @@ class CommerceTests(TestCase):
         self.assertIsNone(order.user)
         self.assertEqual(order.items.get().size, 'L')
         self.assertEqual(order.items.get().brand_name, 'ПУСТОТА')
+        self.assertRegex(order.public_number, r'^[1-9]\d{7}$')
+        self.assertNotEqual(order.public_number, str(order.pk))
         self.assertEqual(order.total, Decimal('6350.00'))
         self.assertEqual(self.client.get(order.get_absolute_url()).status_code, 200)
         self.client.cookies.clear()
@@ -389,14 +398,18 @@ class CommerceTests(TestCase):
         order.tracking_number = 'RA123456789RU'
         order.save(update_fields=['tracking_number'])
         self.client.logout()
-        missing = self.client.post(reverse('order_lookup'), {'order_id': order.pk, 'phone': '+79990000000'})
-        unknown = self.client.post(reverse('order_lookup'), {'order_id': 999999, 'phone': '+79991234567'})
-        found = self.client.post(reverse('order_lookup'), {'order_id': order.pk, 'phone': '8 999 123-45-67'})
-        for page in (missing, unknown):
-            self.assertContains(page, 'не найден')
+        missing = self.client.post(reverse('order_lookup'), {'order_id': order.public_number, 'phone': '+79990000000'})
+        unknown_number = '10000000' if order.public_number != '10000000' else '10000001'
+        unknown = self.client.post(reverse('order_lookup'), {'order_id': unknown_number, 'phone': '+79991234567'})
+        sequential = self.client.post(reverse('order_lookup'), {'order_id': order.pk, 'phone': '+79991234567'})
+        found = self.client.post(reverse('order_lookup'), {'order_id': order.public_number, 'phone': '8 999 123-45-67'})
+        for page in (missing, unknown, sequential):
+            self.assertNotContains(page, self.shirt.title)
             self.assertNotContains(page, 'Тестовый покупатель')
             self.assertNotContains(page, 'ул. Тестовая')
             self.assertNotContains(page, 'client@example.org')
+        self.assertContains(missing, 'не найден')
+        self.assertContains(unknown, 'не найден')
         self.assertContains(found, 'Новый')
         self.assertContains(found, self.shirt.title)
         self.assertContains(found, 'RA123456789RU')
@@ -411,8 +424,8 @@ class CommerceTests(TestCase):
         order = self._create_order()
         self.client.logout()
         with patch('shop.telegram.PHONE_STATUS_LIMIT', 1):
-            first = self.client.post(reverse('order_lookup'), {'order_id': order.pk, 'phone': '+79991234567'})
-            second = self.client.post(reverse('order_lookup'), {'order_id': order.pk, 'phone': '+7 (999) 123-45-67'})
+            first = self.client.post(reverse('order_lookup'), {'order_id': order.public_number, 'phone': '+79991234567'})
+            second = self.client.post(reverse('order_lookup'), {'order_id': order.public_number, 'phone': '+7 (999) 123-45-67'})
         self.assertContains(first, self.shirt.title)
         self.assertContains(second, 'Слишком много проверок')
         self.assertNotContains(second, self.shirt.title)
@@ -504,8 +517,11 @@ class CommerceTests(TestCase):
         order = Order.objects.get()
         self.assertEqual(order.delivery_eta, 'в согласованный день')
         self.assertEqual(order.pickup_address, 'ул. Мастерская, 1')
-        self.assertContains(self.client.get(order.get_absolute_url()), 'ул. Мастерская, 1')
-        self.assertContains(self.client.get(order.get_absolute_url()), 'Сохраните номер')
+        thanks = self.client.get(order.get_absolute_url())
+        self.assertContains(thanks, 'Благодарим вас за заказ, NoName')
+        self.assertContains(thanks, order.public_number)
+        self.assertNotContains(thanks, 'ул. Мастерская, 1')
+        self.assertNotContains(thanks, 'status-pill')
 
     def test_checkout_rejects_phone_without_enough_digits(self):
         self._add()
@@ -600,7 +616,9 @@ class CommerceTests(TestCase):
         self.assertEqual(order.delivery_point_code, 'MSK1')
         self.assertIn('Тверская, 1', order.delivery_point_address)
         self.assertEqual(order.delivery_eta, '2–5 дн.')
-        self.assertContains(self.client.get(order.get_absolute_url()), 'MSK1')
+        thanks = self.client.get(order.get_absolute_url())
+        self.assertContains(thanks, 'Благодарим вас за заказ')
+        self.assertNotContains(thanks, 'MSK1')
         self.assertNotIn('cdek-secret-not-for-pages', opener.bodies)
 
     @override_settings(**CDEK_SETTINGS)
@@ -780,6 +798,9 @@ class BrandOrderTests(TestCase):
         self.assertEqual(titles, {'Alpha shirt', 'Alpha second'})
         recent = {order.pk: order.brand_total for order in response.context['recent_orders']}
         self.assertEqual(recent[self.mixed_order.pk], Decimal('2000.00'))
+        self.assertContains(response, 'ПОКУПКИ')
+        self.assertContains(response, 'telegram-actions')
+        self.assertEqual(len(response.context['purchase_bars']), 14)
 
     def test_brand_order_history_and_product_filter(self):
         self.client.force_login(self.manager_user)

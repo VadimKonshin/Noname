@@ -3,6 +3,7 @@
   {% if page == 'delivery' %}Доставка{% elif page == 'returns' %}Возврат{% else %}Контакты{% endif %} — NoName
 {% endblock %}
 {% block content %}
+<div class="quiet-page">
 <section class="container commerce-page">
   {% if page == 'delivery' %}
     <div class="eyebrow"><span class="tiny-dot"></span> ДОСТАВКА</div>
@@ -89,7 +90,7 @@
     </div>
     <div class="form-section">
       <h2>Марка</h2>
-      <p>На странице вещи и на странице бренда есть «Написать». Ответ придёт на почту, которую укажешь. Состав, посадка и размеры, если бренд их заполнил, лежат там же.</p>
+      <p>На странице вещи и на странице бренда есть «Написать». Оставь почту или Telegram. Состав, посадка и размеры, если бренд их заполнил, лежат там же.</p>
     </div>
     <div class="form-section">
       <h2>Площадка</h2>
@@ -98,4 +99,5 @@
   {% endif %}
   <a class="back-catalog" href="{% url 'catalog' %}">← В каталог</a>
 </section>
+</div>
 {% endblock %}

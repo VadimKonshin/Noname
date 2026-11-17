@@ -2,7 +2,9 @@
 {% load shop_images static %}
 {% block title %}Корзина — NoName{% endblock %}
 {% block content %}
+<div class="quiet-page">
 <section class="container commerce-page noname-cart">
+  <span class="page-index">/ 001</span>
   <div class="eyebrow"><span class="tiny-dot"></span> CHECKOUT / 01</div>
   <h1 class="commerce-heading">ТВОЯ КОРЗИНА<span class="heading-period">.</span></h1>
   <p class="page-lead">Один заказ — один бренд и одна доставка. Аккаунт не нужен.</p>
@@ -105,4 +107,5 @@
     </div>
   {% endif %}
 </section>
+</div>
 {% endblock %}
