@@ -143,7 +143,8 @@ a,button {transition:color .18s,background .18s,border-color .18s}
 .form-field small,.form-hint,.publication-note,.summary-note,.checkout-terms,.form-section p {color:#b7b7be}
 .checkout-terms a,.form-section a {color:#e76b60}
 .form-field input:focus,.form-field textarea:focus,.auth-form input:focus {border-color:#de5c51!important}
-.form-errors,.field-error {color:#e4aaaa}
+.form-errors,.field-error,.form-section p.field-error {color:#ffb4b4;margin:8px 0 0;padding:0}
+.form-field.has-error input,.form-field.has-error textarea {border-color:#de5c51!important}
 .check-field {color:#c9c9ce}
 .existing-image span,.cancel-link {color:#a8a8ad}
 .commerce-page {color:#ebebe8}

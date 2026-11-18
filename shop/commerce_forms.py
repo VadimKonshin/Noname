@@ -7,7 +7,10 @@ from .models import Order
 class CheckoutForm(forms.Form):
     full_name = forms.CharField(label='Имя и фамилия', max_length=150)
     email = forms.EmailField(label='E-mail')
-    phone = forms.CharField(label='Контактный телефон', max_length=40)
+    phone = forms.CharField(
+        label='Контактный телефон', max_length=40,
+        widget=forms.TextInput(attrs={'autocomplete': 'tel', 'inputmode': 'tel', 'placeholder': '+7 999 123-45-67'}),
+    )
     city = forms.CharField(label='Город', max_length=120, required=False)
     address = forms.CharField(label='Улица, дом, квартира / пункт выдачи', max_length=250, required=False)
     postal_code = forms.CharField(label='Индекс (если требуется)', max_length=30, required=False)
@@ -20,11 +23,7 @@ class CheckoutForm(forms.Form):
         self.cdek_live = cdek_live
 
     def clean_phone(self):
-        value = self.cleaned_data['phone'].strip()
-        digits = re.sub(r'\D', '', value)
-        if not 10 <= len(digits) <= 15:
-            raise forms.ValidationError('Введите телефон: от 10 до 15 цифр, можно с +, пробелами и скобками.')
-        return value
+        return clean_contact_phone(self.cleaned_data['phone'])
 
     def clean(self):
         data = super().clean()
@@ -123,8 +122,18 @@ class OrderLookupForm(forms.Form):
         return raw
 
     def clean_phone(self):
-        value = self.cleaned_data['phone'].strip()
-        digits = re.sub(r'\D', '', value)
-        if not 10 <= len(digits) <= 15:
-            raise forms.ValidationError('Введите телефон: от 10 до 15 цифр, можно с +, пробелами и скобками.')
-        return value
+        return clean_contact_phone(self.cleaned_data['phone'])
+
+
+PHONE_ERROR = 'Введите правильный номер телефона: +7 или 8 и ещё 10 цифр, без букв.'
+
+
+def clean_contact_phone(value):
+    """Russian contact number: +7 or 8, then exactly 10 digits. Letters are rejected."""
+    raw = (value or '').strip()
+    if not raw or re.search(r'[^0-9+\s()\-]', raw):
+        raise forms.ValidationError(PHONE_ERROR)
+    compact = re.sub(r'[\s()\-]', '', raw)
+    if not re.fullmatch(r'(?:\+7|8)\d{10}', compact):
+        raise forms.ValidationError(PHONE_ERROR)
+    return compact

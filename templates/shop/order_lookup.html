@@ -39,15 +39,15 @@
     {% csrf_token %}
     {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
     <div class="form-section">
-      <div class="form-field">
+      <div class="form-field{% if form.order_id.errors %} has-error{% endif %}">
         <label for="{{ form.order_id.id_for_label }}">{{ form.order_id.label }}</label>
         {{ form.order_id }}
-        {% if form.order_id.errors %}<div class="field-error">{{ form.order_id.errors }}</div>{% endif %}
+        {% for error in form.order_id.errors %}<p class="field-error" role="alert">{{ error }}</p>{% endfor %}
       </div>
-      <div class="form-field">
+      <div class="form-field{% if form.phone.errors %} has-error{% endif %}">
         <label for="{{ form.phone.id_for_label }}">{{ form.phone.label }}</label>
         {{ form.phone }}
-        {% if form.phone.errors %}<div class="field-error">{{ form.phone.errors }}</div>{% endif %}
+        {% for error in form.phone.errors %}<p class="field-error" role="alert">{{ error }}</p>{% endfor %}
       </div>
       <button class="btn btn-dark" type="submit">Проверить</button>
     </div>

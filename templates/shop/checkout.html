@@ -19,10 +19,11 @@
           <h2>01 / КОНТАКТЫ</h2>
           {% for field in form %}
             {% if field.name == 'full_name' or field.name == 'email' or field.name == 'phone' %}
-              <div class="form-field">
+              <div class="form-field{% if field.errors %} has-error{% endif %}">
                 <label for="{{ field.id_for_label }}">{{ field.label }} *</label>
                 {{ field }}
-                {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
+                {% if field.name == 'phone' %}<small>+7 или 8 и ещё 10 цифр, без букв.</small>{% endif %}
+                {% for error in field.errors %}<p class="field-error" role="alert">{{ error }}</p>{% endfor %}
               </div>
             {% endif %}
           {% endfor %}

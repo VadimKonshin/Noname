@@ -651,7 +651,22 @@ class CommerceTests(TestCase):
         response = self.client.post(reverse('checkout'), self._checkout_payload(phone='aaaaaa'))
         self.assertEqual(response.status_code, 200)
         self.assertEqual(Order.objects.count(), 0)
-        self.assertContains(response, 'цифр')
+        self.assertContains(response, 'Введите правильный номер телефона')
+
+    def test_checkout_accepts_only_a_russian_contact_phone(self):
+        self._add()
+        self._choose_delivery()
+        self.client.get(reverse('checkout'))
+        spaced = self.client.post(reverse('checkout'), self._checkout_payload(phone='8 (999) 123-45-67'))
+        self.assertEqual(spaced.status_code, 302)
+        self.assertEqual(Order.objects.get().phone, '89991234567')
+        for bad in ('79991234567', '+7999123456', '+799912345678', '8 999 123-45-6a', '+8 999 123-45-67'):
+            self._add()
+            self._choose_delivery()
+            self.client.get(reverse('checkout'))
+            refused = self.client.post(reverse('checkout'), self._checkout_payload(phone=bad))
+            self.assertEqual(refused.status_code, 200, bad)
+            self.assertContains(refused, 'Введите правильный номер телефона')
 
     def test_customer_cannot_change_status(self):
         order = self._create_order()
