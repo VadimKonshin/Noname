@@ -162,6 +162,7 @@ class CommerceTests(TestCase):
             'product_id': self.shirt.pk, 'size': 'M', 'quantity': 4, 'next': 'product',
         }, follow=True)
         self.assertContains(taken, 'предзаказ на 4 шт')
+        self.assertNotContains(taken, 'склад не списан')
         cart = self.client.get(reverse('cart')).context['cart']
         self.assertEqual(cart['count'], 4)
         self.assertTrue(cart['lines'][0]['is_preorder'])
@@ -191,7 +192,8 @@ class CommerceTests(TestCase):
         response = self.client.post(reverse('cart_add', args=[self.shirt.slug]), {
             'size': 'M', 'quantity': 4, 'order_type': 'stock', 'go_to_cart': '1',
         }, follow=True)
-        self.assertContains(response, 'недоступен')
+        self.assertContains(response, 'Выбранный размер недоступен в этом количестве. Свяжитесь с продавцом для предзаказа.')
+        self.assertNotContains(response, 'Вы можете оставить предзаказ.')
         self.assertNotContains(response, 'data-server-offer')
         self.assertEqual(self.client.get(reverse('cart')).context['cart']['count'], 0)
 
@@ -461,6 +463,8 @@ class CommerceTests(TestCase):
             self.assertNotContains(page, 'client@example.org')
         self.assertContains(missing, 'не найден')
         self.assertContains(unknown, 'не найден')
+        self.assertNotContains(found, 'Чужой телефон')
+        self.assertNotContains(found, 'здесь не показываются')
         self.assertContains(found, 'Новый')
         self.assertContains(found, self.shirt.title)
         self.assertContains(found, 'RA123456789RU')

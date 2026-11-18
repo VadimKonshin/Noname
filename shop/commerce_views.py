@@ -168,13 +168,28 @@ def cart_add(request, slug):
     elif (offer := _preorder_offer_or_none(request, product, size, quantity, is_preorder, adding=True)) is not None:
         return offer
     elif not put(request, product, size, quantity, is_preorder):
-        messages.error(request, 'Выбранный размер недоступен в этом количестве. Обновите остаток или режим заказа.')
+        messages.error(request, _over_stock_message(product, size, quantity, is_preorder))
     else:
         mode = 'под заказ' if is_preorder else 'в корзину'
         messages.success(request, f'«{product.title}», размер {size}, добавлен {mode}.')
         if request.POST.get('go_to_cart') == '1':
             return redirect('cart')
     return redirect(product.get_absolute_url())
+
+
+def _asks_more_than_stock(product, size, quantity, is_preorder):
+    if is_preorder or type(quantity) is not int:
+        return False
+    variant = next((item for item in product.variants.all() if item.size == size), None)
+    return variant is not None and quantity > variant.stock_quantity
+
+
+def _over_stock_message(product, size, quantity, is_preorder):
+    if not product.allow_preorder and _asks_more_than_stock(product, size, quantity, is_preorder):
+        return 'Выбранный размер недоступен в этом количестве. Свяжитесь с продавцом для предзаказа.'
+    if product.allow_preorder:
+        return 'Выбранный размер недоступен в этом количестве. Вы можете оставить предзаказ.'
+    return 'Выбранный размер недоступен в этом количестве.'
 
 
 def _preorder_offer_or_none(request, product, size, quantity, is_preorder, adding):
@@ -209,7 +224,10 @@ def cart_update(request):
     if (product_id is None or product_id < 1 or quantity is None
             or not 0 <= quantity <= MAX_PER_VARIANT
             or not set_quantity(request, product_id, size, quantity, is_preorder)):
-        messages.error(request, 'Не удалось изменить количество. Обновите корзину.')
+        if product is not None and _asks_more_than_stock(product, size, quantity, is_preorder):
+            messages.error(request, _over_stock_message(product, size, quantity, is_preorder))
+        else:
+            messages.error(request, 'Не удалось изменить количество. Обновите корзину.')
     else:
         messages.success(request, 'Корзина обновлена.')
     return redirect('cart')
@@ -242,7 +260,7 @@ def cart_take_preorder(request):
     else:
         messages.success(
             request,
-            f'«{product.title}», размер {size}: предзаказ на {quantity} шт. В наличии столько не было, склад не списан.',
+            f'«{product.title}», размер {size}: предзаказ на {quantity} шт.',
         )
     return redirect(back)
 

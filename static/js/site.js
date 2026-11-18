@@ -55,12 +55,7 @@
       const hidden = orderTypes.find(input => input.type === 'hidden');
       if (hidden) hidden.value = preorder ? 'preorder' : 'stock';
       const qty = form.querySelector('input[name="quantity"]');
-      const allowsPreorder = form.dataset.allowPreorder === '1';
-      if (qty) {
-        const stockLeft = Number(chosen?.dataset.stock || '10');
-        qty.max = preorder || !chosen || allowsPreorder ? '10' : String(Math.max(1, Math.min(10, stockLeft)));
-        if (!allowsPreorder && Number(qty.value) > Number(qty.max)) qty.value = qty.max;
-      }
+      if (qty) qty.max = '10';
       if (button) {
         button.disabled = !chosen;
         const action = preorder ? 'ПОД ЗАКАЗ' : 'ДОБАВИТЬ';
@@ -68,7 +63,7 @@
       }
       if (status) {
         if (!chosen) status.textContent = 'Размер пока не выбран';
-        else if (preorder) status.textContent = `Размер ${chosen.value}: предзаказ, склад пока не списывается`;
+        else if (preorder) status.textContent = `Размер ${chosen.value}: предзаказ`;
         else status.textContent = `Размер ${chosen.value}: в наличии ${chosen.dataset.stock} шт.`;
       }
     };

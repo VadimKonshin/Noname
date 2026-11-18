@@ -2,7 +2,6 @@
   <p>
     В наличии нет такого количества товара{% if preorder_offer %} «{{ preorder_offer.title }}», размер {{ preorder_offer.size }}{% else %}<span data-preorder-label></span>{% endif %}.
     Можно оставить предзаказ на <strong data-preorder-qty>{% if preorder_offer %}{{ preorder_offer.quantity }}{% endif %}</strong> шт.
-    Склад под предзаказ не списывается.
   </p>
   <form method="post" action="{% url 'cart_take_preorder' %}">
     {% csrf_token %}
