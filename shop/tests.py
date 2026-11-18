@@ -383,6 +383,16 @@ class SecurityTests(TestCase):
         response = self.client.post(reverse('login'), {'username': 'nobody', 'password': 'wrong-password'})
         self.assertEqual(response.status_code, 429)
 
+    @override_settings(ADMIN_CLOSED=True)
+    def test_public_admin_is_not_found(self):
+        staff = User.objects.create_superuser('closed_admin', 'closed@example.com', 'PassWithLength#178')
+        self.client.force_login(staff)
+        for path in ('/admin', '/admin/', '/admin/login/', '/admin/auth/user/'):
+            self.assertEqual(self.client.get(path).status_code, 404)
+        posted = self.client.post('/admin/login/', {'username': 'closed_admin', 'password': 'PassWithLength#178'})
+        self.assertEqual(posted.status_code, 404)
+        self.assertNotContains(posted, 'password', status_code=404)
+
     def test_admin_login_rate_limit(self):
         for _ in range(10):
             response = self.client.post('/admin/login/', {'username': 'nobody', 'password': 'wrong-password'})

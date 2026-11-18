@@ -1,3 +1,5 @@
+from django.conf import settings
+
 from .access import get_brand_manager
 from .cdek import configured as cdek_configured
 from .accounts import user_email_verified
@@ -25,4 +27,5 @@ def store_context(request):
         'telegram_news_url': news_url(),
         'telegram_bot_url': public_bot_url(),
         'cdek_live': cdek_configured(),
+        'admin_enabled': not settings.ADMIN_CLOSED,
     }
