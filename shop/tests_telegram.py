@@ -314,7 +314,8 @@ class TelegramTests(TestCase):
         from unittest.mock import patch
         with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
             handle_update({'message': {'text': '1 +79991234567', 'chat': {'id': -100, 'type': 'group'}}})
-        self.assertIn('личном чате', sent_payload(urlopen.call_args.args[0])['text'])
+            handle_update({'message': {'text': '1 +79991234567', 'chat': {'id': -100123, 'type': 'supergroup'}}})
+        urlopen.assert_not_called()
 
     def test_cabinet_gives_the_manager_a_personal_link(self):
         self.client.force_login(self.manager_user)
@@ -449,10 +450,14 @@ class TelegramTlsTests(SimpleTestCase):
     def setUp(self):
         from shop import telegram
         telegram._direct_tls_blocked = False
+        telegram._route_checked = False
+        telegram._pinned_ip = ''
         self.telegram = telegram
 
     def tearDown(self):
         self.telegram._direct_tls_blocked = False
+        self.telegram._route_checked = False
+        self.telegram._pinned_ip = ''
 
     def test_certificate_must_name_the_api_host(self):
         self.assertTrue(self.telegram._certificate_matches(TELEGRAM_CERT, 'api.telegram.org'))
@@ -499,7 +504,39 @@ class TelegramTlsTests(SimpleTestCase):
         from urllib.error import URLError
         with patch('shop.telegram.urlopen', side_effect=URLError('down')):
             with patch('shop.telegram._decoy_urlopen') as decoy:
-                result = self.telegram._api('getMe', {})
+                with patch('shop.telegram._pinned_urlopen') as pinned:
+                    result = self.telegram._api('getMe', {})
         decoy.assert_not_called()
+        pinned.assert_not_called()
         self.assertIsNone(result)
         self.assertFalse(self.telegram._direct_tls_blocked)
+
+    def test_unreachable_dns_address_uses_a_telegram_ip_with_the_api_certificate(self):
+        from unittest.mock import patch
+        from urllib.error import URLError
+        payload = b'{"ok": true, "result": {"username": "NoNameNotificationsBot"}}'
+        unreachable = URLError(OSError(101, 'Network is unreachable'))
+        with patch('shop.telegram.urlopen', side_effect=unreachable):
+            with patch('shop.telegram._decoy_urlopen') as decoy:
+                with patch('shop.telegram._pinned_urlopen', return_value=FakeResponse(payload)) as pinned:
+                    result = self.telegram._api('getMe', {})
+        self.assertEqual(result, {'username': 'NoNameNotificationsBot'})
+        decoy.assert_not_called()
+        self.assertEqual(pinned.call_args.args[2], '149.154.167.220')
+        self.assertIn('https://api.telegram.org/', pinned.call_args.args[0].full_url)
+        self.assertFalse(self.telegram._direct_tls_blocked)
+        self.assertEqual(self.telegram._pinned_ip, '149.154.167.220')
+
+    def test_pinned_connection_checks_the_api_certificate(self):
+        from unittest.mock import Mock, patch
+        connection = self.telegram._PinnedConnection(
+            'api.telegram.org', timeout=2, context=Mock(), ip='149.154.167.220',
+        )
+        with patch('shop.telegram.socket.create_connection', return_value=Mock()) as connect:
+            connection.connect()
+        connect.assert_called_once_with(('149.154.167.220', 443), 2, None)
+        connection._context.wrap_socket.assert_called_once()
+        self.assertEqual(
+            connection._context.wrap_socket.call_args.kwargs['server_hostname'],
+            'api.telegram.org',
+        )
