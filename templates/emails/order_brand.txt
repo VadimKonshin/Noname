@@ -1,4 +1,4 @@
-В заказе №{{ order.pk }} есть позиции бренда {{ brand.name }}.
+В заказе №{{ order.public_number }} есть позиции бренда {{ brand.name }}.
 
 Получатель: {{ order.full_name }}
 Почта: {{ order.email }}

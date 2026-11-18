@@ -1,0 +1,10 @@
+{% if rows %}
+<div class="size-sheet" aria-label="Таблица размеров">
+  {% for row in rows %}
+    <div class="size-sheet-row">
+      <span>{{ row.label }}</span>
+      {% if row.detail %}<strong>{{ row.detail }}</strong>{% endif %}
+    </div>
+  {% endfor %}
+</div>
+{% endif %}

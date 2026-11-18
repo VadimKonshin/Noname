@@ -9,11 +9,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 def _env_allowed(key):
-    return key.startswith(('TELEGRAM_', 'DJANGO_DB_', 'CDEK_')) or key in {
-        'DJANGO_EMAIL_HOST', 'DJANGO_EMAIL_PORT', 'DJANGO_EMAIL_USER', 'DJANGO_EMAIL_PASSWORD',
-        'DJANGO_EMAIL_USE_TLS', 'DJANGO_DEFAULT_FROM_EMAIL', 'DJANGO_ORDER_EMAIL', 'DJANGO_SITE_URL',
-        'DJANGO_CACHE_URL',
-    }
+    # Same .env lines as deploy/envfile.py. A value already set in the process wins.
+    return key.startswith(('TELEGRAM_', 'DJANGO_', 'CDEK_'))
 
 
 def load_env_file(path):
@@ -71,6 +68,7 @@ INSTALLED_APPS = [
     'shop',
 ]
 MIDDLEWARE = [
+    'shop.middleware.ClosedAdminMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -100,8 +98,10 @@ TEMPLATES = [
 ]
 WSGI_APPLICATION = 'config.wsgi.application'
 ASGI_APPLICATION = 'config.asgi.application'
-DATABASES = database_settings(os.environ, BASE_DIR)
-CACHES = cache_settings({} if 'test' in sys.argv else os.environ)
+# Tests stay on SQLite and process memory even when the server environment points at PostgreSQL.
+_runtime_env = {} if 'test' in sys.argv else os.environ
+DATABASES = database_settings(_runtime_env, BASE_DIR)
+CACHES = cache_settings(_runtime_env)
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator', 'OPTIONS': {'min_length': 10}},
@@ -125,16 +125,48 @@ SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = True
 X_FRAME_OPTIONS = 'DENY'
 SECURE_CONTENT_TYPE_NOSNIFF = True
-SESSION_COOKIE_SECURE = not DEBUG
-CSRF_COOKIE_SECURE = not DEBUG
 SECURE_SSL_REDIRECT = env_bool('DJANGO_SECURE_SSL_REDIRECT', not DEBUG)
+# On a public IP there is no certificate yet, so the cookies must travel over HTTP.
+SESSION_COOKIE_SECURE = env_bool('DJANGO_SESSION_COOKIE_SECURE', SECURE_SSL_REDIRECT)
+CSRF_COOKIE_SECURE = env_bool('DJANGO_CSRF_COOKIE_SECURE', SECURE_SSL_REDIRECT)
 SECURE_HSTS_SECONDS = int(os.environ.get('DJANGO_SECURE_HSTS_SECONDS', '0' if DEBUG else '3600'))
 SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool('DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS')
 SECURE_HSTS_PRELOAD = env_bool('DJANGO_SECURE_HSTS_PRELOAD')
 SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
 CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in os.environ.get('DJANGO_CSRF_TRUSTED_ORIGINS', '').split(',') if origin.strip()]
+def client_ip(request):
+    """Client address accepted by Caddy. The last hop is that address."""
+    parts = [part.strip() for part in request.META.get('HTTP_X_FORWARDED_FOR', '').split(',') if part.strip()]
+    raw = parts[-1] if parts else ''
+    if raw.startswith('[') and ']' in raw:
+        raw = raw[1:raw.index(']')]
+    return raw
+
+
 if env_bool('DJANGO_TRUST_X_FORWARDED_PROTO'):
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    # deploy/Caddyfile replaces X-Forwarded-For with the client Caddy accepted.
+    RATELIMIT_IP_META_KEY = client_ip
+
+if not DEBUG:
+    LOGGING = {
+        'version': 1,
+        'disable_existing_loggers': False,
+        'formatters': {
+            'plain': {'format': '%(asctime)s %(levelname)s %(name)s %(message)s'},
+        },
+        'handlers': {
+            'console': {'class': 'logging.StreamHandler', 'formatter': 'plain'},
+        },
+        'root': {'handlers': ['console'], 'level': 'INFO'},
+        'loggers': {
+            'django.request': {'handlers': ['console'], 'level': 'ERROR', 'propagate': False},
+            'django.security': {'handlers': ['console'], 'level': 'WARNING', 'propagate': False},
+        },
+    }
+
+# The public /admin/ address is a 404. Tests still open it to cover the staff screens.
+ADMIN_CLOSED = 'test' not in sys.argv
 
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 DATA_UPLOAD_MAX_NUMBER_FILES = 12

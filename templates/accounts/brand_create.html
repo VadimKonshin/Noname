@@ -12,17 +12,29 @@
     <div class="auth-box">
       <div class="eyebrow"><span class="tiny-dot"></span> КАБИНЕТ МЕНЕДЖЕРА / БРЕНД</div>
       <h1>СОЗДАЙТЕ БРЕНД<span class="heading-period">.</span></h1>
-      <p>Администратор подтвердил ваш аккаунт. Создайте один бренд. Название потом меняет администратор, описание и таблицу размеров можно поправить в кабинете.</p>
+      <p>Один бренд. Название потом меняет администратор. Текст, цену вещей и доставку можно править в кабинете.</p>
       <form method="post" class="auth-form" novalidate>
         {% csrf_token %}
         {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
-        {% for field in form %}
-          <div class="form-field">
-            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-            {{ field }}
-            {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
-          </div>
-        {% endfor %}
+        <div class="form-field">
+          <label for="{{ form.name.id_for_label }}">Название</label>
+          {{ form.name }}
+          {% if form.name.errors %}<div class="field-error">{{ form.name.errors }}</div>{% endif %}
+        </div>
+        <div class="form-field">
+          <label for="{{ form.description.id_for_label }}">Как вас увидеть</label>
+          {{ form.description }}
+          {% if form.description.errors %}<div class="field-error">{{ form.description.errors }}</div>{% endif %}
+        </div>
+        <p class="form-hint">Отметьте, как отдаёте вещи. Это можно переключить позже.</p>
+        <label class="check-field">{{ form.offers_cdek }}<span>СДЭК</span></label>
+        <label class="check-field">{{ form.offers_post }}<span>Почта России</span></label>
+        <label class="check-field">{{ form.offers_pickup }}<span>Самовывоз</span></label>
+        <div class="form-field">
+          <label for="{{ form.pickup_address.id_for_label }}">Адрес мастерской</label>
+          {{ form.pickup_address }}
+          {% if form.pickup_address.errors %}<div class="field-error">{{ form.pickup_address.errors }}</div>{% endif %}
+        </div>
         <button type="submit" class="btn btn-dark btn-wide">Создать бренд <span>↗</span></button>
       </form>
     </div>

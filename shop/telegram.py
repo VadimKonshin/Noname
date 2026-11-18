@@ -28,9 +28,13 @@ _API_HOST = 'api.telegram.org'
 # The handshake still goes to api.telegram.org. This label is only the SNI
 # value: some networks reset the connection when the ClientHello names Telegram.
 _DECOY_SNI = 'example.com'
+# DNS here answers an address that never connects, plus IPv6 with no route.
+# This address belongs to Telegram and presents a certificate for the API host.
+_FALLBACK_IPS = ('149.154.167.220',)
 _POLLER_STARTED = False
 _direct_tls_blocked = False
 _route_checked = False
+_pinned_ip = ''
 
 
 def news_url():
@@ -114,10 +118,7 @@ def handle_update(update):
         return
     chat = message.get('chat') if isinstance(message.get('chat'), dict) else {}
     chat_id = chat.get('id')
-    if type(chat_id) is not int:
-        return
-    if chat.get('type') != 'private':
-        _send(chat_id, 'Статус заказа и уведомления менеджера работают только в личном чате с ботом.')
+    if type(chat_id) is not int or chat_id <= 0 or chat.get('type') != 'private':
         return
     text = str(message.get('text') or '').strip()
     if not text:
@@ -141,7 +142,9 @@ def bind_manager(chat_id, code):
     if not code or len(str(code)) > 200:
         return _bind_rejected()
     with transaction.atomic():
-        manager = (BrandManager.objects.select_for_update()
+        # Lock only this row. Brand is optional, and PostgreSQL rejects
+        # FOR UPDATE on the nullable side of that outer join.
+        manager = (BrandManager.objects.select_for_update(of=('self',))
                    .select_related('brand')
                    .filter(telegram_bind_hash=_digest(code), telegram_bind_expires__gt=timezone.now())
                    .first())
@@ -165,13 +168,35 @@ def bind_manager(chat_id, code):
     return f'Готово. Заказы и сообщения бренда «{brand_name}» будут приходить в этот чат.'
 
 
+def order_for_phone(order_number, phone):
+    """Order that matches the public 8-digit number and the last 10 phone digits. Does not bind a chat."""
+    from .models import Order
+
+    number = str(order_number or '').strip()
+    if not re.fullmatch(r'[1-9]\d{7}', number):
+        return None
+    order = Order.objects.prefetch_related('items').filter(public_number=number).first()
+    if order is None or not _phones_match(order.phone, phone):
+        return None
+    return order
+
+
+def consume_phone_lookup(scope, phone):
+    """True when this phone has already been checked too often. A new IP does not reset the budget."""
+    phone_key = _phone_limit_key(phone)
+    if not phone_key:
+        return False
+    return _bump(f'{scope}-status-phone-{phone_key}', PHONE_STATUS_LIMIT)
+
+
 def order_status(chat_id, order_id, phone):
     from django.db.models import Q
     from .models import Order
 
     if _status_limited(chat_id, phone):
         return 'Слишком много проверок. Попробуйте через час.'
-    order = Order.objects.prefetch_related('items').filter(pk=order_id).first()
+    number = str(order_id or '').strip()
+    order = Order.objects.prefetch_related('items').filter(public_number=number).first()
     if order is None or not _phones_match(order.phone, phone):
         return 'Заказ с таким номером и телефоном не найден.'
     chat = str(chat_id)
@@ -189,7 +214,7 @@ def order_status(chat_id, order_id, phone):
     else:
         footer = 'Уведомления об отправке и отмене остаются в чате, который первым проверил этот заказ.'
     lines = [
-        f'<b>Заказ №{order.pk}</b>',
+        f'<b>Заказ №{order.public_number}</b>',
         f'Статус: {_html(order.get_status_display())}',
         '',
     ]
@@ -203,6 +228,10 @@ def order_status(chat_id, order_id, phone):
         '',
         f'Доставка: {_html(order.delivery_name)}',
         f'Итого: {_money(order.total)}',
+    ])
+    if order.tracking_number:
+        lines.append(f'Трек: {_html(order.tracking_number)}')
+    lines.extend([
         '',
         footer,
     ])
@@ -348,7 +377,7 @@ def _manager_chats(brand):
 
 def _brand_order_text(order, brand, items):
     lines = [
-        f'<b>Новый заказ №{order.pk}</b>',
+        f'<b>Новый заказ №{order.public_number}</b>',
         f'Бренд: {_html(brand.name)}',
         f'Статус: {_html(order.get_status_display())}',
         '',
@@ -389,7 +418,7 @@ def _brand_order_text(order, brand, items):
 
 def _buyer_status_text(order):
     lines = [
-        f'<b>Заказ №{order.pk}</b>',
+        f'<b>Заказ №{order.public_number}</b>',
         f'Статус: {_html(order.get_status_display())}',
         '',
     ]
@@ -397,17 +426,23 @@ def _buyer_status_text(order):
         lines.append(f'• {_html(item.product_title)}, размер {_html(item.size)}, {item.quantity} шт.')
     if order.delivery_name:
         lines.extend(['', f'Доставка: {_html(order.delivery_name)}'])
+    if order.tracking_number:
+        lines.append(f'Трек: {_html(order.tracking_number)}')
     return '\n'.join(lines)
 
 
 def _brand_status_text(order, brand, items):
     lines = [
-        f'<b>Статус заказа №{order.pk} изменился</b>',
+        f'<b>Статус заказа №{order.public_number} изменился</b>',
         f'Бренд: {_html(brand.name)}',
         f'Статус: {_html(order.get_status_display())}',
+    ]
+    if order.tracking_number:
+        lines.append(f'Трек: {_html(order.tracking_number)}')
+    lines.extend([
         '',
         '<b>Ваши позиции</b>',
-    ]
+    ])
     subtotal = Decimal('0')
     for item in items:
         subtotal += item.line_total
@@ -427,7 +462,8 @@ def _contact_text(note):
         f'Бренд: {_html(note.brand.name)}',
         f'Вещь: {_html(product)}',
         f'Имя: {_html(note.sender_name)}',
-        f'Почта: {_html(note.sender_email)}',
+        f'Почта: {_html(note.sender_email) or "не оставлена"}',
+        f'Telegram: {_html(note.sender_telegram) or "не оставлен"}',
         '',
         _html(note.body),
         '',
@@ -440,18 +476,18 @@ def _help_text():
     return (
         'Менеджер бренда подключает уведомления ссылкой из кабинета. '
         'Сюда приходят только заказы и сообщения его бренда.\n\n'
-        'Покупатель может проверить статус. Напишите номер заказа и телефон из заказа:\n'
-        '15 +79991234567\n\n'
+        'Покупатель может проверить статус. Напишите 8-значный номер заказа и телефон из заказа:\n'
+        '48291037 +79991234567\n\n'
         'После первой успешной проверки бот напишет в этот чат, когда заказ отправят или отменят.'
     )
 
 
 def _status_query(text):
     cleaned = re.sub(r'^/status(?:@\w+)?\s*', '', text.strip(), count=1, flags=re.I)
-    match = re.fullmatch(r'(\d{1,10})\s+(\+?\d[\d\s()\-]{8,40})', cleaned)
+    match = re.fullmatch(r'([1-9]\d{7})\s+(\+?\d[\d\s()\-]{8,40})', cleaned)
     if not match:
         return None
-    return int(match.group(1)), match.group(2)
+    return match.group(1), match.group(2)
 
 
 def _phones_match(stored, given):
@@ -512,7 +548,7 @@ def secrets_equal(left, right):
 
 def _send(chat_id, text):
     chat_id = str(chat_id or '').strip()
-    if not getattr(settings, 'TELEGRAM_BOT_TOKEN', '') or not chat_id.lstrip('-').isdigit() or not text:
+    if not getattr(settings, 'TELEGRAM_BOT_TOKEN', '') or not chat_id.isdigit() or not text:
         return False
     sent = False
     for part in _chunks(text):
@@ -548,41 +584,88 @@ def _certificate_matches(cert, hostname):
 
 def _blocked_handshake(exc):
     reason = getattr(exc, 'reason', exc)
-    if isinstance(reason, TimeoutError) or isinstance(exc, TimeoutError):
-        return True
     text = str(reason)
     return 'UNEXPECTED_EOF_WHILE_READING' in text or 'handshake operation timed out' in text
 
 
+def _connect_failed(exc):
+    """True when the TCP connection never started. A TLS reset is a different failure."""
+    reason = getattr(exc, 'reason', exc)
+    if _blocked_handshake(exc):
+        return False
+    if isinstance(reason, (TimeoutError, socket.timeout)):
+        return True
+    if isinstance(reason, OSError) and reason.errno in {51, 101, 110, 111, 113}:
+        return True
+    text = str(reason).lower()
+    return 'network is unreachable' in text or 'timed out' in text or 'no route to host' in text
+
+
+def _probe_ip(ip, attempts=1, timeout=3):
+    """A dropped first packet is common on this route, so a chosen address can be tried again."""
+    last = 'down'
+    for _ in range(attempts):
+        raw = None
+        try:
+            raw = socket.create_connection((ip, 443), timeout)
+            context = ssl.create_default_context(cafile=certifi.where())
+            secure = context.wrap_socket(raw, server_hostname=_API_HOST)
+            secure.close()
+            raw = None
+            return 'ok'
+        except Exception as exc:
+            if raw is not None:
+                raw.close()
+            if _blocked_handshake(exc):
+                return 'reset'
+            last = 'down'
+    return last
+
+
 def _note_direct_route():
-    """One short handshake. A reset or a stall means the server name itself is being dropped."""
-    global _route_checked, _direct_tls_blocked
-    if _route_checked or _direct_tls_blocked or 'test' in sys.argv:
+    """One short handshake. A dead DNS address is replaced; a TLS reset uses the decoy name."""
+    global _route_checked, _direct_tls_blocked, _pinned_ip
+    if _route_checked or _direct_tls_blocked or _pinned_ip or 'test' in sys.argv:
         return
     _route_checked = True
-    raw = None
+    outcome = 'down'
     try:
-        raw = socket.create_connection((_API_HOST, 443), 4)
-        context = ssl.create_default_context(cafile=certifi.where())
-        secure = context.wrap_socket(raw, server_hostname=_API_HOST)
-        secure.close()
-        raw = None
-    except Exception as exc:
-        if raw is not None:
-            raw.close()
-        if not _blocked_handshake(exc):
-            return
+        addresses = [
+            item[4][0]
+            for item in socket.getaddrinfo(_API_HOST, 443, socket.AF_INET, socket.SOCK_STREAM)
+        ]
+    except socket.gaierror:
+        addresses = []
+    for ip in addresses:
+        outcome = _probe_ip(ip)
+        if outcome in {'ok', 'reset'}:
+            break
+    if outcome == 'ok':
+        return
+    if outcome == 'reset':
         _direct_tls_blocked = True
         logger.warning(
             'Telegram resets the TLS handshake when the server name is visible; '
             'requests to %s keep the certificate check',
             _API_HOST,
         )
+        return
+    for ip in _FALLBACK_IPS:
+        if _probe_ip(ip, attempts=3) == 'ok':
+            _pinned_ip = ip
+            logger.warning(
+                'Telegram DNS address did not connect; using %s and checking the certificate for %s',
+                ip,
+                _API_HOST,
+            )
+            return
 
 
 def _open(request, timeout):
-    global _direct_tls_blocked
+    global _direct_tls_blocked, _pinned_ip
     _note_direct_route()
+    if _pinned_ip:
+        return _pinned_urlopen(request, timeout, _pinned_ip)
     if not _direct_tls_blocked:
         try:
             return urlopen(
@@ -591,15 +674,75 @@ def _open(request, timeout):
                 context=ssl.create_default_context(cafile=certifi.where()),
             )
         except URLError as exc:
-            if not _blocked_handshake(exc):
+            if _blocked_handshake(exc):
+                _direct_tls_blocked = True
+                logger.warning(
+                    'Telegram resets the TLS handshake when the server name is visible; '
+                    'retrying %s with the certificate check unchanged',
+                    _API_HOST,
+                )
+            elif _connect_failed(exc):
+                for ip in _FALLBACK_IPS:
+                    try:
+                        response = _pinned_urlopen(request, timeout, ip)
+                    except (URLError, TimeoutError, OSError):
+                        continue
+                    _pinned_ip = ip
+                    logger.warning(
+                        'Telegram DNS address did not connect; using %s and checking the certificate for %s',
+                        ip,
+                        _API_HOST,
+                    )
+                    return response
                 raise
-            _direct_tls_blocked = True
-            logger.warning(
-                'Telegram resets the TLS handshake when the server name is visible; '
-                'retrying %s with the certificate check unchanged',
-                _API_HOST,
-            )
+            else:
+                raise
     return _decoy_urlopen(request, timeout)
+
+
+def _pinned_urlopen(request, timeout, ip):
+    context = ssl.create_default_context(cafile=certifi.where())
+    opener = urllib.request.build_opener(_NoRedirect(), _PinnedHandler(ip, context))
+    return opener.open(request, timeout=timeout)
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+class _PinnedHandler(urllib.request.HTTPSHandler):
+    def __init__(self, ip, context):
+        super().__init__(context=context)
+        self._ip = ip
+
+    def https_open(self, req):
+        return self.do_open(_PinnedConnection, req, context=self._context, ip=self._ip)
+
+
+class _PinnedConnection(http.client.HTTPSConnection):
+    def __init__(self, host, port=None, *, timeout=socket._GLOBAL_DEFAULT_TIMEOUT,
+                 source_address=None, context=None, ip=None):
+        super().__init__(host, port, timeout=timeout, source_address=source_address, context=context)
+        self._ip = ip or host
+
+    def connect(self):
+        last = None
+        for _ in range(3):
+            try:
+                self.sock = socket.create_connection(
+                    (self._ip, self.port or 443), min(self.timeout, 4), self.source_address,
+                )
+                if self.timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
+                    self.sock.settimeout(self.timeout)
+                self.sock = self._context.wrap_socket(self.sock, server_hostname=self.host)
+                return
+            except OSError as exc:
+                last = exc
+                if self.sock is not None:
+                    self.sock.close()
+                    self.sock = None
+        raise last
 
 
 def _decoy_urlopen(request, timeout):

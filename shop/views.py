@@ -1,5 +1,6 @@
 import logging
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth import views as auth_views
@@ -18,13 +19,16 @@ from .access import (
     brand_account_home, brand_manager_required, get_brand_manager, get_scoped_object_or_404,
     product_permission_required, redirect_unverified_manager,
 )
-from .accounts import remember_console_link, save_new_account, send_confirmation, user_email_verified, uses_console_mail
+from .accounts import (
+    activate_without_mailbox, remember_console_link, save_new_account, send_confirmation,
+    show_console_mail, user_email_verified, uses_console_mail,
+)
 from .forms import (
     BrandAuthenticationForm, BrandCreateForm, BrandDeleteForm, BrandMessageForm, BrandProfileForm, BrandReplyForm,
     BrandManagerRegisterForm, EmailOrUsernameAuthenticationForm, ProductForm, ProductVariantFormSet, RegisterForm,
 )
-from .commerce import MAX_OPEN_PREORDER_PER_VARIANT
-from .models import Brand, BrandManager, BrandMessage, Product, ProductImage, ProductVariant
+from .commerce import MAX_OPEN_PREORDER_PER_VARIANT, pop_preorder_offer
+from .models import Brand, BrandManager, BrandMessage, DeliveryMethod, Product, ProductImage, ProductVariant
 from .mail import deliver_mail
 from .telegram import notify_brand_contact
 from .validators import validate_product_image
@@ -38,10 +42,21 @@ def public_products():
     return Product.objects.public()
 
 
+def collaboration(request):
+    return render(request, 'shop/collaboration.html')
+
+
 def info_page(request, page):
     if page not in {'delivery', 'returns', 'contacts'}:
         raise Http404
-    return render(request, 'shop/info_page.html', {'page': page})
+    carriers = {
+        method.code: method
+        for method in DeliveryMethod.objects.filter(
+            is_active=True,
+            code__in=(DeliveryMethod.CDEK, DeliveryMethod.POST, DeliveryMethod.PICKUP),
+        )
+    }
+    return render(request, 'shop/info_page.html', {'page': page, 'carriers': carriers})
 
 
 def public_brand(slug):
@@ -57,8 +72,16 @@ def message_product(brand, slug):
 
 def brand_storefront(request, slug):
     brand = public_brand(slug)
-    products = public_products().filter(brand=brand).select_related('brand').prefetch_related('images', 'variants')
-    return render(request, 'shop/brand_storefront.html', {'brand': brand, 'products': products})
+    products = list(public_products().filter(brand=brand).select_related('brand').prefetch_related('images', 'variants'))
+    address = (brand.pickup_address or '').strip()
+    pickup_open = bool(address) and (brand.offers_pickup or any(product.offers_pickup for product in products))
+    return render(request, 'shop/brand_storefront.html', {
+        'brand': brand,
+        'products': products,
+        'piece_word': ru_plural(len(products), 'вещь', 'вещи', 'вещей'),
+        'receive_line': receive_line(brand, products),
+        'pickup_open': pickup_open,
+    })
 
 
 @ratelimit(group='brand_message', key='ip', rate='8/h', method='POST')
@@ -86,13 +109,14 @@ def brand_message(request, slug):
             user=user,
             sender_name=form.cleaned_data['sender_name'],
             sender_email=user.email.lower() if lock_email else form.cleaned_data['sender_email'],
+            sender_telegram=form.cleaned_data['sender_telegram'],
             body=form.cleaned_data['body'],
         )
         notify_brand_contact(note.pk)
-        messages.success(
-            request,
-            'Сообщение у менеджера бренда. Ответ придёт на указанную почту.',
-        )
+        if note.sender_email:
+            messages.success(request, 'Сообщение у менеджера бренда. Если оставили почту, ответ придёт на неё.')
+        else:
+            messages.success(request, 'Сообщение у менеджера бренда. Ответ придёт в Telegram, который вы написали.')
         return redirect('brand_storefront', slug=brand.slug)
     return render(request, 'shop/brand_message.html', {'brand': brand, 'product': product, 'form': form})
 
@@ -122,7 +146,9 @@ def brand_message_detail(request, pk):
         note.read_at = timezone.now()
         note.save(update_fields=['read_at'])
     form = BrandReplyForm(request.POST if request.method == 'POST' and note.replied_at is None else None)
-    if request.method == 'POST' and note.replied_at is None and form.is_valid():
+    if request.method == 'POST' and note.replied_at is None and not note.sender_email:
+        messages.error(request, 'Почты в сообщении нет. Напишите покупателю в Telegram, который он оставил.')
+    elif request.method == 'POST' and note.replied_at is None and form.is_valid():
         reply = form.cleaned_data['reply']
         reply_to = [request.user.email] if request.user.email else None
         try:
@@ -155,9 +181,15 @@ def home(request):
 
 def catalog(request):
     products = public_products().select_related('brand').prefetch_related('images', 'variants')
+    brands = Brand.objects.filter(
+        is_active=True, is_deleted=False, products__is_published=True, products__is_deleted=False,
+    ).distinct().order_by('sort_order', 'name')
     selected_brand = request.GET.get('brand', '').strip()[:150]
-    if selected_brand:
-        products = products.filter(brand__slug=selected_brand, brand__is_active=True)
+    selected = brands.filter(slug=selected_brand).first() if selected_brand else None
+    if selected:
+        products = products.filter(brand=selected)
+    elif selected_brand:
+        products = products.none()
     query = request.GET.get('q', '').strip()[:120]
     if query:
         products = products.filter(Q(title__icontains=query) | Q(description__icontains=query) | Q(color__icontains=query) | Q(brand__name__icontains=query))
@@ -175,18 +207,64 @@ def catalog(request):
         orders = {'new': '-created_at', 'price_low': 'price', 'price_high': '-price', 'name': 'title'}
         products = products.order_by(orders.get(sort, '-created_at'), '-pk')
     page = Paginator(products, 9).get_page(request.GET.get('page'))
-    return render(request, 'shop/catalog.html', {'page': page, 'query': query, 'sort': sort, 'total': page.paginator.count, 'selected_brand': selected_brand, 'brands': Brand.objects.filter(is_active=True, is_deleted=False).order_by('sort_order', 'name')})
+    total = page.paginator.count
+    if selected:
+        catalog_line = f'{total} {ru_plural(total, "вещь", "вещи", "вещей")} · {selected.name}'
+    else:
+        marks = brands.count()
+        catalog_line = (
+            f'{total} {ru_plural(total, "вещь", "вещи", "вещей")} · '
+            f'{marks} {ru_plural(marks, "бренд", "бренда", "брендов")} на площадке'
+        )
+    return render(request, 'shop/catalog.html', {
+        'page': page, 'query': query, 'sort': sort, 'total': total,
+        'selected_brand': selected.slug if selected else '',
+        'brands': brands, 'catalog_line': catalog_line,
+    })
 
 
 def product_detail(request, slug):
     product = get_object_or_404(public_products().select_related('brand').prefetch_related('images', 'variants'), slug=slug)
     manager = get_brand_manager(request.user)
     manages_brand = manager and product.brand_id == manager.brand_id
+    related = []
+    if product.brand_id:
+        related = list(
+            public_products().filter(brand_id=product.brand_id).exclude(pk=product.pk)
+            .select_related('brand').prefetch_related('images', 'variants')[:3]
+        )
     return render(request, 'shop/product_detail.html', {
         'product': product,
+        'related': related,
         'can_change_product': request.user.has_perm('shop.change_product') or manages_brand,
         'can_delete_product': request.user.has_perm('shop.delete_product') or manages_brand,
+        'preorder_offer': pop_preorder_offer(request, product.pk),
     })
+
+
+def ru_plural(number, one, few, many):
+    number = abs(int(number))
+    if 11 <= number % 100 <= 14:
+        return many
+    if number % 10 == 1:
+        return one
+    if 2 <= number % 10 <= 4:
+        return few
+    return many
+
+
+def receive_line(brand, products):
+    ways = []
+    if brand.offers_cdek:
+        ways.append('СДЭК')
+    if brand.offers_post:
+        ways.append('Почта России')
+    address = (brand.pickup_address or '').strip()
+    if address and (brand.offers_pickup or any(product.offers_pickup for product in products)):
+        ways.append('самовывоз')
+    if not ways:
+        return 'Бренд ещё выбирает, как отдать вещь'
+    return ' · '.join(ways)
 
 
 def ratelimited_error(request, exception=None):
@@ -220,6 +298,10 @@ class StoreLoginView(auth_views.LoginView):
 
 def open_new_account(request, user, success_message):
     login(request, user)
+    if uses_console_mail() and not settings.DEBUG:
+        activate_without_mailbox(user)
+        messages.success(request, 'Аккаунт создан.')
+        return redirect(brand_account_home(user))
     try:
         link = send_confirmation(user)
     except Exception:
@@ -227,7 +309,7 @@ def open_new_account(request, user, success_message):
         messages.warning(request, 'Аккаунт создан, но письмо не отправилось. Запросите ссылку ещё раз.')
     else:
         remember_console_link(request, link)
-        if uses_console_mail():
+        if show_console_mail():
             success_message += ' Почтовый сервер не подключён: письмо напечатано в консоли сервера и показано на этой странице.'
         messages.success(request, success_message)
     return redirect('account_email')
@@ -318,7 +400,7 @@ def brand_edit(request):
     form = BrandProfileForm(request.POST if request.method == 'POST' else None, instance=brand)
     if request.method == 'POST' and form.is_valid():
         form.save()
-        messages.success(request, 'Описание бренда сохранено. Название по-прежнему меняет администратор.')
+        messages.success(request, 'Настройки бренда сохранены. Название по-прежнему меняет администратор.')
         return redirect('brand_dashboard')
     return render(request, 'shop/brand_edit.html', {'brand': brand, 'form': form})
 

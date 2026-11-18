@@ -63,22 +63,48 @@
     <div class="detail-stat"><span>ЦВЕТ</span><strong>{{ product.color }}</strong></div>
 
     {% if product.is_available %}
-      <form method="post" action="{% url 'cart_add' slug=product.slug %}" class="buy-form" data-size-picker>
+      <form method="post" action="{% url 'cart_add' slug=product.slug %}" class="buy-form" data-size-picker {% if product.allow_preorder %}data-allow-preorder="1"{% endif %} data-product-id="{{ product.pk }}" data-product-title="{{ product.title }}">
         {% csrf_token %}
-        <input type="hidden" name="order_type" value="stock">
+        {% if product.allow_preorder %}
+          <fieldset class="sizes-fieldset order-mode">
+            <legend>КАК БРАТЬ</legend>
+            <div class="size-grid">
+              <label class="size-choice">
+                <input type="radio" name="order_type" value="stock" {% if product.total_stock %}checked{% else %}disabled{% endif %}>
+                <span>В НАЛИЧИИ</span>
+              </label>
+              <label class="size-choice">
+                <input type="radio" name="order_type" value="preorder" {% if not product.total_stock %}checked{% endif %}>
+                <span>ПРЕДЗАКАЗ</span>
+              </label>
+            </div>
+            <p class="size-help">Из наличия — не больше остатка. Предзаказ шьётся отдельно, срок указан у вещи.</p>
+          </fieldset>
+        {% else %}
+          <input type="hidden" name="order_type" value="stock">
+        {% endif %}
         <fieldset class="sizes-fieldset detail-sizes">
-          <legend>ВЫБЕРИ РАЗМЕР <small>— ТОЛЬКО РАЗМЕРЫ ЭТОЙ ВЕЩИ</small></legend>
+          <legend>ВЫБЕРИ РАЗМЕР <small>— СКОЛЬКО ОСТАЛОСЬ</small></legend>
+          {% if product.all_size_options %}
+            <ul class="size-stock">
+              {% for option in product.all_size_options %}
+                <li>
+                  <span>{{ option.name }}</span>
+                  <strong>{% if option.stock_quantity %}осталось {{ option.stock_quantity }}{% else %}нет в наличии{% endif %}</strong>
+                </li>
+              {% endfor %}
+            </ul>
+          {% endif %}
           <div class="size-grid">
             {% for option in product.all_size_options %}
               <label class="size-choice">
-                <input type="radio" name="size" value="{{ option.name }}" data-preorder="{% if option.is_preorder %}1{% else %}0{% endif %}" {% if not option.available %}disabled{% endif %}>
-                <span>{{ option.name }}{% if option.is_preorder %}*{% endif %}</span>
+                <input type="radio" name="size" value="{{ option.name }}" data-stock="{{ option.stock_quantity }}" {% if product.allow_preorder %}data-preorder-size="1"{% else %}data-preorder="{% if option.is_preorder %}1{% else %}0{% endif %}"{% endif %} {% if not product.allow_preorder and not option.available %}disabled{% endif %}>
+                <span>{{ option.name }}</span>
               </label>
             {% empty %}
               <p class="size-help">Размеры пока не заданы.</p>
             {% endfor %}
           </div>
-          {% if product.allow_preorder %}<p class="size-help">Звёздочка — размер шьётся под заказ и не списывает склад.</p>{% endif %}
           <p class="size-help" data-size-status aria-live="polite">Размер пока не выбран</p>
         </fieldset>
         <div class="quantity-line">
@@ -87,6 +113,9 @@
         </div>
         <button type="submit" name="go_to_cart" value="1" class="btn btn-dark btn-wide" disabled>ВЫБЕРИ РАЗМЕР <span>＋</span></button>
       </form>
+      {% if product.allow_preorder or preorder_offer %}
+        {% include 'includes/preorder_plate.html' with plate_next='product' %}
+      {% endif %}
     {% else %}
       <div class="detail-notice">Товар временно недоступен к заказу.</div>
     {% endif %}
@@ -95,25 +124,24 @@
       <h2>О ВЕЩИ</h2>
       <p>{{ product.description|linebreaksbr }}</p>
     </div>
-    {% if product.composition or product.fit or product.care %}
-      <div class="detail-facts">
-        {% if product.composition %}<div class="detail-stat"><span>СОСТАВ</span><strong>{{ product.composition }}</strong></div>{% endif %}
-        {% if product.fit %}<div class="detail-stat"><span>ПОСАДКА</span><strong>{{ product.fit }}</strong></div>{% endif %}
-        {% if product.care %}<div class="detail-stat"><span>УХОД</span><strong>{{ product.care|linebreaksbr }}</strong></div>{% endif %}
-      </div>
-    {% endif %}
-    {% if product.brand and product.brand.size_chart %}
+    <div class="detail-facts">
+      {% if product.composition %}<div class="detail-stat"><span>СОСТАВ</span><strong>{{ product.composition }}</strong></div>{% endif %}
+      {% if product.fit %}<div class="detail-stat"><span>ПОСАДКА</span><strong>{{ product.fit }}</strong></div>{% endif %}
+      {% if product.care %}<div class="detail-stat"><span>УХОД</span><strong>{{ product.care|linebreaksbr }}</strong></div>{% endif %}
+      <div class="detail-stat"><span>ВЕС</span><strong>{{ product.weight_grams }} г</strong></div>
+    </div>
+    {% if product.brand and product.brand.size_rows %}
       <div class="detail-description">
-        <h2>РАЗМЕРЫ БРЕНДА</h2>
-        <p>{{ product.brand.size_chart|linebreaksbr }}</p>
+        <h2>РАЗМЕРЫ {{ product.brand.name }}</h2>
+        {% include 'includes/size_sheet.html' with rows=product.brand.size_rows %}
       </div>
     {% endif %}
     <div class="detail-notice">
       <span>✳</span>
-      <p>Заказ можно оформить без регистрации. Оплата онлайн не списывается: магазин свяжется по телефону или почте и подтвердит заказ. Условия доставки и возврата — внизу страницы.</p>
+      <p>Бери без аккаунта. Сейчас это заявка: деньги на сайте не списываются, бренд подтвердит заказ по телефону или почте. Как привезут и как вернуть — внизу страницы.</p>
     </div>
     {% if product.brand %}
-      <a class="back-catalog" href="{% url 'brand_message' product.brand.slug %}?product={{ product.slug }}">Написать бренду {{ product.brand.name }} ↗</a>
+      <a class="back-catalog" href="{% url 'brand_message' product.brand.slug %}?product={{ product.slug }}">Спросить {{ product.brand.name }} про эту вещь ↗</a>
     {% endif %}
     {% if can_change_product or can_delete_product %}
       <div class="product-admin-actions">
@@ -128,4 +156,20 @@
     <a href="{% url 'catalog' %}" class="back-catalog">← К каталогу</a>
   </div>
 </section>
+{% if related %}
+<section class="collection-section section-space">
+  <div class="container">
+    <div class="section-heading related-heading">
+      <div>
+        <div class="eyebrow"><span class="tiny-dot"></span> ЕЩЁ ОТ ЭТОГО БРЕНДА</div>
+        <h2>{{ product.brand.name }}<span class="heading-period">.</span></h2>
+      </div>
+      <a href="{% url 'brand_storefront' product.brand.slug %}" class="text-link">ВЕСЬ БРЕНД ↗</a>
+    </div>
+    <div class="product-grid">
+      {% for product in related %}{% include 'includes/product_card.html' %}{% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
 {% endblock %}

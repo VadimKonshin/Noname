@@ -1,12 +1,13 @@
 {% extends 'emails/base.html' %}
 {% block body %}
 {% if kind == 'created' %}
-<p><strong>Заказ №{{ order.pk }} принят.</strong></p>
+<p><strong>Заказ №{{ order.public_number }} принят.</strong></p>
 <p>Оплата онлайн не списывалась. Сохраните номер заказа.</p>
 {% elif kind == 'shipped' %}
-<p><strong>Заказ №{{ order.pk }} отправлен.</strong></p>
+<p><strong>Заказ №{{ order.public_number }} отправлен.</strong></p>
+{% if order.tracking_number %}<p>Трек: {{ order.tracking_number }}</p>{% endif %}
 {% else %}
-<p><strong>Заказ №{{ order.pk }} отменён.</strong></p>
+<p><strong>Заказ №{{ order.public_number }} отменён.</strong></p>
 {% endif %}
 <p>Получатель: {{ order.full_name }}<br>Доставка: {{ order.delivery_name }}{% if order.delivery_point_code %}<br>Пункт: {{ order.delivery_point_code }} {{ order.delivery_point_address }}{% endif %}</p>
 <ul>

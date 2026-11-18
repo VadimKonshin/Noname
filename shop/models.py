@@ -1,8 +1,9 @@
+import secrets
 from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
@@ -18,6 +19,10 @@ class Brand(models.Model):
     slug = models.SlugField('URL бренда', max_length=150, unique=True, blank=True, allow_unicode=True)
     description = models.TextField('О бренде', blank=True)
     size_chart = models.TextField('Таблица размеров', blank=True)
+    offers_cdek = models.BooleanField('СДЭК', default=True)
+    offers_post = models.BooleanField('Почта России', default=True)
+    offers_pickup = models.BooleanField('Самовывоз', default=False)
+    pickup_address = models.CharField('Адрес самовывоза', max_length=250, blank=True)
     is_active = models.BooleanField('Показывать бренд', default=True)
     sort_order = models.PositiveSmallIntegerField('Порядок в бегущей строке', default=0)
     is_deleted = models.BooleanField('Удалён менеджером', default=False)
@@ -47,6 +52,16 @@ class Brand(models.Model):
         ), None)
         if clash:
             raise ValidationError({'name': 'Бренд с таким или очень похожим названием уже есть.'})
+
+    def size_rows(self):
+        rows = []
+        for raw in (self.size_chart or '').splitlines():
+            line = raw.strip()
+            if not line:
+                continue
+            label, detail = _split_size_line(line)
+            rows.append({'label': label, 'detail': detail})
+        return rows
 
     def save(self, *args, **kwargs):
         if not self.slug:
@@ -129,6 +144,16 @@ class EmailToken(models.Model):
 SIZE_ORDER = ('XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL')
 
 
+def _split_size_line(line):
+    for separator in (' — ', ' – ', ' - ', ':', '—', '–'):
+        if separator in line:
+            label, detail = line.split(separator, 1)
+            label, detail = label.strip(), detail.strip()
+            if label and detail:
+                return label, detail
+    return line, ''
+
+
 class ProductQuerySet(models.QuerySet):
     def public(self):
         return self.filter(
@@ -146,8 +171,12 @@ class Product(models.Model):
     composition = models.CharField('Состав', max_length=200, blank=True)
     fit = models.CharField('Посадка', max_length=120, blank=True)
     care = models.TextField('Уход', blank=True)
+    weight_grams = models.PositiveIntegerField(
+        'Вес, г', default=500, validators=[MinValueValidator(100), MaxValueValidator(30000)],
+    )
     offers_cdek = models.BooleanField('СДЭК', default=True)
     offers_post = models.BooleanField('Почта России', default=True)
+    offers_pickup = models.BooleanField('Самовывоз', default=False)
     price = models.DecimalField('Цена, ₽', max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
     cover = PreparedImageField('Главное фото', upload_to='products/covers/', blank=True, validators=[validate_product_image])
     color = models.CharField('Цвет', max_length=80, default='Чёрный')
@@ -294,19 +323,39 @@ class DeliveryMethod(models.Model):
         return f'{self.name} — {self.price} ₽'
 
 
+def allocate_public_number(exclude_pk=None):
+    """Eight digits, never the sequential row id, so a guessed «заказ 3» opens nothing."""
+    qs = Order.objects.all()
+    if exclude_pk:
+        qs = qs.exclude(pk=exclude_pk)
+    for _ in range(12):
+        number = f'{secrets.randbelow(90_000_000) + 10_000_000}'
+        if not qs.filter(public_number=number).exists():
+            return number
+    raise ValidationError('Не удалось выдать номер заказа. Повторите оформление.')
+
+
 class Order(models.Model):
     NEW = 'new'
     CONFIRMED = 'confirmed'
     PROCESSING = 'processing'
+    IN_DELIVERY = 'in_delivery'
     SHIPPED = 'shipped'
     COMPLETED = 'completed'
     CANCELLED = 'cancelled'
     STATUS_CHOICES = [
         (NEW, 'Новый'), (CONFIRMED, 'Подтверждён'),
-        (PROCESSING, 'Собирается'), (SHIPPED, 'Отправлен'),
+        (PROCESSING, 'Собирается'), (IN_DELIVERY, 'В службе доставки'),
+        (SHIPPED, 'Отправлен'),
         (COMPLETED, 'Завершён'), (CANCELLED, 'Отменён'),
     ]
+    MANAGER_STATUS_CHOICES = [
+        (PROCESSING, 'Собирается'),
+        (IN_DELIVERY, 'В службе доставки'),
+        (SHIPPED, 'Отправлен'),
+    ]
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='shop_orders', verbose_name='Покупатель')
+    public_number = models.CharField('Номер для покупателя', max_length=8, unique=True, editable=False)
     checkout_token = models.CharField('Ключ оформления', max_length=80, unique=True, editable=False)
     full_name = models.CharField('Получатель', max_length=150)
     email = models.EmailField('E-mail')
@@ -325,6 +374,7 @@ class Order(models.Model):
     subtotal = models.DecimalField('Товары, ₽', max_digits=12, decimal_places=2)
     total = models.DecimalField('Итого, ₽', max_digits=12, decimal_places=2)
     status = models.CharField('Статус', max_length=16, choices=STATUS_CHOICES, default=NEW)
+    tracking_number = models.CharField('Трек', max_length=40, blank=True, default='')
     buyer_telegram_chat_id = models.CharField('Telegram покупателя', max_length=32, blank=True, default='')
     created_at = models.DateTimeField('Создан', auto_now_add=True)
     updated_at = models.DateTimeField('Изменён', auto_now=True)
@@ -334,11 +384,35 @@ class Order(models.Model):
         verbose_name = 'Заказ'
         verbose_name_plural = 'Заказы'
 
+    def save(self, *args, **kwargs):
+        if not self.public_number:
+            self.public_number = allocate_public_number(exclude_pk=self.pk)
+            update_fields = kwargs.get('update_fields')
+            if update_fields is not None:
+                kwargs['update_fields'] = set(update_fields) | {'public_number'}
+        super().save(*args, **kwargs)
+
     def __str__(self):
-        return f'Заказ №{self.pk or "—"}'
+        return f'Заказ №{self.public_number or "—"}'
 
     def get_absolute_url(self):
         return reverse('order_detail', kwargs={'pk': self.pk})
+
+
+class OrderRead(models.Model):
+    """Last time a manager or store admin opened someone else's order card."""
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='reads', verbose_name='Заказ')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='order_reads', verbose_name='Кто открыл')
+    opened_at = models.DateTimeField('Открыта', auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=('order', 'user'), name='unique_order_reader')]
+        ordering = ['-opened_at']
+        verbose_name = 'Просмотр заказа'
+        verbose_name_plural = 'Просмотры заказа'
+
+    def __str__(self):
+        return f'Заказ №{self.order_id} — {self.user_id}'
 
 
 class OrderItem(models.Model):
@@ -366,7 +440,8 @@ class BrandMessage(models.Model):
     product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, blank=True, related_name='messages', verbose_name='Вещь')
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='brand_messages', verbose_name='Аккаунт')
     sender_name = models.CharField('Имя', max_length=120)
-    sender_email = models.EmailField('Почта')
+    sender_email = models.EmailField('Почта', blank=True)
+    sender_telegram = models.CharField('Telegram', max_length=64, blank=True)
     body = models.TextField('Сообщение')
     reply_body = models.TextField('Ответ', blank=True)
     replied_at = models.DateTimeField('Ответ отправлен', null=True, blank=True)

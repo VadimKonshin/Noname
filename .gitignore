@@ -5,5 +5,9 @@ db.sqlite3
 media/
 staticfiles/
 .env
+deploy/.env
+deploy/bundle/
+deploy/backups/
 .DS_Store
 improvements.local.md
+правки.local.md

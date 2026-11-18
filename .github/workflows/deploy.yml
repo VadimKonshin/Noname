@@ -1,0 +1,62 @@
+name: Test and deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: noname-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install -r requirements.txt
+      - name: Test
+        run: python manage.py test shop
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Open SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/noname_deploy
+          chmod 600 ~/.ssh/noname_deploy
+          cat > ~/.ssh/known_hosts << 'EOF'
+          |1|jJxSVQFTcbkWjSSzD0iZ9dvzt/Y=|dNLEzBHps1b8JVHSGZqXYSOKFHM= ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC5KjJTcHrtq6OLs2uw56Wlj+AcSGjuArZDVRnwL0H5IBvD04z9d9o7XQSJZiI5HM3c7wkI33YiIwRHuWgSYGwpTI2dainvbNU9IjJ/MUnHyxp0gLHVpyUcta4V3aV+PECJN3FUxPDHzBNIucNXrXun9bawm/uGi5wkfVkqQ35OlDAEAFiE+Vj9EO0dKascyT9e2N3mm3gOVc1oGK293SbMEM9N+bOPwCazimTDNYXqLDWVEIpll2IQh2Q0id+ZOJOTVbkiDZb4vc1aQ3y13kcvilwn02sG3ME82nMGgEKlg9LD3WAXYjounC1ocyhas4sJ2IrjclSEtG6PEG9GYBdyWeUTeroNM4MCIMsFK2Uy/ZAvjgskxqCtlVsSZ6PrxFS8sfZm+zDy8jYPIlmxa9rhTe1mn/r/HOpAe3hGZk3NWrS5rHyplQxHbFE4GUH8siASec/roI6MZguQvOSijOkrvsd7Y+FrCttR0edRhM4GCbFb7zd+EIxgleO8osUodOE=
+          |1|pdSvQxAy+zx56oDO/bv6sylu54k=|ATfgT+sDKJpWz/AmVUxHoKU7u20= ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBHo9tq+36pAUIl/jYvxBoYZpT3Ky/P3RNJfNiCh4xKxzSXyQ9q+dZ7O+A5H1jvS1s5ejJlxcGRu5uqMEF16QB3g=
+          |1|sSPuo3Lq5AON3dTIbIDwj50lS5o=|Dl6wlNL0gJenfdkI1rWQzEnG6rA= ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIst1LrNRriqcxGwjMK3azESYsn4IArrVfGnIlaCRPMe
+          EOF
+          sed -i 's/^[[:space:]]*//' ~/.ssh/known_hosts
+      - name: Copy the project
+        run: |
+          rsync -az --delete \
+            --exclude .git \
+            --exclude .venv \
+            --exclude media \
+            --exclude staticfiles \
+            --exclude db.sqlite3 \
+            --exclude .env \
+            --exclude deploy/.env \
+            --exclude deploy/bundle \
+            --exclude deploy/backups \
+            --exclude __pycache__ \
+            --exclude '*.pyc' \
+            -e "ssh -i ~/.ssh/noname_deploy -o IdentitiesOnly=yes" \
+            ./ root@92.118.88.34:/opt/noname/
+      - name: Restart the site
+        run: |
+          ssh -i ~/.ssh/noname_deploy -o IdentitiesOnly=yes root@92.118.88.34 \
+            'cd /opt/noname/deploy && docker compose up -d --build'

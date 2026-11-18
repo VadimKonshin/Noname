@@ -1,4 +1,4 @@
-Новый заказ №{{ order.pk }}.
+Новый заказ №{{ order.public_number }}.
 
 Получатель: {{ order.full_name }}
 Почта: {{ order.email }}

@@ -18,6 +18,9 @@ class ShopConfig(AppConfig):
         import os
         import sys
         argv = sys.argv
+        executable = os.path.basename(argv[0]) if argv else ''
+        if executable == 'gunicorn' or executable.startswith('gunicorn'):
+            return
         if any(command in argv for command in ('test', 'migrate', 'makemigrations', 'collectstatic', 'shell', 'telegram_bot')):
             return
         if 'runserver' not in argv or os.environ.get('RUN_MAIN') != 'true':

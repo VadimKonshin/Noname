@@ -7,6 +7,7 @@ from .models import DeliveryMethod, Order, OrderItem, Product, ProductVariant
 
 CART_SESSION_KEY = 'pustota_cart'
 DELIVERY_SESSION_KEY = 'noname_delivery_id'
+PREORDER_OFFER_KEY = 'preorder_offer'
 
 
 def cart_products(cart):
@@ -19,14 +20,39 @@ def one_brand(lines):
 
 
 def method_offered_by(method, products):
-    """Pickup stays off the cart. СДЭК and Почта России follow the product flags."""
-    if method is None or not method.is_active or method.price < 0 or method.code == DeliveryMethod.PICKUP:
+    """СДЭК and Почта России need both the brand and every item. Pickup needs the brand address and a yes on the brand or on every item."""
+    if method is None or not method.is_active or method.price < 0 or not products:
         return False
     if method.code == DeliveryMethod.CDEK:
-        return all(product.offers_cdek for product in products)
+        return all(product.offers_cdek and _brand_allows(product, 'offers_cdek') for product in products)
     if method.code == DeliveryMethod.POST:
-        return all(product.offers_post for product in products)
+        return all(product.offers_post and _brand_allows(product, 'offers_post') for product in products)
+    if method.code == DeliveryMethod.PICKUP:
+        return all(_product_can_pickup(product) for product in products)
     return True
+
+
+def _brand_allows(product, flag):
+    brand = product.brand
+    if brand is None:
+        return True
+    return bool(getattr(brand, flag))
+
+
+def _product_can_pickup(product):
+    brand = product.brand
+    if brand is None or not (brand.pickup_address or '').strip():
+        return False
+    return bool(brand.offers_pickup or product.offers_pickup)
+
+
+def pickup_place(products):
+    if not products or not one_brand([{'product': product} for product in products]):
+        return ''
+    brand = products[0].brand
+    if brand is None:
+        return ''
+    return (brand.pickup_address or '').strip()
 
 
 def available_delivery_methods(products):
@@ -107,7 +133,7 @@ def get_cart(request):
         if not variant:
             continue
         if is_preorder:
-            if not product.allow_preorder or variant.stock_quantity != 0:
+            if not product.allow_preorder:
                 continue
             room = preorder_room(product.pk, size, preorder_taken)
             if room <= 0:
@@ -155,7 +181,7 @@ def put(request, product, size, qty, is_preorder=False):
     if variant is None:
         return False
     if is_preorder:
-        if not product.allow_preorder or variant.stock_quantity != 0:
+        if not product.allow_preorder:
             return False
     elif variant.stock_quantity <= 0:
         return False
@@ -174,6 +200,104 @@ def put(request, product, size, qty, is_preorder=False):
         return False
     raw[key] = new_quantity
     request.session[CART_SESSION_KEY] = raw
+    request.session.modified = True
+    return True
+
+
+def _session_cart(request):
+    raw = request.session.get(CART_SESSION_KEY, {})
+    return raw if isinstance(raw, dict) else {}
+
+
+def _stored_qty(raw, key):
+    value = raw.get(key)
+    return value if type(value) is int else 0
+
+
+def preorder_fits(request, product, size, quantity):
+    """True when swapping this size to a preorder of `quantity` stays inside the cart cap."""
+    raw = _session_cart(request)
+    previous = _stored_qty(raw, _key(product.pk, size, False)) + _stored_qty(raw, _key(product.pk, size, True))
+    count = sum(value for value in raw.values() if type(value) is int)
+    return count - previous + quantity <= MAX_TOTAL_ITEMS
+
+
+def preorder_offer_for(request, product, size, quantity, is_preorder, adding):
+    """
+    A stock request that asks for more than the shelf.
+    ('offer', asked, stock) when a preorder of that many still fits.
+    ('room', None, None) when the open-preorder cap blocks it.
+    (None, None, None) when this is not that case.
+    """
+    if is_preorder or not product.allow_preorder or type(quantity) is not int or not 1 <= quantity <= MAX_PER_VARIANT:
+        return None, None, None
+    variant = next((item for item in product.variants.all() if item.size == size), None)
+    if variant is None:
+        return None, None, None
+    existing = 0
+    if adding:
+        existing = _stored_qty(_session_cart(request), _key(product.pk, size, False))
+    asked = existing + quantity if adding else quantity
+    if asked <= variant.stock_quantity or asked > MAX_PER_VARIANT:
+        return None, None, None
+    if asked > preorder_room(product.pk, size):
+        return 'room', None, None
+    if not preorder_fits(request, product, size, asked):
+        return None, None, None
+    return 'offer', asked, variant.stock_quantity
+
+
+def remember_preorder_offer(request, product, size, quantity, stock, next_page):
+    request.session[PREORDER_OFFER_KEY] = {
+        'product_id': product.pk,
+        'size': size,
+        'quantity': quantity,
+        'stock': stock,
+        'title': product.title,
+        'next': next_page,
+    }
+    request.session.modified = True
+
+
+def pop_preorder_offer(request, product_id=None):
+    offer = request.session.get(PREORDER_OFFER_KEY)
+    if not isinstance(offer, dict):
+        return None
+    if product_id is not None and offer.get('product_id') != product_id:
+        return None
+    request.session.pop(PREORDER_OFFER_KEY, None)
+    request.session.modified = True
+    quantity = offer.get('quantity')
+    stock = offer.get('stock')
+    size = offer.get('size')
+    title = offer.get('title')
+    if (type(quantity) is not int or type(stock) is not int or not isinstance(size, str)
+            or not isinstance(title, str) or not 1 <= quantity <= MAX_PER_VARIANT
+            or offer.get('next') not in ('product', 'cart')):
+        return None
+    return offer
+
+
+def replace_with_preorder(request, product, size, quantity):
+    """Drop the in-stock line for this size and keep the asked quantity as a preorder."""
+    if not product.allow_preorder or type(quantity) is not int or not 1 <= quantity <= MAX_PER_VARIANT:
+        return False
+    if not size or len(size) > 40 or ':' in size or size not in product.size_list:
+        return False
+    if next((item for item in product.variants.all() if item.size == size), None) is None:
+        return False
+    if quantity > preorder_room(product.pk, size):
+        return False
+    cart = get_cart(request)
+    if not one_brand(cart['lines'] + [{'product': product}]):
+        return False
+    if not preorder_fits(request, product, size, quantity):
+        return False
+    raw = _session_cart(request).copy()
+    raw.pop(_key(product.pk, size, False), None)
+    raw[_key(product.pk, size, True)] = quantity
+    request.session[CART_SESSION_KEY] = raw
+    request.session.pop(PREORDER_OFFER_KEY, None)
     request.session.modified = True
     return True
 
@@ -203,16 +327,20 @@ def set_quantity(request, product_id, size, qty, is_preorder=False):
     return True
 
 
-def update_order_status(order_id, status):
+def update_order_status(order_id, status, tracking_number=None):
     with transaction.atomic():
         order = Order.objects.select_for_update().prefetch_related('items__product').get(pk=order_id)
         if status not in dict(Order.STATUS_CHOICES):
             raise ValidationError('Выбран недопустимый статус заказа.')
         if order.status == Order.CANCELLED and status != Order.CANCELLED:
             raise ValidationError('Отменённый заказ нельзя открыть повторно.')
-        if order.status == status:
+        previous_tracking = order.tracking_number
+        tracking = previous_tracking if tracking_number is None else tracking_number
+        status_changed = order.status != status
+        tracking_changed = tracking != previous_tracking
+        if not status_changed and not tracking_changed:
             return order
-        if status == Order.CANCELLED:
+        if status_changed and status == Order.CANCELLED:
             for item in order.items.all():
                 if item.is_preorder or item.product_id is None:
                     continue
@@ -221,8 +349,12 @@ def update_order_status(order_id, status):
                     size=item.size,
                 ).update(stock_quantity=F('stock_quantity') + item.quantity)
         order.status = status
-        order.save(update_fields=['status', 'updated_at'])
-        if status in (Order.SHIPPED, Order.CANCELLED):
+        order.tracking_number = tracking
+        order.save(update_fields=['status', 'tracking_number', 'updated_at'])
+        tell_buyer = (status_changed and status in (Order.SHIPPED, Order.CANCELLED)) or (
+            tracking_changed and status == Order.SHIPPED
+        )
+        if tell_buyer:
             from .mail import notify_order_status
             from .telegram import notify_status_change
             notify_order_status(order.pk)

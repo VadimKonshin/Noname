@@ -33,7 +33,7 @@
       <tbody>
         {% for order in page %}
           <tr>
-            <td><strong>#{{ order.pk }}</strong></td>
+            <td><strong>#{{ order.public_number }}</strong></td>
             <td>{{ order.created_at|date:'d.m.Y H:i' }}</td>
             <td>{{ order.full_name }}<small class="table-muted">{{ order.email }}</small></td>
             <td>

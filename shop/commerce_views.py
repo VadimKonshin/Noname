@@ -1,14 +1,17 @@
 """Cart, checkout, order history and staff analytics."""
 import secrets
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
-from django.core.exceptions import ValidationError
+from django.contrib.auth.models import Permission
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models import Count, F, Prefetch, Sum
-from django.db.models.functions import Coalesce
+from django.db.models.functions import Coalesce, TruncDate
+from django.utils import timezone
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
@@ -16,38 +19,41 @@ from django_ratelimit.decorators import ratelimit
 
 from .access import (
     brand_manager_required, get_brand_manager, get_scoped_object_or_404,
-    product_permission_required, scoped_order_items,
+    order_is_this_brand_only, product_permission_required, scoped_order_items,
 )
 from .commerce import (
     CART_SESSION_KEY, DELIVERY_SESSION_KEY, MAX_OPEN_PREORDER_PER_VARIANT, MAX_PER_VARIANT,
     available_delivery_methods, cart_products, get_cart, method_offered_by, one_brand,
-    open_preorder_map, put, set_quantity, update_order_status,
+    open_preorder_map, pickup_place, pop_preorder_offer, preorder_offer_for, preorder_room,
+    put, remember_preorder_offer, replace_with_preorder, set_quantity, update_order_status,
 )
-from .cdek import CdekUnavailable, configured as cdek_configured, quote_delivery
-from .commerce_forms import CheckoutForm, OrderStatusForm
-from .models import DeliveryMethod, Order, OrderItem, Product, ProductVariant
+from .cdek import CdekUnavailable, configured as cdek_configured, parcel_weight, quote_delivery
+from .commerce_forms import CheckoutForm, ManagerOrderStatusForm, OrderLookupForm, OrderStatusForm
+from .models import BrandManager, DeliveryMethod, Order, OrderItem, OrderRead, Product, ProductVariant, UserProfile
 from .mail import notify_order_created
-from .telegram import cabinet_context, issue_bind_token, notify_new_order
+from .telegram import cabinet_context, consume_phone_lookup, issue_bind_token, notify_new_order, order_for_phone
 
 
 CDEK_QUOTE_SESSION = 'cdek_quote'
 
 
-def _cdek_decision(request, postal_code, pieces, selected_code):
+def _cdek_decision(request, postal_code, pieces, weight, selected_code):
     """Quote again on the server. The first matching view is shown; the next identical one is stored."""
-    quote = quote_delivery(postal_code, pieces)
+    quote = quote_delivery(postal_code, pieces, weight_grams=weight)
     match = next((point for point in quote.points if point['code'] == selected_code), None)
     held = request.session.get(CDEK_QUOTE_SESSION)
     held = held if isinstance(held, dict) else {}
     same_quote = (
         held.get('postal_code') == quote.postal_code
         and held.get('pieces') == quote.pieces
+        and held.get('weight') == quote.weight
         and held.get('price') == str(quote.price)
     )
     confirmed = bool(match) and same_quote and held.get('point') in ('', match['code'])
     request.session[CDEK_QUOTE_SESSION] = {
         'postal_code': quote.postal_code,
         'pieces': quote.pieces,
+        'weight': quote.weight,
         'price': str(quote.price),
         'point': match['code'] if match else '',
     }
@@ -77,11 +83,12 @@ def _checkout_response(request, form, current_cart, method, token, quote=None, s
         'cdek_live': live,
         'cdek_quote': quote,
         'selected_point': selected_point,
+        'pickup_place': pickup_place(cart_products(current_cart)),
     })
 
 
 def selected_delivery(request, products):
-    """Load the session selection, rejecting pickup and methods the cart cannot use."""
+    """Load the session selection, dropping a method this cart can no longer use."""
     method_id = request.session.get(DELIVERY_SESSION_KEY)
     if type(method_id) is not int:
         return None
@@ -101,11 +108,17 @@ def cart(request):
     selected = selected_delivery(request, products) if single_brand else None
     live_selected = cdek_configured() and selected is not None and selected.code == DeliveryMethod.CDEK
     shipping = Decimal('0.00') if live_selected or selected is None else selected.price
+    preorder_offer = pop_preorder_offer(request)
     return render(request, 'shop/cart.html', {
         'cart': current, 'delivery_methods': delivery_methods, 'selected_method': selected,
         'grand_total': current['subtotal'] + shipping,
         'cdek_selected_live': live_selected,
         'single_brand': single_brand,
+        'pickup_place': pickup_place(products) if single_brand else '',
+        'preorder_offer': preorder_offer,
+        'show_preorder_plate': bool(preorder_offer) or any(
+            not line['is_preorder'] and line['product'].allow_preorder for line in current['lines']
+        ),
     })
 
 
@@ -152,8 +165,10 @@ def cart_add(request, slug):
     elif not one_brand(get_cart(request)['lines'] + [{'product': product}]):
         messages.error(request, 'В одном заказе — один бренд и одна доставка. Оформите текущую корзину или уберите вещи другого бренда.')
         return redirect('cart')
+    elif (offer := _preorder_offer_or_none(request, product, size, quantity, is_preorder, adding=True)) is not None:
+        return offer
     elif not put(request, product, size, quantity, is_preorder):
-        messages.error(request, 'Выбранный размер недоступен в этом количестве. Обновите остаток или режим заказа.')
+        messages.error(request, _over_stock_message(product, size, quantity, is_preorder))
     else:
         mode = 'под заказ' if is_preorder else 'в корзину'
         messages.success(request, f'«{product.title}», размер {size}, добавлен {mode}.')
@@ -162,19 +177,92 @@ def cart_add(request, slug):
     return redirect(product.get_absolute_url())
 
 
+def _asks_more_than_stock(product, size, quantity, is_preorder):
+    if is_preorder or type(quantity) is not int:
+        return False
+    variant = next((item for item in product.variants.all() if item.size == size), None)
+    return variant is not None and quantity > variant.stock_quantity
+
+
+def _over_stock_message(product, size, quantity, is_preorder):
+    if not product.allow_preorder and _asks_more_than_stock(product, size, quantity, is_preorder):
+        return 'Выбранный размер недоступен в этом количестве. Свяжитесь с продавцом для предзаказа.'
+    if product.allow_preorder:
+        return 'Выбранный размер недоступен в этом количестве. Вы можете оставить предзаказ.'
+    return 'Выбранный размер недоступен в этом количестве.'
+
+
+def _preorder_offer_or_none(request, product, size, quantity, is_preorder, adding):
+    """Redirect with the preorder plate, or None when the stock request can proceed."""
+    kind, asked, stock = preorder_offer_for(request, product, size, quantity, is_preorder, adding)
+    if kind == 'room':
+        messages.error(
+            request,
+            'В наличии нет такого количества. Предзаказ на этот размер уже принят до лимита в 10 штук.',
+        )
+        return redirect(product.get_absolute_url() if adding else 'cart')
+    if kind == 'offer':
+        remember_preorder_offer(request, product, size, asked, stock, 'product' if adding else 'cart')
+        return redirect(product.get_absolute_url() if adding else 'cart')
+    return None
+
+
 @require_POST
 def cart_update(request):
     product_id = _integer(request.POST.get('product_id'))
     size = request.POST.get('size', '')
     quantity = _integer(request.POST.get('quantity'))
     is_preorder = request.POST.get('order_type') == 'preorder'
+    product = None
+    if product_id is not None and product_id >= 1 and quantity is not None and 1 <= quantity <= MAX_PER_VARIANT:
+        product = (Product.objects.public().filter(pk=product_id, price__gt=0, is_available=True)
+                   .prefetch_related('variants').first())
+    if product is not None and len(size) <= 40 and ':' not in size and size in product.size_list:
+        offer = _preorder_offer_or_none(request, product, size, quantity, is_preorder, adding=False)
+        if offer is not None:
+            return offer
     if (product_id is None or product_id < 1 or quantity is None
             or not 0 <= quantity <= MAX_PER_VARIANT
             or not set_quantity(request, product_id, size, quantity, is_preorder)):
-        messages.error(request, 'Не удалось изменить количество. Обновите корзину.')
+        if product is not None and _asks_more_than_stock(product, size, quantity, is_preorder):
+            messages.error(request, _over_stock_message(product, size, quantity, is_preorder))
+        else:
+            messages.error(request, 'Не удалось изменить количество. Обновите корзину.')
     else:
         messages.success(request, 'Корзина обновлена.')
     return redirect('cart')
+
+
+@require_POST
+def cart_take_preorder(request):
+    product_id = _integer(request.POST.get('product_id'))
+    size = request.POST.get('size', '').strip()
+    quantity = _integer(request.POST.get('quantity'))
+    if product_id is None or product_id < 1:
+        messages.error(request, 'Не удалось оставить предзаказ. Выберите вещь ещё раз.')
+        return redirect('cart')
+    product = get_object_or_404(
+        Product.objects.public().filter(price__gt=0, is_available=True).prefetch_related('variants'),
+        pk=product_id,
+    )
+    back = 'cart' if request.POST.get('next') == 'cart' else product.get_absolute_url()
+    if not product.allow_preorder:
+        messages.error(request, 'Этот товар не принимают под заказ.')
+    elif quantity is None or not 1 <= quantity <= MAX_PER_VARIANT or len(size) > 40 or ':' in size or size not in product.size_list:
+        messages.error(request, 'Не удалось оставить предзаказ. Выберите количество ещё раз.')
+    elif quantity > preorder_room(product.pk, size):
+        messages.error(request, 'Предзаказ на этот размер уже принят до лимита в 10 штук.')
+    elif not one_brand(get_cart(request)['lines'] + [{'product': product}]):
+        messages.error(request, 'В одном заказе — один бренд и одна доставка. Оформите текущую корзину или уберите вещи другого бренда.')
+        return redirect('cart')
+    elif not replace_with_preorder(request, product, size, quantity):
+        messages.error(request, 'Не удалось оставить предзаказ. Обновите страницу.')
+    else:
+        messages.success(
+            request,
+            f'«{product.title}», размер {size}: предзаказ на {quantity} шт.',
+        )
+    return redirect(back)
 
 
 @ratelimit(group='checkout', key='ip', rate='10/h', method='POST')
@@ -224,7 +312,9 @@ def checkout(request):
                 selected_code = (request.POST.get('delivery_point') or '').strip()[:64]
                 pieces = sum(line['quantity'] for line in current_cart['lines'])
                 try:
-                    quote, match, confirmed = _cdek_decision(request, data['postal_code'], pieces, selected_code)
+                    quote, match, confirmed = _cdek_decision(
+                        request, data['postal_code'], pieces, parcel_weight(current_cart['lines']), selected_code,
+                    )
                 except CdekUnavailable:
                     messages.error(
                         request,
@@ -257,7 +347,10 @@ def checkout(request):
                     if not method_offered_by(current_method, cart_products(verified_cart)):
                         raise ValueError('Способ доставки недоступен. Выберите другой в корзине.')
                     if quote is not None:
-                        if sum(item['quantity'] for item in verified_cart['lines']) != quote.pieces:
+                        if (
+                            sum(item['quantity'] for item in verified_cart['lines']) != quote.pieces
+                            or parcel_weight(verified_cart['lines']) != quote.weight
+                        ):
                             raise ValueError('Корзина изменилась. Рассчитайте доставку ещё раз.')
                         agreed = quote.price
                         eta = quote.eta or current_method.eta
@@ -268,6 +361,12 @@ def checkout(request):
                         eta = current_method.eta
                         point_code = ''
                         point_address = ''
+                    if current_method.code == DeliveryMethod.PICKUP:
+                        place = pickup_place(cart_products(verified_cart))
+                        if not place:
+                            raise ValueError('Самовывоз сейчас недоступен: у бренда нет адреса.')
+                    else:
+                        place = current_method.pickup_address
                     address = (data['address'] or '').strip() or point_address
                     preorder_lines = [item for item in verified_cart['lines'] if item['is_preorder']]
                     if preorder_lines:
@@ -281,6 +380,7 @@ def checkout(request):
                                     f'Предзаказ «{item["product"].title}», размер {item["size"]}, уже набран. Уменьшите количество.'
                                 )
                     for item in verified_cart['lines']:
+                        # Предзаказ не списывает склад, пока менеджер его не согласует.
                         if item['is_preorder']:
                             continue
                         reserved = ProductVariant.objects.filter(
@@ -295,7 +395,7 @@ def checkout(request):
                         checkout_token=token,
                         full_name=data['full_name'], email=data['email'], phone=data['phone'],
                         delivery_method=current_method, delivery_name=current_method.name,
-                        delivery_eta=eta, pickup_address=current_method.pickup_address,
+                        delivery_eta=eta, pickup_address=place,
                         delivery_point_code=point_code, delivery_point_address=point_address,
                         delivery_price=agreed, subtotal=subtotal,
                         total=subtotal + agreed,
@@ -331,10 +431,25 @@ def checkout(request):
                 request.session.pop('checkout_token', None)
                 request.session.pop(CDEK_QUOTE_SESSION, None)
                 request.session.modified = True
-                messages.success(request, f'Заказ №{order.pk} принят. Оплата онлайн не списывалась: мы свяжемся по телефону или почте, чтобы подтвердить его. Сохраните номер.')
+                messages.success(request, f'Заказ №{order.public_number} принят. Оплата онлайн не списывалась: мы свяжемся по телефону или почте, чтобы подтвердить его. Сохраните номер.')
                 return redirect(order.get_absolute_url())
 
     return _checkout_response(request, form, current_cart, method, token)
+
+
+@ratelimit(group='order_lookup', key='ip', rate='8/h', method='POST')
+@require_http_methods(['GET', 'POST'])
+def order_lookup(request):
+    form = OrderLookupForm(request.POST if request.method == 'POST' else None)
+    order = None
+    outcome = ''
+    if request.method == 'POST' and form.is_valid():
+        if consume_phone_lookup('web', form.cleaned_data['phone']):
+            outcome = 'limited'
+        else:
+            order = order_for_phone(form.cleaned_data['order_id'], form.cleaned_data['phone'])
+            outcome = 'found' if order else 'missing'
+    return render(request, 'shop/order_lookup.html', {'form': form, 'order': order, 'outcome': outcome})
 
 
 @login_required
@@ -351,6 +466,43 @@ def attach_brand_items(orders, brand):
     return orders.prefetch_related(Prefetch('items', queryset=items, to_attr='brand_items'))
 
 
+def purchase_bars(active_items, days=14):
+    """Daily totals for this brand only. Heights are SVG units, not inline CSS."""
+    today = timezone.localdate()
+    start = today - timedelta(days=days - 1)
+    totals = {}
+    rows = (
+        active_items.filter(order__created_at__date__gte=start)
+        .annotate(day=TruncDate('order__created_at'))
+        .values('day')
+        .annotate(amount=Sum('line_total'))
+    )
+    for row in rows:
+        day = row['day']
+        if isinstance(day, datetime):
+            day = day.date()
+        elif isinstance(day, str):
+            day = date.fromisoformat(day[:10])
+        totals[day] = row['amount'] or Decimal('0')
+    peak = max(totals.values(), default=Decimal('0'))
+    bars = []
+    slot = 44
+    for index in range(days):
+        day = start + timedelta(days=index)
+        amount = totals.get(day, Decimal('0'))
+        height = 0 if not peak or amount == 0 else max(6, int((amount / peak) * 120))
+        x = 8 + index * slot
+        bars.append({
+            'x': x,
+            'y': 148 - height,
+            'h': height,
+            'label': day.strftime('%d'),
+            'label_x': x + 2,
+            'amount': amount,
+        })
+    return bars
+
+
 def set_brand_totals(orders):
     for order in orders:
         order.brand_total = sum((item.line_total for item in order.brand_items), Decimal('0.00'))
@@ -359,17 +511,36 @@ def set_brand_totals(orders):
 
 @require_GET
 def order_detail(request, pk):
-    order = get_object_or_404(Order.objects.prefetch_related('items'), pk=pk)
+    order = get_object_or_404(Order.objects.prefetch_related('items__product'), pk=pk)
     can_view_any_order = request.user.has_perm('shop.view_order')
     owns_order = request.user.is_authenticated and order.user_id == request.user.pk
     owns_guest_order = order.user_id is None and order.pk in request.session.get('guest_order_ids', [])
     manager = get_brand_manager(request.user)
-    brand_items = list(scoped_order_items(manager.brand, order.items)) if manager else []
+    brand_items = list(scoped_order_items(manager.brand, order.items)) if manager and manager.brand_id else []
     can_view_brand_order = bool(brand_items)
     brand_order_view = can_view_brand_order and not (can_view_any_order or owns_order or owns_guest_order)
     if not (can_view_any_order or owns_order or owns_guest_order or can_view_brand_order):
         raise Http404('Заказ не найден.')
+    buyer_view = (owns_order or owns_guest_order) and not can_view_any_order and not can_view_brand_order
+    if buyer_view:
+        return render(request, 'shop/order_thanks.html', {'order': order})
     can_change_order = request.user.has_perm('shop.change_order') and not brand_order_view
+    can_change_brand_status = bool(
+        manager and manager.brand_id and can_view_brand_order and not can_view_any_order
+        and order.status != Order.CANCELLED
+        and order_is_this_brand_only(order, manager.brand)
+    )
+    if request.user.is_authenticated and not owns_order and not owns_guest_order and (can_view_any_order or can_view_brand_order):
+        OrderRead.objects.update_or_create(order=order, user=request.user)
+    status_form = None
+    if can_change_order:
+        status_form = OrderStatusForm(instance=order)
+    elif can_change_brand_status:
+        initial_status = order.status if order.status in dict(Order.MANAGER_STATUS_CHOICES) else ''
+        status_form = ManagerOrderStatusForm(initial={
+            'status': initial_status,
+            'tracking_number': order.tracking_number,
+        })
     return render(request, 'shop/order_detail.html', {
         'order': order,
         'order_items': brand_items if brand_order_view else order.items.all(),
@@ -377,7 +548,9 @@ def order_detail(request, pk):
         'brand_subtotal': sum((item.line_total for item in brand_items), Decimal('0.00')),
         'can_view_any_order': can_view_any_order,
         'can_change_order': can_change_order,
-        'status_form': OrderStatusForm(instance=order) if can_change_order else None,
+        'can_change_brand_status': can_change_brand_status,
+        'status_form': status_form,
+        'order_reads': order.reads.select_related('user') if can_view_any_order else None,
     })
 
 
@@ -400,6 +573,9 @@ def dashboard(request):
                                                   orders=Count('order_id', distinct=True))
                    .order_by('-value'))
     recent = Order.objects.select_related('user').order_by('-created_at')[:8]
+    applications = None
+    if request.user.is_superuser:
+        applications = _manager_applications()
     return render(request, 'shop/dashboard.html', {
         'orders_count': Order.objects.count(),
         'active_orders_count': active_orders.count(),
@@ -411,7 +587,62 @@ def dashboard(request):
         'recent_orders': recent,
         'cancelled_count': status_counts.get(Order.CANCELLED, 0),
         'new_count': status_counts.get(Order.NEW, 0),
+        'manager_applications': applications,
     })
+
+
+PANEL_CODENAMES = (
+    'view_order', 'change_order',
+    'view_product', 'add_product', 'change_product', 'delete_product',
+)
+
+
+def _manager_applications():
+    applications = list(
+        BrandManager.objects.select_related('user__profile', 'brand').order_by('is_approved', '-created_at')
+    )
+    for application in applications:
+        user = application.user
+        try:
+            application.email_verified = user.profile.email_verified_at is not None
+        except UserProfile.DoesNotExist:
+            application.email_verified = False
+        application.admin_locked = user.is_superuser
+    return applications
+
+
+def _panel_permissions():
+    return list(Permission.objects.filter(content_type__app_label='shop', codename__in=PANEL_CODENAMES))
+
+
+@login_required
+@require_POST
+def dashboard_managers(request):
+    if not request.user.is_superuser:
+        raise PermissionDenied
+    approved_ids = {pk for raw in request.POST.getlist('approved') if (pk := _integer(raw)) and pk > 0}
+    staff_ids = {pk for raw in request.POST.getlist('staff') if (pk := _integer(raw)) and pk > 0}
+    permissions = _panel_permissions()
+    with transaction.atomic():
+        applications = BrandManager.objects.select_for_update().select_related('user')
+        for application in applications:
+            approved = application.pk in approved_ids
+            if application.is_approved != approved:
+                application.is_approved = approved
+                application.save(update_fields=['is_approved'])
+            user = application.user
+            if user.is_superuser:
+                continue
+            grant_staff = application.pk in staff_ids
+            if user.is_staff != grant_staff:
+                user.is_staff = grant_staff
+                user.save(update_fields=['is_staff'])
+            if grant_staff:
+                user.user_permissions.add(*permissions)
+            elif permissions:
+                user.user_permissions.remove(*permissions)
+    messages.success(request, 'Заявки менеджеров сохранены.')
+    return redirect('dashboard')
 
 
 @brand_manager_required
@@ -469,6 +700,7 @@ def brand_dashboard(request):
         'recent_orders': set_brand_totals(recent),
         'cancelled_count': status_counts.get(Order.CANCELLED, 0),
         'new_count': status_counts.get(Order.NEW, 0),
+        'purchase_bars': purchase_bars(active_items),
     })
 
 
@@ -526,14 +758,48 @@ def change_order_status(request, pk):
     order = get_object_or_404(Order, pk=pk)
     form = OrderStatusForm(request.POST, instance=order)
     if form.is_valid():
+        tracking = form.cleaned_data['tracking_number'] if 'tracking_number' in request.POST else None
         try:
-            update_order_status(order.pk, form.cleaned_data['status'])
+            update_order_status(order.pk, form.cleaned_data['status'], tracking_number=tracking)
         except ValidationError as exc:
             messages.error(request, exc.message)
         else:
-            messages.success(request, f'Статус заказа №{order.pk} обновлён.')
+            messages.success(request, f'Статус заказа №{order.public_number} обновлён.')
     else:
-        messages.error(request, 'Выбран недопустимый статус заказа.')
+        messages.error(request, ' '.join(error for errors in form.errors.values() for error in errors))
+    return redirect(order.get_absolute_url())
+
+
+@brand_manager_required
+@require_POST
+def brand_change_order_status(request, pk):
+    manager = request.brand_manager
+    if manager.brand_id is None:
+        messages.error(request, 'Сначала создайте бренд.')
+        return redirect('brand_create')
+    order = get_object_or_404(Order.objects.prefetch_related('items__product'), pk=pk)
+    if not scoped_order_items(manager.brand, order.items).exists():
+        raise Http404('Заказ не найден.')
+    if not order_is_this_brand_only(order, manager.brand):
+        messages.error(request, 'В этом заказе есть другой бренд. Общий статус меняет администратор магазина.')
+        return redirect(order.get_absolute_url())
+    if order.status == Order.CANCELLED:
+        messages.error(request, 'Отменённый заказ нельзя открыть повторно.')
+        return redirect(order.get_absolute_url())
+    form = ManagerOrderStatusForm(request.POST)
+    if form.is_valid():
+        try:
+            update_order_status(
+                order.pk,
+                form.cleaned_data['status'],
+                tracking_number=form.cleaned_data['tracking_number'],
+            )
+        except ValidationError as exc:
+            messages.error(request, exc.message)
+        else:
+            messages.success(request, f'Статус заказа №{order.public_number} обновлён.')
+    else:
+        messages.error(request, ' '.join(error for errors in form.errors.values() for error in errors))
     return redirect(order.get_absolute_url())
 
 

@@ -12,7 +12,7 @@ from .access import brand_account_home, get_brand_manager
 from .accounts import (
     apply_email_token, clear_console_link, console_mail_link, consume_email_token, ensure_profile,
     find_email_token, remember_console_link, send_confirmation, send_email_change, send_password_reset,
-    uses_console_mail,
+    show_console_mail, uses_console_mail,
 )
 from .forms import EmailChangeForm, PasswordResetRequestForm, StoreSetPasswordForm
 from .models import EmailToken
@@ -20,10 +20,19 @@ from .models import EmailToken
 logger = logging.getLogger(__name__)
 
 
-def _resent_message(sent):
+def _mail_result(sent, local):
+    if show_console_mail():
+        return local
     if uses_console_mail():
-        return 'Почтовый сервер не подключён: новая ссылка напечатана в консоли сервера и показана на этой странице. Предыдущая больше не действует.'
-    return f'{sent} Предыдущая больше не действует.'
+        return 'Письмо сейчас не отправляется.'
+    return sent
+
+
+def _resent_message(sent):
+    return _mail_result(
+        f'{sent} Предыдущая больше не действует.',
+        'Почтовый сервер не подключён: новая ссылка напечатана в консоли сервера и показана на этой странице. Предыдущая больше не действует.',
+    )
 
 
 TOKEN_RESULTS = {
@@ -51,10 +60,10 @@ def account_email(request):
             messages.warning(request, 'Новая почта ещё не сохранена, и письмо не ушло. Запросите ссылку ещё раз.')
         else:
             remember_console_link(request, link)
-            if uses_console_mail():
-                messages.success(request, 'Почтовый сервер не подключён: ссылка для новой почты напечатана в консоли сервера и показана на этой странице. Прежняя почта работает, пока вы не нажмёте кнопку.')
-            else:
-                messages.success(request, 'Ссылка для новой почты отправлена. Прежняя почта работает, пока вы не нажмёте кнопку в письме.')
+            messages.success(request, _mail_result(
+                'Ссылка для новой почты отправлена. Прежняя почта работает, пока вы не нажмёте кнопку в письме.',
+                'Почтовый сервер не подключён: ссылка для новой почты напечатана в консоли сервера и показана на этой странице. Прежняя почта работает, пока вы не нажмёте кнопку.',
+            ))
         return redirect('account_email')
     return render(request, 'accounts/email.html', {
         'form': form,
@@ -127,16 +136,10 @@ def password_reset(request):
             messages.error(request, 'Письмо не отправилось. Попробуйте ещё раз чуть позже.')
         else:
             remember_console_link(request, link)
-            if uses_console_mail():
-                messages.success(
-                    request,
-                    'Если эта почта подтверждена, ссылка напечатана в консоли сервера и показана на этой странице. Она действует один час и сгорает после смены пароля.',
-                )
-            else:
-                messages.success(
-                    request,
-                    'Если эта почта подтверждена, мы отправили ссылку для нового пароля. Она действует один час и сгорает после смены пароля.',
-                )
+            messages.success(request, _mail_result(
+                'Если эта почта подтверждена, мы отправили ссылку для нового пароля. Она действует один час и сгорает после смены пароля.',
+                'Если эта почта подтверждена, ссылка напечатана в консоли сервера и показана на этой странице. Она действует один час и сгорает после смены пароля.',
+            ))
         return redirect('password_reset')
     return render(request, 'accounts/password_reset.html', {
         'form': form,

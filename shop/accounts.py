@@ -25,19 +25,33 @@ def uses_console_mail():
     return settings.EMAIL_BACKEND == 'django.core.mail.backends.console.EmailBackend'
 
 
+def show_console_mail():
+    """The raw letter link is a local debugging aid. A public site never shows it."""
+    return uses_console_mail() and settings.DEBUG
+
+
 def remember_console_link(request, link):
     """Keep the latest local letter on the page. A real mailbox does not need this."""
-    if uses_console_mail() and link:
+    if show_console_mail() and link:
         request.session[CONSOLE_MAIL_SESSION_KEY] = link
     else:
         request.session.pop(CONSOLE_MAIL_SESSION_KEY, None)
 
 
 def console_mail_link(request):
-    if not uses_console_mail():
+    if not show_console_mail():
         request.session.pop(CONSOLE_MAIL_SESSION_KEY, None)
         return ''
     return request.session.get(CONSOLE_MAIL_SESSION_KEY, '')
+
+
+def activate_without_mailbox(user):
+    """No mail server can confirm the address, so the account is ready at once."""
+    profile = ensure_profile(user)
+    if profile.email_verified_at is None:
+        profile.email_verified_at = timezone.now()
+        profile.save(update_fields=['email_verified_at'])
+    return profile
 
 
 def clear_console_link(request):

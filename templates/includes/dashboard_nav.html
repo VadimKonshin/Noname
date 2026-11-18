@@ -9,7 +9,7 @@
   {% if perms.shop.add_product %}
     <a href="{% url 'product_create' %}">+ Создать товар</a>
   {% endif %}
-  {% if show_admin and user.is_staff %}
+  {% if show_admin and user.is_staff and admin_enabled %}
     <a href="{% url 'admin:index' %}">Django Admin ↗</a>
   {% endif %}
 </div>

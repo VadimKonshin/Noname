@@ -14,21 +14,26 @@
     <h2>Telegram</h2>
     {% if telegram_connected %}
       <p>Уведомления о ваших заказах и сообщениях покупателей приходят в подключённый личный чат.</p>
-      <form method="post" action="{% url 'brand_telegram_disconnect' %}">
-        {% csrf_token %}
-        <button class="btn btn-dark" type="submit">Отключить</button>
-      </form>
     {% else %}
       <p>Подключите бота в личном чате. Туда придут только заказы и сообщения {{ brand.name }}.</p>
     {% endif %}
-    <form method="post" action="{% url 'brand_telegram_connect' %}">
-      {% csrf_token %}
-      <button class="btn btn-dark" type="submit">Получить ссылку</button>
-    </form>
-    {% if telegram_link %}
-      <p><a href="{{ telegram_link }}">Открыть бота и включить уведомления</a></p>
-    {% elif telegram_start_code %}
-      <p>Откройте бота и отправьте: /start {{ telegram_start_code }}</p>
+    <div class="telegram-actions">
+      <form method="post" action="{% url 'brand_telegram_connect' %}">
+        {% csrf_token %}
+        <button class="btn btn-dark" type="submit">Получить ссылку</button>
+      </form>
+      {% if telegram_link %}
+        <a class="btn btn-quiet" href="{{ telegram_link }}">Открыть бота</a>
+      {% endif %}
+      {% if telegram_connected %}
+        <form method="post" action="{% url 'brand_telegram_disconnect' %}">
+          {% csrf_token %}
+          <button class="btn btn-quiet" type="submit">Отключить</button>
+        </form>
+      {% endif %}
+    </div>
+    {% if telegram_start_code and not telegram_link %}
+      <p class="form-hint">Откройте бота и отправьте: /start {{ telegram_start_code }}</p>
     {% endif %}
   </div>
 
@@ -57,6 +62,27 @@
 
   <div class="analytics-note">
     Это статистика <strong>оформленных заказов</strong>, а не полученных платежей. В суммах учитываются только позиции {{ brand.name }}; доставка и товары других брендов не включены.
+  </div>
+
+  <div class="dash-section-heading">
+    <h2>ПОКУПКИ</h2>
+    <span>Сумма позиций {{ brand.name }} за 14 дней, без отменённых</span>
+  </div>
+  <div class="purchase-chart-wrap">
+    <svg class="purchase-chart" viewBox="0 0 640 188" role="img" aria-label="Покупки {{ brand.name }} за 14 дней">
+      <line x1="8" y1="148" x2="628" y2="148" stroke="#3a3a40" stroke-width="1"></line>
+      {% for bar in purchase_bars %}
+        {% if bar.h %}
+          <rect x="{{ bar.x }}" y="{{ bar.y }}" width="28" height="{{ bar.h }}" fill="#da5147"></rect>
+        {% else %}
+          <rect x="{{ bar.x }}" y="146" width="28" height="2" fill="#3a3a40"></rect>
+        {% endif %}
+        <text x="{{ bar.label_x }}" y="168" fill="#8d8d93" font-size="11" font-family="Oswald, Manrope, sans-serif">{{ bar.label }}</text>
+      {% endfor %}
+    </svg>
+    {% if purchase_bars %}
+      <p class="form-hint">Числа под столбцами — дни месяца. Высота — сумма ваших позиций, не всего магазина.</p>
+    {% endif %}
   </div>
 
   <div class="dash-section-heading">
@@ -112,7 +138,7 @@
       <tbody>
         {% for order in recent_orders %}
           <tr>
-            <td><a class="table-link" href="{{ order.get_absolute_url }}">#{{ order.pk }} ↗</a></td>
+            <td><a class="table-link" href="{{ order.get_absolute_url }}">#{{ order.public_number }} ↗</a></td>
             <td>{{ order.full_name }}</td>
             <td><span class="status-pill status-{{ order.status }}">{{ order.get_status_display }}</span></td>
             <td>{{ order.brand_total|floatformat:0 }} ₽</td>

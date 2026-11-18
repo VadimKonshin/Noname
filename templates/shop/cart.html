@@ -2,10 +2,12 @@
 {% load shop_images static %}
 {% block title %}Корзина — NoName{% endblock %}
 {% block content %}
+<div class="quiet-page">
 <section class="container commerce-page noname-cart">
+  <span class="page-index">/ 001</span>
   <div class="eyebrow"><span class="tiny-dot"></span> CHECKOUT / 01</div>
   <h1 class="commerce-heading">ТВОЯ КОРЗИНА<span class="heading-period">.</span></h1>
-  <p class="page-lead">Один заказ — один бренд и одна доставка. Регистрация не требуется.</p>
+  <p class="page-lead">Один заказ — один бренд и одна доставка. Аккаунт не нужен.</p>
 
   {% if cart.lines %}
     <div class="cart-sequence">
@@ -27,7 +29,7 @@
             <p>РАЗМЕР <strong>{{ item.size }}</strong> / {{ item.product.color }}</p>
             {% if item.is_preorder %}<p><strong>ПОД ЗАКАЗ</strong> · изготовление до {{ item.preorder_days }} дн.</p>{% endif %}
             <p>{{ item.unit_price|floatformat:0 }} ₽ / ШТ</p>
-            <form method="post" action="{% url 'cart_update' %}" class="basket-actions">
+            <form method="post" action="{% url 'cart_update' %}" class="basket-actions" {% if not item.is_preorder and item.product.allow_preorder %}data-stock-guard data-stock="{{ item.variant.stock_quantity }}" data-allow-preorder="1" data-product-id="{{ item.product.pk }}" data-size="{{ item.size }}" data-product-title="{{ item.product.title }}"{% endif %}>
               {% csrf_token %}
               <input type="hidden" name="product_id" value="{{ item.product.pk }}">
               <input type="hidden" name="size" value="{{ item.size }}">
@@ -59,12 +61,14 @@
             <span class="shipping-option-copy">
               <strong>{{ method.name }}</strong>
               <small>
-                {% if cdek_live and method.code == 'cdek' %}
-                  Цена считается по индексу на оформлении.
+                {% if method.code == 'pickup' and pickup_place %}
+                  Забрать здесь: {{ pickup_place }}
+                {% elif cdek_live and method.code == 'cdek' %}
+                  Цену посчитаем по индексу на следующем шаге.
                 {% else %}
                   {{ method.description }}
-                  {% if method.eta %}<br>Срок: {{ method.eta }}{% endif %}
-                  {% if method.pickup_address %}<br>Адрес: {{ method.pickup_address }}{% endif %}
+                  {% if method.eta %}<br>{{ method.eta }}{% endif %}
+                  {% if method.pickup_address %}<br>{{ method.pickup_address }}{% endif %}
                 {% endif %}
               </small>
             </span>
@@ -73,7 +77,7 @@
             </strong>
           </label>
         {% empty %}
-          <p class="detail-notice">Способы доставки пока не настроены. Администратор может добавить их в Django Admin.</p>
+          <p class="detail-notice">Этот бренд пока не отметил, как отдать вещь. Напиши со страницы вещи — и спроси.</p>
         {% endfor %}
         <div class="cart-totals">
           <div class="summary-row"><span>Вещи</span><strong>{{ cart.subtotal|floatformat:0 }} ₽</strong></div>
@@ -97,10 +101,14 @@
   {% else %}
     <div class="empty-state">
       <span class="empty-symbol">∅</span>
-      <h2>ПОКА НИЧЕГО</h2>
-      <p>Добавь вещь в корзину, чтобы оформить заказ.</p>
+      <h2>ПОКА ПУСТО</h2>
+      <p>Выбери вещь. Размер спросишь у карточки, доставку — здесь.</p>
       <a href="{% url 'catalog' %}" class="btn btn-dark">ИССЛЕДОВАТЬ КАТАЛОГ ↗</a>
     </div>
   {% endif %}
+  {% if show_preorder_plate %}
+    {% include 'includes/preorder_plate.html' with plate_next='cart' %}
+  {% endif %}
 </section>
+</div>
 {% endblock %}

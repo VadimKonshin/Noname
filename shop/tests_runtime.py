@@ -1,4 +1,8 @@
 """Database, cache and TLS readiness. These do not need a running Postgres or Redis."""
+import importlib.util
+import io
+import os
+import tempfile
 from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
@@ -66,3 +70,124 @@ class RuntimeSettingsTests(SimpleTestCase):
         self.assertIn('api.cdek.ru', text)
         self.assertIn('2027', text)
         self.assertIn('Публичный сертификат', text)
+
+    def test_env_file_fills_only_blank_allowed_keys(self):
+        from config.settings import load_env_file
+
+        keys = ('FOO', 'DJANGO_SITE_URL', 'DJANGO_DB_PASSWORD', 'DJANGO_DB_NAME')
+        saved = {key: os.environ.get(key) for key in keys}
+        try:
+            for key in keys:
+                os.environ.pop(key, None)
+            with tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / '.env'
+                path.write_text(
+                    'FOO=bar\n'
+                    'export DJANGO_DB_NAME=noname\n'
+                    'DJANGO_DB_PASSWORD="a b"\n'
+                    'DJANGO_SITE_URL=https://shop.noname.test\n',
+                    encoding='utf-8',
+                )
+                load_env_file(path)
+                self.assertNotIn('FOO', os.environ)
+                self.assertEqual(os.environ['DJANGO_DB_NAME'], 'noname')
+                self.assertEqual(os.environ['DJANGO_DB_PASSWORD'], 'a b')
+                self.assertEqual(os.environ['DJANGO_SITE_URL'], 'https://shop.noname.test')
+                os.environ['DJANGO_SITE_URL'] = 'https://already.example'
+                load_env_file(path)
+                self.assertEqual(os.environ['DJANGO_SITE_URL'], 'https://already.example')
+        finally:
+            for key, value in saved.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+    def test_client_ip_uses_the_forwarded_address(self):
+        from config.settings import client_ip
+
+        class Request:
+            META = {'HTTP_X_FORWARDED_FOR': '[2001:db8::1]'}
+
+        class V4:
+            META = {'HTTP_X_FORWARDED_FOR': '203.0.113.5, 198.51.100.10'}
+
+        self.assertEqual(client_ip(Request()), '2001:db8::1')
+        self.assertEqual(client_ip(V4()), '198.51.100.10')
+
+    def _deploy(self, filename):
+        path = Path(__file__).resolve().parents[1] / 'deploy' / filename
+        spec = importlib.util.spec_from_file_location(f'deploy_{path.stem}', path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_server_env_rejects_the_example_and_accepts_a_real_host(self):
+        envfile = self._deploy('envfile.py')
+        example = Path(__file__).resolve().parents[1] / 'deploy' / '.env.example'
+        parsed = envfile.read_env(example)
+        self.assertEqual(parsed['DJANGO_DEFAULT_FROM_EMAIL'], 'NoName <hello@shop.example.com>')
+        errors, _warnings = envfile.production_issues(parsed)
+        self.assertTrue(errors)
+
+        ready = {
+            'DJANGO_DEBUG': '0',
+            'DJANGO_SECRET_KEY': 'a' * 50,
+            'DJANGO_ALLOWED_HOSTS': 'shop.noname.test',
+            'DJANGO_CSRF_TRUSTED_ORIGINS': 'https://shop.noname.test',
+            'DJANGO_SECURE_SSL_REDIRECT': '1',
+            'DJANGO_TRUST_X_FORWARDED_PROTO': '1',
+            'DJANGO_DB_ENGINE': 'postgresql',
+            'DJANGO_DB_NAME': 'noname',
+            'DJANGO_DB_USER': 'noname',
+            'DJANGO_DB_PASSWORD': 'dbsecretvalue1',
+            'DJANGO_DB_HOST': 'postgres',
+            'REDIS_PASSWORD': 'redisecretvalue1',
+            'DJANGO_SITE_URL': 'https://shop.noname.test',
+            'SITE_ADDRESS': 'shop.noname.test',
+            'ACME_EMAIL': 'admin@noname.test',
+            'TELEGRAM_BOT_TOKEN': '123456:AAExampleToken',
+            'TELEGRAM_BOT_USERNAME': '@NoNameBot',
+            'DJANGO_EMAIL_HOST': 'smtp.noname.test',
+            'DJANGO_ORDER_EMAIL': 'admin@noname.test',
+            'DJANGO_DEFAULT_FROM_EMAIL': 'NoName <hello@shop.noname.test>',
+        }
+        errors, warnings = envfile.production_issues(ready)
+        self.assertEqual(errors, [])
+        self.assertTrue(any('CDEK' in warning for warning in warnings))
+        ready['DJANGO_DB_HOST'] = '127.0.0.1'
+        errors, _warnings = envfile.production_issues(ready)
+        self.assertTrue(any('DJANGO_DB_HOST' in error for error in errors))
+        ready['DJANGO_DB_HOST'] = 'postgres'
+        ready.update({
+            'SITE_ADDRESS': ':80',
+            'DJANGO_ALLOWED_HOSTS': '92.118.88.34',
+            'DJANGO_SITE_URL': 'http://92.118.88.34',
+            'DJANGO_CSRF_TRUSTED_ORIGINS': 'http://92.118.88.34',
+            'DJANGO_SECURE_SSL_REDIRECT': '0',
+            'DJANGO_SECURE_HSTS_SECONDS': '0',
+        })
+        errors, _warnings = envfile.production_issues(ready)
+        self.assertEqual(errors, [])
+
+    def test_media_archive_keeps_files_inside_the_directory(self):
+        archive = self._deploy('media_archive.py')
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / 'media'
+            root.mkdir()
+            photo = root / 'products' / 'cover.webp'
+            photo.parent.mkdir()
+            photo.write_bytes(b'webp')
+            (root / '.DS_Store').write_bytes(b'no')
+            outside = base / 'secret.txt'
+            outside.write_text('secret', encoding='utf-8')
+            (root / 'leak').symlink_to(outside)
+            blob = io.BytesIO()
+            self.assertEqual(archive.pack(root, blob), 1)
+            blob.seek(0)
+            restored = base / 'restored'
+            self.assertEqual(archive.unpack(blob, restored), 1)
+            self.assertEqual((restored / 'products' / 'cover.webp').read_bytes(), b'webp')
+            with self.assertRaises(ValueError):
+                archive.member_destination(restored, '../secret.txt')

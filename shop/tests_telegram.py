@@ -252,14 +252,14 @@ class TelegramTests(TestCase):
             quantity=1, unit_price=Decimal('3000'), line_total=Decimal('3000'),
         )
         with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
-            handle_update({'message': {'text': f'{order.pk} +79990000000', 'chat': {'id': 51, 'type': 'private'}}})
+            handle_update({'message': {'text': f'{order.public_number} +79990000000', 'chat': {'id': 51, 'type': 'private'}}})
         hidden = sent_payload(urlopen.call_args.args[0])['text']
         self.assertIn('не найден', hidden)
         self.assertNotIn('Секретное имя', hidden)
         order.refresh_from_db()
         self.assertEqual(order.buyer_telegram_chat_id, '')
         with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
-            handle_update({'message': {'text': f'{order.pk} 89991234567', 'chat': {'id': 50, 'type': 'private'}}})
+            handle_update({'message': {'text': f'{order.public_number} 89991234567', 'chat': {'id': 50, 'type': 'private'}}})
         text = sent_payload(urlopen.call_args.args[0])['text']
         self.assertIn('Отправлен', text)
         self.assertIn('MOON / Черная футболка', text)
@@ -268,7 +268,7 @@ class TelegramTests(TestCase):
         order.refresh_from_db()
         self.assertEqual(order.buyer_telegram_chat_id, '50')
         with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
-            handle_update({'message': {'text': f'{order.pk} 89991234567', 'chat': {'id': 52, 'type': 'private'}}})
+            handle_update({'message': {'text': f'{order.public_number} 89991234567', 'chat': {'id': 52, 'type': 'private'}}})
         kept = sent_payload(urlopen.call_args.args[0])['text']
         self.assertIn('Отправлен', kept)
         self.assertIn('первым проверил', kept)
@@ -276,9 +276,23 @@ class TelegramTests(TestCase):
         order.refresh_from_db()
         self.assertEqual(order.buyer_telegram_chat_id, '50')
         with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
-            handle_update({'message': {'text': f'{order.pk} +79990000000', 'chat': {'id': 51, 'type': 'private'}}})
+            handle_update({'message': {'text': f'{order.public_number} +79990000000', 'chat': {'id': 51, 'type': 'private'}}})
         order.refresh_from_db()
         self.assertEqual(order.buyer_telegram_chat_id, '50')
+
+    def test_status_check_includes_the_tracking_number(self):
+        from unittest.mock import patch
+        order = Order.objects.create(
+            checkout_token='status-track', full_name='Секретное имя', email='buyer@example.org',
+            phone='+79991234567', delivery_name='СДЭК', delivery_price=Decimal('350'),
+            subtotal=Decimal('3000'), total=Decimal('3350'), status=Order.SHIPPED,
+            tracking_number='RA123456789RU',
+        )
+        with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
+            handle_update({'message': {'text': f'{order.public_number} +79991234567', 'chat': {'id': 50, 'type': 'private'}}})
+        text = sent_payload(urlopen.call_args.args[0])['text']
+        self.assertIn('Трек: RA123456789RU', text)
+        self.assertNotIn('Секретное имя', text)
 
     def test_manager_connects_from_private_start_link(self):
         from unittest.mock import patch
@@ -300,7 +314,8 @@ class TelegramTests(TestCase):
         from unittest.mock import patch
         with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
             handle_update({'message': {'text': '1 +79991234567', 'chat': {'id': -100, 'type': 'group'}}})
-        self.assertIn('личном чате', sent_payload(urlopen.call_args.args[0])['text'])
+            handle_update({'message': {'text': '1 +79991234567', 'chat': {'id': -100123, 'type': 'supergroup'}}})
+        urlopen.assert_not_called()
 
     def test_cabinet_gives_the_manager_a_personal_link(self):
         self.client.force_login(self.manager_user)
@@ -377,19 +392,19 @@ class TelegramTests(TestCase):
                 with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
                     handle_update({
                         'message': {
-                            'text': f'{700000 + offset} {phone}',
+                            'text': f'{17000000 + offset} {phone}',
                             'chat': {'id': 9000 + offset, 'type': 'private'},
                         },
                     })
                 self.assertIn('не найден', sent_payload(urlopen.call_args.args[0])['text'])
             with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
                 handle_update({
-                    'message': {'text': f'700099 {phone}', 'chat': {'id': 9099, 'type': 'private'}},
+                    'message': {'text': f'17000099 {phone}', 'chat': {'id': 9099, 'type': 'private'}},
                 })
             self.assertIn('Слишком много', sent_payload(urlopen.call_args.args[0])['text'])
         with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
             handle_update({
-                'message': {'text': '700100 +70001110002', 'chat': {'id': 9100, 'type': 'private'}},
+                'message': {'text': '17000100 +70001110002', 'chat': {'id': 9100, 'type': 'private'}},
             })
         self.assertIn('не найден', sent_payload(urlopen.call_args.args[0])['text'])
 
@@ -400,14 +415,14 @@ class TelegramTests(TestCase):
                 with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
                     handle_update({
                         'message': {
-                            'text': f'{710000 + offset} +7000222000{offset}',
+                            'text': f'{17100000 + offset} +7000222000{offset}',
                             'chat': {'id': 7200, 'type': 'private'},
                         },
                     })
                 self.assertIn('не найден', sent_payload(urlopen.call_args.args[0])['text'])
             with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
                 handle_update({
-                    'message': {'text': '710099 +70002220009', 'chat': {'id': 7200, 'type': 'private'}},
+                    'message': {'text': '17100099 +70002220009', 'chat': {'id': 7200, 'type': 'private'}},
                 })
             self.assertIn('Слишком много', sent_payload(urlopen.call_args.args[0])['text'])
 
@@ -435,10 +450,14 @@ class TelegramTlsTests(SimpleTestCase):
     def setUp(self):
         from shop import telegram
         telegram._direct_tls_blocked = False
+        telegram._route_checked = False
+        telegram._pinned_ip = ''
         self.telegram = telegram
 
     def tearDown(self):
         self.telegram._direct_tls_blocked = False
+        self.telegram._route_checked = False
+        self.telegram._pinned_ip = ''
 
     def test_certificate_must_name_the_api_host(self):
         self.assertTrue(self.telegram._certificate_matches(TELEGRAM_CERT, 'api.telegram.org'))
@@ -485,7 +504,39 @@ class TelegramTlsTests(SimpleTestCase):
         from urllib.error import URLError
         with patch('shop.telegram.urlopen', side_effect=URLError('down')):
             with patch('shop.telegram._decoy_urlopen') as decoy:
-                result = self.telegram._api('getMe', {})
+                with patch('shop.telegram._pinned_urlopen') as pinned:
+                    result = self.telegram._api('getMe', {})
         decoy.assert_not_called()
+        pinned.assert_not_called()
         self.assertIsNone(result)
         self.assertFalse(self.telegram._direct_tls_blocked)
+
+    def test_unreachable_dns_address_uses_a_telegram_ip_with_the_api_certificate(self):
+        from unittest.mock import patch
+        from urllib.error import URLError
+        payload = b'{"ok": true, "result": {"username": "NoNameNotificationsBot"}}'
+        unreachable = URLError(OSError(101, 'Network is unreachable'))
+        with patch('shop.telegram.urlopen', side_effect=unreachable):
+            with patch('shop.telegram._decoy_urlopen') as decoy:
+                with patch('shop.telegram._pinned_urlopen', return_value=FakeResponse(payload)) as pinned:
+                    result = self.telegram._api('getMe', {})
+        self.assertEqual(result, {'username': 'NoNameNotificationsBot'})
+        decoy.assert_not_called()
+        self.assertEqual(pinned.call_args.args[2], '149.154.167.220')
+        self.assertIn('https://api.telegram.org/', pinned.call_args.args[0].full_url)
+        self.assertFalse(self.telegram._direct_tls_blocked)
+        self.assertEqual(self.telegram._pinned_ip, '149.154.167.220')
+
+    def test_pinned_connection_checks_the_api_certificate(self):
+        from unittest.mock import Mock, patch
+        connection = self.telegram._PinnedConnection(
+            'api.telegram.org', timeout=2, context=Mock(), ip='149.154.167.220',
+        )
+        with patch('shop.telegram.socket.create_connection', return_value=Mock()) as connect:
+            connection.connect()
+        connect.assert_called_once_with(('149.154.167.220', 443), 2, None)
+        connection._context.wrap_socket.assert_called_once()
+        self.assertEqual(
+            connection._context.wrap_socket.call_args.kwargs['server_hostname'],
+            'api.telegram.org',
+        )

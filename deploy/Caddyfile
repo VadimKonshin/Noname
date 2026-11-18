@@ -1,0 +1,36 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$SITE_ADDRESS} {
+	encode gzip zstd
+	request_body {
+		max_size 12MB
+	}
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options DENY
+	}
+	header /static/* Cache-Control "public, max-age=86400"
+	handle /static/* {
+		root * /srv
+		file_server
+	}
+	handle /media/* {
+		root * /srv
+		file_server
+	}
+	handle {
+		reverse_proxy web:8000 {
+			# Caddy warns these repeat its defaults. The adapted config still
+			# sets them, so a visitor-supplied address is not kept.
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			transport http {
+				read_timeout 120s
+				write_timeout 120s
+			}
+		}
+	}
+}

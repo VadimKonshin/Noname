@@ -108,6 +108,7 @@ python manage.py runserver
 
 ## Безопасность и production
 
+* Публичный сервер собирается из каталога `deploy/`: gunicorn, отдельный процесс бота, PostgreSQL, Redis и Caddy. Перенос базы и фотографий описан в `deploy/README.md`.
 * Для публикации задайте уникальный `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=0` и реальные `DJANGO_ALLOWED_HOSTS`. При выключенном debug автоматически включаются Secure cookies, HTTPS-редирект и HSTS на один час.
 * Если HTTPS терминируется на reverse proxy, передайте `X-Forwarded-Proto: https` только от доверенного прокси и установите `DJANGO_TRUST_X_FORWARDED_PROTO=1`. Не включайте этот параметр при прямом доступе клиентов к Django.
 * `DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS=1` и `DJANGO_SECURE_HSTS_PRELOAD=1` включайте только после проверки HTTPS на всех поддоменах. При необходимости задайте `DJANGO_CSRF_TRUSTED_ORIGINS` со схемой, например `https://shop.example.com`.

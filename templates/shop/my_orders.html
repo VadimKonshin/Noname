@@ -14,7 +14,7 @@
         <tbody>
           {% for order in page %}
             <tr>
-              <td>#{{ order.pk }}</td>
+              <td>#{{ order.public_number }}</td>
               <td>{{ order.created_at|date:'d.m.Y H:i' }}</td>
               <td><span class="status-pill status-{{ order.status }}">{{ order.get_status_display }}</span></td>
               <td>

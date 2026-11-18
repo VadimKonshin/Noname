@@ -22,12 +22,27 @@ class CdekUnavailable(Exception):
 
 
 class CdekQuote:
-    def __init__(self, price, eta, points, postal_code, pieces):
+    def __init__(self, price, eta, points, postal_code, pieces, weight):
         self.price = price
         self.eta = eta
         self.points = points
         self.postal_code = postal_code
         self.pieces = pieces
+        self.weight = weight
+
+
+def parcel_weight(lines):
+    """Grams for the whole parcel. Missing weight falls back to the per-item estimate."""
+    total = 0
+    for line in lines:
+        product = line.get('product')
+        grams = getattr(product, 'weight_grams', None) or settings.CDEK_ITEM_WEIGHT_GRAMS
+        quantity = int(line.get('quantity') or 0)
+        if quantity > 0:
+            total += int(grams) * quantity
+    if total <= 0:
+        total = settings.CDEK_ITEM_WEIGHT_GRAMS
+    return max(100, min(30000, total))
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -44,14 +59,18 @@ def configured():
     )
 
 
-def quote_delivery(postal_code, pieces):
+def quote_delivery(postal_code, pieces, weight_grams=None):
     if not configured():
         raise CdekUnavailable
     code = ''.join(character for character in str(postal_code or '') if character.isdigit())
     if len(code) != 6:
         raise CdekUnavailable
     pieces = max(1, min(int(pieces), 50))
-    weight = max(100, min(30000, pieces * settings.CDEK_ITEM_WEIGHT_GRAMS))
+    if weight_grams is None:
+        weight = pieces * settings.CDEK_ITEM_WEIGHT_GRAMS
+    else:
+        weight = int(weight_grams)
+    weight = max(100, min(30000, weight))
     token = _token()
     calculated = _request('POST', '/calculator/tariff', token=token, payload={
         'type': 1,
@@ -72,7 +91,7 @@ def quote_delivery(postal_code, pieces):
     points = _points(token, code)
     if not points:
         raise CdekUnavailable
-    return CdekQuote(price=price, eta=eta, points=points, postal_code=code, pieces=pieces)
+    return CdekQuote(price=price, eta=eta, points=points, postal_code=code, pieces=pieces, weight=weight)
 
 
 def _token():

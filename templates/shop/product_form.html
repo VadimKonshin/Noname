@@ -8,7 +8,7 @@
     {% if product %}ИЗМЕНИТЬ ТОВАР{% else %}НОВЫЙ ТОВАР{% endif %}<span class="heading-period">.</span>
   </h1>
   <p class="page-lead">
-    Заполни описание, цену, размеры, остатки и способ получения. После сохранения товар появится в каталоге, если включена публикация.
+    Здесь цена, фото карточки, описание и то, как эту вещь можно получить. В каталоге она появится, если включена публикация.
   </p>
   {% if managed_brand %}{% include 'includes/brand_nav.html' with active_page='products' %}{% endif %}
 
@@ -48,14 +48,31 @@
         </div>
 
         <div class="form-section">
-          <h2>03 / Способ получения</h2>
-          <p class="form-hint">Покупатель в корзине выбирает одну из отмеченных служб. Самовывоз в корзине скрыт.</p>
+          <h2>03 / Как отдать вещь</h2>
+          <p class="form-hint">СДЭК и Почта России попадут в корзину, только если они включены и здесь, и в настройках бренда. Самовывоз появится, если его включили у вещи или у всего бренда, и у бренда есть адрес. Вес нужен для расчёта СДЭК: если точный не известен, оставьте 500 г.</p>
+          <div class="form-field">
+            <label for="{{ form.weight_grams.id_for_label }}">{{ form.weight_grams.label }} *</label>
+            {{ form.weight_grams }}
+            {% if form.weight_grams.errors %}<div class="field-error">{{ form.weight_grams.errors }}</div>{% endif %}
+          </div>
           <label class="check-field">{{ form.offers_cdek }}<span>{{ form.offers_cdek.label }}</span></label>
           {% if form.offers_cdek.errors %}<div class="field-error">{{ form.offers_cdek.errors }}</div>{% endif %}
           <label class="check-field">{{ form.offers_post }}<span>{{ form.offers_post.label }}</span></label>
           {% if form.offers_post.errors %}<div class="field-error">{{ form.offers_post.errors }}</div>{% endif %}
-          <button type="button" class="small-action" disabled>Добавить адрес самовывоза</button>
-          <p class="form-hint">Адрес самовывоза пока нельзя сохранить: кнопка не работает.</p>
+          <label class="check-field">{{ form.offers_pickup }}<span>{{ form.offers_pickup.label }}</span></label>
+          {% if form.offers_pickup.errors %}<div class="field-error">{{ form.offers_pickup.errors }}</div>{% endif %}
+          {% if managed_brand %}
+            {% if managed_brand.pickup_address %}
+              <p class="form-hint">Адрес мастерской: {{ managed_brand.pickup_address }}. Меняется в разделе «О бренде».</p>
+            {% else %}
+              <p class="form-hint">Адреса мастерской ещё нет. Добавьте его в «О бренде», иначе самовывоз в корзине не появится.</p>
+            {% endif %}
+            {% if managed_brand.offers_pickup %}
+              <p class="form-hint">У бренда самовывоз уже включён для всех вещей с этим адресом.</p>
+            {% endif %}
+          {% else %}
+            <p class="form-hint">Адрес самовывоза хранится у бренда, не у вещи.</p>
+          {% endif %}
         </div>
 
         <div class="form-section">

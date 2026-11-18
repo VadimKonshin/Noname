@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}Статистика — NoName{% endblock %}
 {% block content %}
-<section class="container commerce-page">
+<section class="container commerce-page staff-stats">
   <div class="eyebrow"><span class="tiny-dot"></span> STAFF / АНАЛИТИКА</div>
   <h1 class="commerce-heading">ПАНЕЛЬ МАГАЗИНА<span class="heading-period">.</span></h1>
   {% include 'includes/dashboard_nav.html' with active_page='dashboard' show_admin=1 %}
@@ -28,6 +28,64 @@
       <small>Без доставки и отменённых</small>
     </div>
   </div>
+
+  {% if manager_applications is not None %}
+    <div class="manager-widget">
+      <div class="dash-section-heading">
+        <h2>ЗАЯВКИ МЕНЕДЖЕРОВ</h2>
+        <span>Одобрение кабинета и права администратора магазина</span>
+      </div>
+      <form method="post" action="{% url 'dashboard_managers' %}">
+        {% csrf_token %}
+        <div class="table-scroll">
+          <table class="store-table">
+            <thead>
+              <tr><th>Заявка</th><th>Бренд</th><th>Почта</th><th>Решение</th></tr>
+            </thead>
+            <tbody>
+              {% for application in manager_applications %}
+                <tr {% if not application.is_approved %}class="manager-pending"{% endif %}>
+                  <td>
+                    <strong>{{ application.user.username }}</strong>
+                    <small class="table-muted">{{ application.created_at|date:'d.m.Y H:i' }}</small>
+                  </td>
+                  <td>{{ application.brand.name|default:'Бренд ещё не создан' }}</td>
+                  <td>
+                    {{ application.user.email|default:'—' }}
+                    <small class="table-muted">{% if application.email_verified %}подтверждена{% else %}не подтверждена, кабинет закрыт{% endif %}</small>
+                  </td>
+                  <td>
+                    <label class="manager-choice">
+                      <input type="checkbox" name="approved" value="{{ application.pk }}" {% if application.is_approved %}checked{% endif %}>
+                      Одобрить заявку менеджера
+                    </label>
+                    {% if application.admin_locked %}
+                      <label class="manager-choice">
+                        <input type="checkbox" checked disabled>
+                        Права администратора
+                      </label>
+                      <small class="table-muted">Суперпользователь. Этот виджет его не меняет.</small>
+                    {% else %}
+                      <label class="manager-choice">
+                        <input type="checkbox" name="staff" value="{{ application.pk }}" {% if application.user.is_staff %}checked{% endif %}>
+                        Права администратора
+                      </label>
+                      <small class="table-muted">Панель магазина: заказы и товары. Это не суперпользователь.</small>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% empty %}
+                <tr><td colspan="4">Заявок менеджеров пока нет.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if manager_applications %}
+          <button class="btn btn-dark" type="submit">Сохранить заявки</button>
+        {% endif %}
+      </form>
+    </div>
+  {% endif %}
 
   <div class="analytics-note">
     Это <strong>статистика оформленных заказов</strong>, а не полученных платежей: онлайн-оплата пока не подключена.
@@ -97,7 +155,7 @@
       <tbody>
         {% for order in recent_orders %}
           <tr>
-            <td><a class="table-link" href="{{ order.get_absolute_url }}">#{{ order.pk }} ↗</a></td>
+            <td><a class="table-link" href="{{ order.get_absolute_url }}">#{{ order.public_number }} ↗</a></td>
             <td>{{ order.full_name }}</td>
             <td><span class="status-pill status-{{ order.status }}">{{ order.get_status_display }}</span></td>
             <td>{{ order.total|floatformat:0 }} ₽</td>
