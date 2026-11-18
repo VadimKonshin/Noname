@@ -55,10 +55,11 @@
       const hidden = orderTypes.find(input => input.type === 'hidden');
       if (hidden) hidden.value = preorder ? 'preorder' : 'stock';
       const qty = form.querySelector('input[name="quantity"]');
+      const allowsPreorder = form.dataset.allowPreorder === '1';
       if (qty) {
         const stockLeft = Number(chosen?.dataset.stock || '10');
-        qty.max = preorder || !chosen ? '10' : String(Math.max(1, Math.min(10, stockLeft)));
-        if (Number(qty.value) > Number(qty.max)) qty.value = qty.max;
+        qty.max = preorder || !chosen || allowsPreorder ? '10' : String(Math.max(1, Math.min(10, stockLeft)));
+        if (!allowsPreorder && Number(qty.value) > Number(qty.max)) qty.value = qty.max;
       }
       if (button) {
         button.disabled = !chosen;
@@ -71,11 +72,83 @@
         else status.textContent = `Размер ${chosen.value}: в наличии ${chosen.dataset.stock} шт.`;
       }
     };
-    form.addEventListener('change', update);
+    const plate = document.querySelector('[data-preorder-plate]');
+    const qtyInput = form.querySelector('input[name="quantity"]');
+    const syncPlate = () => {
+      if (!plate || form.dataset.allowPreorder !== '1' || plate.dataset.serverOffer === '1') return;
+      const chosen = form.querySelector('input[name="size"]:checked:not(:disabled)');
+      const qty = Number(qtyInput?.value || '0');
+      const stock = Number(chosen?.dataset.stock || '0');
+      const over = chosenMode() !== 'preorder' && chosen && qty > stock;
+      if (over) openPreorderPlate(plate, {productId: form.dataset.productId, size: chosen.value, quantity: qty, title: form.dataset.productTitle});
+      else plate.hidden = true;
+    };
+    form.addEventListener('change', () => {
+      plate?.removeAttribute('data-server-offer');
+      update();
+      syncPlate();
+    });
+    qtyInput?.addEventListener('input', () => {
+      plate?.removeAttribute('data-server-offer');
+      syncPlate();
+    });
     form.addEventListener('submit', event => {
-      if (!form.querySelector('input[name="size"]:checked:not(:disabled)')) event.preventDefault();
+      if (!form.querySelector('input[name="size"]:checked:not(:disabled)')) {
+        event.preventDefault();
+        return;
+      }
+      plate?.removeAttribute('data-server-offer');
+      const chosen = form.querySelector('input[name="size"]:checked:not(:disabled)');
+      const qty = Number(qtyInput?.value || '0');
+      const stock = Number(chosen?.dataset.stock || '0');
+      if (form.dataset.allowPreorder === '1' && chosenMode() !== 'preorder' && chosen && qty > stock) {
+        event.preventDefault();
+        openPreorderPlate(plate, {productId: form.dataset.productId, size: chosen.value, quantity: qty, title: form.dataset.productTitle});
+      }
     });
     update();
+  });
+})();
+
+function openPreorderPlate(plate, {productId, size, quantity, title}) {
+  if (!plate) return;
+  const qty = plate.querySelector('[data-preorder-qty]');
+  const label = plate.querySelector('[data-preorder-label]');
+  if (qty) qty.textContent = String(quantity);
+  if (label) label.textContent = title ? ` «${title}», размер ${size}` : '';
+  const set = (name, value) => {
+    const field = plate.querySelector(`input[name="${name}"]`);
+    if (field) field.value = value;
+  };
+  set('product_id', productId);
+  set('size', size);
+  set('quantity', String(quantity));
+  plate.hidden = false;
+}
+
+(() => {
+  const plate = document.querySelector('[data-preorder-plate]');
+  plate?.querySelector('[data-dismiss-preorder]')?.addEventListener('click', () => {
+    plate.hidden = true;
+    plate.removeAttribute('data-server-offer');
+  });
+  document.querySelectorAll('[data-stock-guard]').forEach(form => {
+    form.addEventListener('submit', event => {
+      if (form.dataset.allowPreorder !== '1') return;
+      const submitter = event.submitter;
+      if (submitter && submitter.classList.contains('muted-action')) return;
+      const qty = Number(form.querySelector('input[name="quantity"]')?.value || '0');
+      const stock = Number(form.dataset.stock || '0');
+      if (qty > stock) {
+        event.preventDefault();
+        openPreorderPlate(plate, {
+          productId: form.dataset.productId,
+          size: form.dataset.size,
+          quantity: qty,
+          title: form.dataset.productTitle,
+        });
+      }
+    });
   });
 })();
 

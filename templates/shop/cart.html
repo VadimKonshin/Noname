@@ -29,7 +29,7 @@
             <p>РАЗМЕР <strong>{{ item.size }}</strong> / {{ item.product.color }}</p>
             {% if item.is_preorder %}<p><strong>ПОД ЗАКАЗ</strong> · изготовление до {{ item.preorder_days }} дн.</p>{% endif %}
             <p>{{ item.unit_price|floatformat:0 }} ₽ / ШТ</p>
-            <form method="post" action="{% url 'cart_update' %}" class="basket-actions">
+            <form method="post" action="{% url 'cart_update' %}" class="basket-actions" {% if not item.is_preorder and item.product.allow_preorder %}data-stock-guard data-stock="{{ item.variant.stock_quantity }}" data-allow-preorder="1" data-product-id="{{ item.product.pk }}" data-size="{{ item.size }}" data-product-title="{{ item.product.title }}"{% endif %}>
               {% csrf_token %}
               <input type="hidden" name="product_id" value="{{ item.product.pk }}">
               <input type="hidden" name="size" value="{{ item.size }}">
@@ -105,6 +105,9 @@
       <p>Выбери вещь. Размер спросишь у карточки, доставку — здесь.</p>
       <a href="{% url 'catalog' %}" class="btn btn-dark">ИССЛЕДОВАТЬ КАТАЛОГ ↗</a>
     </div>
+  {% endif %}
+  {% if show_preorder_plate %}
+    {% include 'includes/preorder_plate.html' with plate_next='cart' %}
   {% endif %}
 </section>
 </div>

@@ -103,6 +103,22 @@ def scoped_order_items(brand, queryset):
     return queryset.filter(Q(product__brand=brand) | Q(product__isnull=True, brand_name=brand.name))
 
 
+def order_is_this_brand_only(order, brand):
+    """A brand manager may move the shared status only when every line is theirs."""
+    if brand is None:
+        return False
+    items = list(order.items.all())
+    if not items:
+        return False
+    for item in items:
+        if item.product_id and item.product.brand_id == brand.pk:
+            continue
+        if item.product_id is None and item.brand_name == brand.name:
+            continue
+        return False
+    return True
+
+
 def get_scoped_object_or_404(request, queryset, **kwargs):
     obj = scoped_products(request, queryset).filter(**kwargs).first()
     if obj is None:

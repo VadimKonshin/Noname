@@ -43,10 +43,13 @@
         {% if order.comment %}<p>Комментарий: {{ order.comment }}</p>{% endif %}
       </div>
 
-      {% if can_change_order %}
+      {% if can_change_order or can_change_brand_status %}
         <div class="form-section">
           <h2>Управление статусом</h2>
-          <form method="post" action="{% url 'change_order_status' pk=order.pk %}" class="status-form">
+          {% if can_change_brand_status %}
+            <p>Можно поставить «собирается», «в службе доставки» или «отправлен». Отмену по-прежнему делает администратор магазина. Письмо покупателю уходит только при «отправлен».</p>
+          {% endif %}
+          <form method="post" action="{% if can_change_brand_status %}{% url 'brand_order_status' pk=order.pk %}{% else %}{% url 'change_order_status' pk=order.pk %}{% endif %}" class="status-form">
             {% csrf_token %}
             <div class="form-field">
               <label for="{{ status_form.status.id_for_label }}">Статус</label>
@@ -78,7 +81,14 @@
       <h2>ЗАКАЗ #{{ order.public_number }}</h2>
       {% if brand_order_view %}
         <div class="summary-total"><span>Товары вашего бренда</span><strong>{{ brand_subtotal|floatformat:0 }} ₽</strong></div>
-        <p class="summary-note">Показаны только позиции вашего бренда. Доставка и товары других брендов скрыты. Статус общего заказа изменяет администратор.</p>
+        <p class="summary-note">
+          Показаны только позиции вашего бренда. Доставка и товары других брендов скрыты.
+          {% if can_change_brand_status %}
+            Статус этого заказа можете сменить вы: собирается, в службе доставки или отправлен.
+          {% else %}
+            Статус общего заказа изменяет администратор.
+          {% endif %}
+        </p>
       {% else %}
         <div class="summary-row"><span>Товары</span><strong>{{ order.subtotal|floatformat:0 }} ₽</strong></div>
         <div class="summary-row"><span>Доставка</span><strong>{{ order.delivery_price|floatformat:0 }} ₽</strong></div>

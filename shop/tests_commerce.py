@@ -5,6 +5,7 @@ from unittest.mock import patch
 from urllib.error import URLError
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Permission
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.http import HttpRequest
@@ -142,6 +143,56 @@ class CommerceTests(TestCase):
     def test_cannot_add_more_than_stock(self):
         ProductVariant.objects.filter(product=self.shirt, size='M').update(stock_quantity=1)
         self._add(quantity=2)
+        self.assertEqual(self.client.get(reverse('cart')).context['cart']['count'], 0)
+
+    def test_over_stock_shows_preorder_plate_and_does_not_touch_stock(self):
+        self.shirt.allow_preorder = True
+        self.shirt.save(update_fields=['allow_preorder'])
+        ProductVariant.objects.filter(product=self.shirt, size='M').update(stock_quantity=1)
+        response = self.client.post(reverse('cart_add', args=[self.shirt.slug]), {
+            'size': 'M', 'quantity': 4, 'order_type': 'stock', 'go_to_cart': '1',
+        }, follow=True)
+        self.assertContains(response, 'data-server-offer="1"')
+        self.assertContains(response, 'В наличии нет такого количества товара')
+        self.assertContains(response, 'Можно оставить предзаказ на')
+        self.assertContains(response, 'name="quantity" value="4"')
+        self.assertEqual(self.client.get(reverse('cart')).context['cart']['count'], 0)
+        self.assertEqual(ProductVariant.objects.get(product=self.shirt, size='M').stock_quantity, 1)
+        taken = self.client.post(reverse('cart_take_preorder'), {
+            'product_id': self.shirt.pk, 'size': 'M', 'quantity': 4, 'next': 'product',
+        }, follow=True)
+        self.assertContains(taken, 'предзаказ на 4 шт')
+        cart = self.client.get(reverse('cart')).context['cart']
+        self.assertEqual(cart['count'], 4)
+        self.assertTrue(cart['lines'][0]['is_preorder'])
+        self.assertEqual(ProductVariant.objects.get(product=self.shirt, size='M').stock_quantity, 1)
+
+    def test_cart_quantity_over_stock_offers_the_same_preorder(self):
+        self.shirt.allow_preorder = True
+        self.shirt.save(update_fields=['allow_preorder'])
+        self._add(quantity=1)
+        ProductVariant.objects.filter(product=self.shirt, size='M').update(stock_quantity=1)
+        response = self.client.post(reverse('cart_update'), {
+            'product_id': self.shirt.pk, 'size': 'M', 'quantity': 4, 'order_type': 'stock',
+        }, follow=True)
+        self.assertContains(response, 'data-server-offer="1"')
+        self.assertContains(response, 'name="quantity" value="4"')
+        self.assertEqual(response.context['cart']['count'], 1)
+        self.client.post(reverse('cart_take_preorder'), {
+            'product_id': self.shirt.pk, 'size': 'M', 'quantity': 4, 'next': 'cart',
+        })
+        cart = self.client.get(reverse('cart')).context['cart']
+        self.assertEqual(cart['count'], 4)
+        self.assertTrue(cart['lines'][0]['is_preorder'])
+        self.assertEqual(ProductVariant.objects.get(product=self.shirt, size='M').stock_quantity, 1)
+
+    def test_over_stock_without_preorder_permission_stays_an_error(self):
+        ProductVariant.objects.filter(product=self.shirt, size='M').update(stock_quantity=1)
+        response = self.client.post(reverse('cart_add', args=[self.shirt.slug]), {
+            'size': 'M', 'quantity': 4, 'order_type': 'stock', 'go_to_cart': '1',
+        }, follow=True)
+        self.assertContains(response, 'недоступен')
+        self.assertNotContains(response, 'data-server-offer')
         self.assertEqual(self.client.get(reverse('cart')).context['cart']['count'], 0)
 
     def test_preorder_is_not_limited_by_remaining_stock(self):
@@ -483,6 +534,71 @@ class CommerceTests(TestCase):
         self.client.post(reverse('change_order_status', args=[order.pk]), {'status': Order.NEW})
         order.refresh_from_db()
         self.assertEqual(order.status, Order.CANCELLED)
+
+    def test_staff_can_mark_order_in_delivery(self):
+        order = self._create_order()
+        self.client.force_login(self.staff)
+        page = self.client.get(order.get_absolute_url())
+        self.assertContains(page, 'В службе доставки')
+        self.client.post(reverse('change_order_status', args=[order.pk]), {
+            'status': Order.IN_DELIVERY, 'tracking_number': '',
+        })
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.IN_DELIVERY)
+
+    def test_superuser_decides_manager_application_and_store_admin_rights(self):
+        applicant = User.objects.create_user(
+            'applicant_manager', email='apply@example.org', password='PassWithLength#178',
+        )
+        application = BrandManager.objects.create(user=applicant, is_approved=False)
+        self.client.force_login(self.staff)
+        page = self.client.get(reverse('dashboard'))
+        self.assertContains(page, 'ЗАЯВКИ МЕНЕДЖЕРОВ')
+        self.assertContains(page, 'applicant_manager')
+        self.assertContains(page, 'Права администратора')
+        self.client.post(reverse('dashboard_managers'), {
+            'approved': str(application.pk),
+            'staff': str(application.pk),
+        })
+        application.refresh_from_db()
+        applicant = User.objects.get(pk=applicant.pk)
+        self.assertTrue(application.is_approved)
+        self.assertTrue(applicant.is_staff)
+        self.assertFalse(applicant.is_superuser)
+        self.assertTrue(applicant.has_perm('shop.change_order'))
+        self.assertTrue(applicant.has_perm('shop.add_product'))
+        self.client.post(reverse('dashboard_managers'), {})
+        application.refresh_from_db()
+        applicant = User.objects.get(pk=applicant.pk)
+        self.assertFalse(application.is_approved)
+        self.assertFalse(applicant.is_staff)
+        self.assertFalse(applicant.has_perm('shop.change_order'))
+
+    def test_store_admin_flag_is_not_granted_by_a_non_superuser(self):
+        applicant = User.objects.create_user('second_applicant', password='PassWithLength#178')
+        application = BrandManager.objects.create(user=applicant, is_approved=False)
+        viewer = User.objects.create_user('order_viewer', password='PassWithLength#178', is_staff=True)
+        viewer.user_permissions.add(Permission.objects.get(content_type__app_label='shop', codename='view_order'))
+        self.client.force_login(viewer)
+        page = self.client.get(reverse('dashboard'))
+        self.assertNotContains(page, 'ЗАЯВКИ МЕНЕДЖЕРОВ')
+        self.assertEqual(self.client.post(reverse('dashboard_managers'), {
+            'approved': str(application.pk), 'staff': str(application.pk),
+        }).status_code, 403)
+        application.refresh_from_db()
+        applicant.refresh_from_db()
+        self.assertFalse(application.is_approved)
+        self.assertFalse(applicant.is_staff)
+
+    def test_manager_widget_does_not_change_a_superuser(self):
+        own = BrandManager.objects.create(user=self.staff, is_approved=True)
+        self.client.force_login(self.staff)
+        self.client.post(reverse('dashboard_managers'), {'approved': str(own.pk)})
+        self.staff.refresh_from_db()
+        own.refresh_from_db()
+        self.assertTrue(own.is_approved)
+        self.assertTrue(self.staff.is_superuser)
+        self.assertTrue(self.staff.is_staff)
 
     def test_cancel_does_not_recreate_deleted_variant(self):
         order = self._create_order()
@@ -875,3 +991,44 @@ class BrandOrderTests(TestCase):
         self.client.force_login(self.customer)
         self.assertEqual(self.client.get(reverse('brand_dashboard')).status_code, 403)
         self.assertEqual(self.client.get(reverse('brand_orders')).status_code, 403)
+
+    def test_manager_sets_assembly_carrier_and_shipped_on_own_order(self):
+        self.client.force_login(self.manager_user)
+        page = self.client.get(self.alpha_order.get_absolute_url())
+        self.assertTrue(page.context['can_change_brand_status'])
+        self.assertContains(page, 'В службе доставки')
+        url = reverse('brand_order_status', args=[self.alpha_order.pk])
+        self.client.post(url, {'status': Order.PROCESSING, 'tracking_number': ''})
+        self.alpha_order.refresh_from_db()
+        self.assertEqual(self.alpha_order.status, Order.PROCESSING)
+        self.client.post(url, {'status': Order.IN_DELIVERY})
+        self.alpha_order.refresh_from_db()
+        self.assertEqual(self.alpha_order.status, Order.IN_DELIVERY)
+        self.client.post(url, {'status': Order.SHIPPED, 'tracking_number': 'CDEK123'})
+        self.alpha_order.refresh_from_db()
+        self.assertEqual(self.alpha_order.status, Order.SHIPPED)
+        self.assertEqual(self.alpha_order.tracking_number, 'CDEK123')
+
+    def test_manager_cannot_cancel_or_change_another_brands_order(self):
+        self.client.force_login(self.manager_user)
+        self.client.post(reverse('brand_order_status', args=[self.alpha_order.pk]), {'status': Order.CANCELLED})
+        self.alpha_order.refresh_from_db()
+        self.assertEqual(self.alpha_order.status, Order.COMPLETED)
+        cancelled = self.client.get(self.cancelled_order.get_absolute_url())
+        self.assertFalse(cancelled.context['can_change_brand_status'])
+        self.client.post(reverse('brand_order_status', args=[self.cancelled_order.pk]), {'status': Order.SHIPPED})
+        self.cancelled_order.refresh_from_db()
+        self.assertEqual(self.cancelled_order.status, Order.CANCELLED)
+        mixed = self.client.get(self.mixed_order.get_absolute_url())
+        self.assertFalse(mixed.context['can_change_brand_status'])
+        self.client.post(reverse('brand_order_status', args=[self.mixed_order.pk]), {'status': Order.SHIPPED})
+        self.mixed_order.refresh_from_db()
+        self.assertEqual(self.mixed_order.status, Order.NEW)
+        self.client.force_login(self.other_manager_user)
+        self.assertEqual(self.client.post(reverse('brand_order_status', args=[self.alpha_order.pk]), {
+            'status': Order.SHIPPED,
+        }).status_code, 404)
+        self.client.force_login(self.customer)
+        self.assertEqual(self.client.post(reverse('brand_order_status', args=[self.alpha_order.pk]), {
+            'status': Order.SHIPPED,
+        }).status_code, 403)

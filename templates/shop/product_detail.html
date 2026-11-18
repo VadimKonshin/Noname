@@ -63,7 +63,7 @@
     <div class="detail-stat"><span>ЦВЕТ</span><strong>{{ product.color }}</strong></div>
 
     {% if product.is_available %}
-      <form method="post" action="{% url 'cart_add' slug=product.slug %}" class="buy-form" data-size-picker>
+      <form method="post" action="{% url 'cart_add' slug=product.slug %}" class="buy-form" data-size-picker {% if product.allow_preorder %}data-allow-preorder="1"{% endif %} data-product-id="{{ product.pk }}" data-product-title="{{ product.title }}">
         {% csrf_token %}
         {% if product.allow_preorder %}
           <fieldset class="sizes-fieldset order-mode">
@@ -113,6 +113,9 @@
         </div>
         <button type="submit" name="go_to_cart" value="1" class="btn btn-dark btn-wide" disabled>ВЫБЕРИ РАЗМЕР <span>＋</span></button>
       </form>
+      {% if product.allow_preorder or preorder_offer %}
+        {% include 'includes/preorder_plate.html' with plate_next='product' %}
+      {% endif %}
     {% else %}
       <div class="detail-notice">Товар временно недоступен к заказу.</div>
     {% endif %}

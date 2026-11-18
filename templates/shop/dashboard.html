@@ -29,6 +29,64 @@
     </div>
   </div>
 
+  {% if manager_applications is not None %}
+    <div class="manager-widget">
+      <div class="dash-section-heading">
+        <h2>ЗАЯВКИ МЕНЕДЖЕРОВ</h2>
+        <span>Одобрение кабинета и права администратора магазина</span>
+      </div>
+      <form method="post" action="{% url 'dashboard_managers' %}">
+        {% csrf_token %}
+        <div class="table-scroll">
+          <table class="store-table">
+            <thead>
+              <tr><th>Заявка</th><th>Бренд</th><th>Почта</th><th>Решение</th></tr>
+            </thead>
+            <tbody>
+              {% for application in manager_applications %}
+                <tr {% if not application.is_approved %}class="manager-pending"{% endif %}>
+                  <td>
+                    <strong>{{ application.user.username }}</strong>
+                    <small class="table-muted">{{ application.created_at|date:'d.m.Y H:i' }}</small>
+                  </td>
+                  <td>{{ application.brand.name|default:'Бренд ещё не создан' }}</td>
+                  <td>
+                    {{ application.user.email|default:'—' }}
+                    <small class="table-muted">{% if application.email_verified %}подтверждена{% else %}не подтверждена, кабинет закрыт{% endif %}</small>
+                  </td>
+                  <td>
+                    <label class="manager-choice">
+                      <input type="checkbox" name="approved" value="{{ application.pk }}" {% if application.is_approved %}checked{% endif %}>
+                      Одобрить заявку менеджера
+                    </label>
+                    {% if application.admin_locked %}
+                      <label class="manager-choice">
+                        <input type="checkbox" checked disabled>
+                        Права администратора
+                      </label>
+                      <small class="table-muted">Суперпользователь. Этот виджет его не меняет.</small>
+                    {% else %}
+                      <label class="manager-choice">
+                        <input type="checkbox" name="staff" value="{{ application.pk }}" {% if application.user.is_staff %}checked{% endif %}>
+                        Права администратора
+                      </label>
+                      <small class="table-muted">Панель магазина: заказы и товары. Это не суперпользователь.</small>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% empty %}
+                <tr><td colspan="4">Заявок менеджеров пока нет.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if manager_applications %}
+          <button class="btn btn-dark" type="submit">Сохранить заявки</button>
+        {% endif %}
+      </form>
+    </div>
+  {% endif %}
+
   <div class="analytics-note">
     Это <strong>статистика оформленных заказов</strong>, а не полученных платежей: онлайн-оплата пока не подключена.
     Отменённые заказы исключены из суммы и статистики по моделям.

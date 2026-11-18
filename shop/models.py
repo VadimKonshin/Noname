@@ -339,13 +339,20 @@ class Order(models.Model):
     NEW = 'new'
     CONFIRMED = 'confirmed'
     PROCESSING = 'processing'
+    IN_DELIVERY = 'in_delivery'
     SHIPPED = 'shipped'
     COMPLETED = 'completed'
     CANCELLED = 'cancelled'
     STATUS_CHOICES = [
         (NEW, 'Новый'), (CONFIRMED, 'Подтверждён'),
-        (PROCESSING, 'Собирается'), (SHIPPED, 'Отправлен'),
+        (PROCESSING, 'Собирается'), (IN_DELIVERY, 'В службе доставки'),
+        (SHIPPED, 'Отправлен'),
         (COMPLETED, 'Завершён'), (CANCELLED, 'Отменён'),
+    ]
+    MANAGER_STATUS_CHOICES = [
+        (PROCESSING, 'Собирается'),
+        (IN_DELIVERY, 'В службе доставки'),
+        (SHIPPED, 'Отправлен'),
     ]
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='shop_orders', verbose_name='Покупатель')
     public_number = models.CharField('Номер для покупателя', max_length=8, unique=True, editable=False)

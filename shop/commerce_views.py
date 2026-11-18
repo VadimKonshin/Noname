@@ -5,7 +5,8 @@ from decimal import Decimal
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
-from django.core.exceptions import ValidationError
+from django.contrib.auth.models import Permission
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models import Count, F, Prefetch, Sum
@@ -18,16 +19,17 @@ from django_ratelimit.decorators import ratelimit
 
 from .access import (
     brand_manager_required, get_brand_manager, get_scoped_object_or_404,
-    product_permission_required, scoped_order_items,
+    order_is_this_brand_only, product_permission_required, scoped_order_items,
 )
 from .commerce import (
     CART_SESSION_KEY, DELIVERY_SESSION_KEY, MAX_OPEN_PREORDER_PER_VARIANT, MAX_PER_VARIANT,
     available_delivery_methods, cart_products, get_cart, method_offered_by, one_brand,
-    open_preorder_map, pickup_place, put, set_quantity, update_order_status,
+    open_preorder_map, pickup_place, pop_preorder_offer, preorder_offer_for, preorder_room,
+    put, remember_preorder_offer, replace_with_preorder, set_quantity, update_order_status,
 )
 from .cdek import CdekUnavailable, configured as cdek_configured, parcel_weight, quote_delivery
-from .commerce_forms import CheckoutForm, OrderLookupForm, OrderStatusForm
-from .models import DeliveryMethod, Order, OrderItem, OrderRead, Product, ProductVariant
+from .commerce_forms import CheckoutForm, ManagerOrderStatusForm, OrderLookupForm, OrderStatusForm
+from .models import BrandManager, DeliveryMethod, Order, OrderItem, OrderRead, Product, ProductVariant, UserProfile
 from .mail import notify_order_created
 from .telegram import cabinet_context, consume_phone_lookup, issue_bind_token, notify_new_order, order_for_phone
 
@@ -106,12 +108,17 @@ def cart(request):
     selected = selected_delivery(request, products) if single_brand else None
     live_selected = cdek_configured() and selected is not None and selected.code == DeliveryMethod.CDEK
     shipping = Decimal('0.00') if live_selected or selected is None else selected.price
+    preorder_offer = pop_preorder_offer(request)
     return render(request, 'shop/cart.html', {
         'cart': current, 'delivery_methods': delivery_methods, 'selected_method': selected,
         'grand_total': current['subtotal'] + shipping,
         'cdek_selected_live': live_selected,
         'single_brand': single_brand,
         'pickup_place': pickup_place(products) if single_brand else '',
+        'preorder_offer': preorder_offer,
+        'show_preorder_plate': bool(preorder_offer) or any(
+            not line['is_preorder'] and line['product'].allow_preorder for line in current['lines']
+        ),
     })
 
 
@@ -158,6 +165,8 @@ def cart_add(request, slug):
     elif not one_brand(get_cart(request)['lines'] + [{'product': product}]):
         messages.error(request, 'В одном заказе — один бренд и одна доставка. Оформите текущую корзину или уберите вещи другого бренда.')
         return redirect('cart')
+    elif (offer := _preorder_offer_or_none(request, product, size, quantity, is_preorder, adding=True)) is not None:
+        return offer
     elif not put(request, product, size, quantity, is_preorder):
         messages.error(request, 'Выбранный размер недоступен в этом количестве. Обновите остаток или режим заказа.')
     else:
@@ -168,12 +177,35 @@ def cart_add(request, slug):
     return redirect(product.get_absolute_url())
 
 
+def _preorder_offer_or_none(request, product, size, quantity, is_preorder, adding):
+    """Redirect with the preorder plate, or None when the stock request can proceed."""
+    kind, asked, stock = preorder_offer_for(request, product, size, quantity, is_preorder, adding)
+    if kind == 'room':
+        messages.error(
+            request,
+            'В наличии нет такого количества. Предзаказ на этот размер уже принят до лимита в 10 штук.',
+        )
+        return redirect(product.get_absolute_url() if adding else 'cart')
+    if kind == 'offer':
+        remember_preorder_offer(request, product, size, asked, stock, 'product' if adding else 'cart')
+        return redirect(product.get_absolute_url() if adding else 'cart')
+    return None
+
+
 @require_POST
 def cart_update(request):
     product_id = _integer(request.POST.get('product_id'))
     size = request.POST.get('size', '')
     quantity = _integer(request.POST.get('quantity'))
     is_preorder = request.POST.get('order_type') == 'preorder'
+    product = None
+    if product_id is not None and product_id >= 1 and quantity is not None and 1 <= quantity <= MAX_PER_VARIANT:
+        product = (Product.objects.public().filter(pk=product_id, price__gt=0, is_available=True)
+                   .prefetch_related('variants').first())
+    if product is not None and len(size) <= 40 and ':' not in size and size in product.size_list:
+        offer = _preorder_offer_or_none(request, product, size, quantity, is_preorder, adding=False)
+        if offer is not None:
+            return offer
     if (product_id is None or product_id < 1 or quantity is None
             or not 0 <= quantity <= MAX_PER_VARIANT
             or not set_quantity(request, product_id, size, quantity, is_preorder)):
@@ -181,6 +213,38 @@ def cart_update(request):
     else:
         messages.success(request, 'Корзина обновлена.')
     return redirect('cart')
+
+
+@require_POST
+def cart_take_preorder(request):
+    product_id = _integer(request.POST.get('product_id'))
+    size = request.POST.get('size', '').strip()
+    quantity = _integer(request.POST.get('quantity'))
+    if product_id is None or product_id < 1:
+        messages.error(request, 'Не удалось оставить предзаказ. Выберите вещь ещё раз.')
+        return redirect('cart')
+    product = get_object_or_404(
+        Product.objects.public().filter(price__gt=0, is_available=True).prefetch_related('variants'),
+        pk=product_id,
+    )
+    back = 'cart' if request.POST.get('next') == 'cart' else product.get_absolute_url()
+    if not product.allow_preorder:
+        messages.error(request, 'Этот товар не принимают под заказ.')
+    elif quantity is None or not 1 <= quantity <= MAX_PER_VARIANT or len(size) > 40 or ':' in size or size not in product.size_list:
+        messages.error(request, 'Не удалось оставить предзаказ. Выберите количество ещё раз.')
+    elif quantity > preorder_room(product.pk, size):
+        messages.error(request, 'Предзаказ на этот размер уже принят до лимита в 10 штук.')
+    elif not one_brand(get_cart(request)['lines'] + [{'product': product}]):
+        messages.error(request, 'В одном заказе — один бренд и одна доставка. Оформите текущую корзину или уберите вещи другого бренда.')
+        return redirect('cart')
+    elif not replace_with_preorder(request, product, size, quantity):
+        messages.error(request, 'Не удалось оставить предзаказ. Обновите страницу.')
+    else:
+        messages.success(
+            request,
+            f'«{product.title}», размер {size}: предзаказ на {quantity} шт. В наличии столько не было, склад не списан.',
+        )
+    return redirect(back)
 
 
 @ratelimit(group='checkout', key='ip', rate='10/h', method='POST')
@@ -429,12 +493,12 @@ def set_brand_totals(orders):
 
 @require_GET
 def order_detail(request, pk):
-    order = get_object_or_404(Order.objects.prefetch_related('items'), pk=pk)
+    order = get_object_or_404(Order.objects.prefetch_related('items__product'), pk=pk)
     can_view_any_order = request.user.has_perm('shop.view_order')
     owns_order = request.user.is_authenticated and order.user_id == request.user.pk
     owns_guest_order = order.user_id is None and order.pk in request.session.get('guest_order_ids', [])
     manager = get_brand_manager(request.user)
-    brand_items = list(scoped_order_items(manager.brand, order.items)) if manager else []
+    brand_items = list(scoped_order_items(manager.brand, order.items)) if manager and manager.brand_id else []
     can_view_brand_order = bool(brand_items)
     brand_order_view = can_view_brand_order and not (can_view_any_order or owns_order or owns_guest_order)
     if not (can_view_any_order or owns_order or owns_guest_order or can_view_brand_order):
@@ -443,8 +507,22 @@ def order_detail(request, pk):
     if buyer_view:
         return render(request, 'shop/order_thanks.html', {'order': order})
     can_change_order = request.user.has_perm('shop.change_order') and not brand_order_view
+    can_change_brand_status = bool(
+        manager and manager.brand_id and can_view_brand_order and not can_view_any_order
+        and order.status != Order.CANCELLED
+        and order_is_this_brand_only(order, manager.brand)
+    )
     if request.user.is_authenticated and not owns_order and not owns_guest_order and (can_view_any_order or can_view_brand_order):
         OrderRead.objects.update_or_create(order=order, user=request.user)
+    status_form = None
+    if can_change_order:
+        status_form = OrderStatusForm(instance=order)
+    elif can_change_brand_status:
+        initial_status = order.status if order.status in dict(Order.MANAGER_STATUS_CHOICES) else ''
+        status_form = ManagerOrderStatusForm(initial={
+            'status': initial_status,
+            'tracking_number': order.tracking_number,
+        })
     return render(request, 'shop/order_detail.html', {
         'order': order,
         'order_items': brand_items if brand_order_view else order.items.all(),
@@ -452,7 +530,8 @@ def order_detail(request, pk):
         'brand_subtotal': sum((item.line_total for item in brand_items), Decimal('0.00')),
         'can_view_any_order': can_view_any_order,
         'can_change_order': can_change_order,
-        'status_form': OrderStatusForm(instance=order) if can_change_order else None,
+        'can_change_brand_status': can_change_brand_status,
+        'status_form': status_form,
         'order_reads': order.reads.select_related('user') if can_view_any_order else None,
     })
 
@@ -476,6 +555,9 @@ def dashboard(request):
                                                   orders=Count('order_id', distinct=True))
                    .order_by('-value'))
     recent = Order.objects.select_related('user').order_by('-created_at')[:8]
+    applications = None
+    if request.user.is_superuser:
+        applications = _manager_applications()
     return render(request, 'shop/dashboard.html', {
         'orders_count': Order.objects.count(),
         'active_orders_count': active_orders.count(),
@@ -487,7 +569,62 @@ def dashboard(request):
         'recent_orders': recent,
         'cancelled_count': status_counts.get(Order.CANCELLED, 0),
         'new_count': status_counts.get(Order.NEW, 0),
+        'manager_applications': applications,
     })
+
+
+PANEL_CODENAMES = (
+    'view_order', 'change_order',
+    'view_product', 'add_product', 'change_product', 'delete_product',
+)
+
+
+def _manager_applications():
+    applications = list(
+        BrandManager.objects.select_related('user__profile', 'brand').order_by('is_approved', '-created_at')
+    )
+    for application in applications:
+        user = application.user
+        try:
+            application.email_verified = user.profile.email_verified_at is not None
+        except UserProfile.DoesNotExist:
+            application.email_verified = False
+        application.admin_locked = user.is_superuser
+    return applications
+
+
+def _panel_permissions():
+    return list(Permission.objects.filter(content_type__app_label='shop', codename__in=PANEL_CODENAMES))
+
+
+@login_required
+@require_POST
+def dashboard_managers(request):
+    if not request.user.is_superuser:
+        raise PermissionDenied
+    approved_ids = {pk for raw in request.POST.getlist('approved') if (pk := _integer(raw)) and pk > 0}
+    staff_ids = {pk for raw in request.POST.getlist('staff') if (pk := _integer(raw)) and pk > 0}
+    permissions = _panel_permissions()
+    with transaction.atomic():
+        applications = BrandManager.objects.select_for_update().select_related('user')
+        for application in applications:
+            approved = application.pk in approved_ids
+            if application.is_approved != approved:
+                application.is_approved = approved
+                application.save(update_fields=['is_approved'])
+            user = application.user
+            if user.is_superuser:
+                continue
+            grant_staff = application.pk in staff_ids
+            if user.is_staff != grant_staff:
+                user.is_staff = grant_staff
+                user.save(update_fields=['is_staff'])
+            if grant_staff:
+                user.user_permissions.add(*permissions)
+            elif permissions:
+                user.user_permissions.remove(*permissions)
+    messages.success(request, 'Заявки менеджеров сохранены.')
+    return redirect('dashboard')
 
 
 @brand_manager_required
@@ -606,6 +743,39 @@ def change_order_status(request, pk):
         tracking = form.cleaned_data['tracking_number'] if 'tracking_number' in request.POST else None
         try:
             update_order_status(order.pk, form.cleaned_data['status'], tracking_number=tracking)
+        except ValidationError as exc:
+            messages.error(request, exc.message)
+        else:
+            messages.success(request, f'Статус заказа №{order.public_number} обновлён.')
+    else:
+        messages.error(request, ' '.join(error for errors in form.errors.values() for error in errors))
+    return redirect(order.get_absolute_url())
+
+
+@brand_manager_required
+@require_POST
+def brand_change_order_status(request, pk):
+    manager = request.brand_manager
+    if manager.brand_id is None:
+        messages.error(request, 'Сначала создайте бренд.')
+        return redirect('brand_create')
+    order = get_object_or_404(Order.objects.prefetch_related('items__product'), pk=pk)
+    if not scoped_order_items(manager.brand, order.items).exists():
+        raise Http404('Заказ не найден.')
+    if not order_is_this_brand_only(order, manager.brand):
+        messages.error(request, 'В этом заказе есть другой бренд. Общий статус меняет администратор магазина.')
+        return redirect(order.get_absolute_url())
+    if order.status == Order.CANCELLED:
+        messages.error(request, 'Отменённый заказ нельзя открыть повторно.')
+        return redirect(order.get_absolute_url())
+    form = ManagerOrderStatusForm(request.POST)
+    if form.is_valid():
+        try:
+            update_order_status(
+                order.pk,
+                form.cleaned_data['status'],
+                tracking_number=form.cleaned_data['tracking_number'],
+            )
         except ValidationError as exc:
             messages.error(request, exc.message)
         else:

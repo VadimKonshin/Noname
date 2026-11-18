@@ -707,12 +707,14 @@ class BrandAccountTests(TestCase):
         self.client.force_login(self.customer)
         self.assertEqual(self.client.get(reverse('brand_edit')).status_code, 403)
 
-    def test_collaboration_page_hides_contacts_until_hover(self):
+    def test_collaboration_page_shows_centered_contact_links(self):
         response = self.client.get(reverse('info_collaboration'))
         self.assertContains(response, 'Если хотите присоединиться к команде NoName')
+        self.assertContains(response, 'collab-center')
         self.assertContains(response, 'mailto:vdmkonshin@gmail.com')
         self.assertContains(response, 'tg://resolve?domain=vadimKonshin')
-        self.assertContains(response, 'collab-void')
+        self.assertContains(response, '@vadimKonshin')
+        self.assertNotContains(response, 'collab-void')
         self.assertContains(self.client.get(reverse('home')), reverse('info_collaboration'))
 
     def test_customer_message_stays_with_own_brand(self):

@@ -7,6 +7,7 @@ from .models import DeliveryMethod, Order, OrderItem, Product, ProductVariant
 
 CART_SESSION_KEY = 'pustota_cart'
 DELIVERY_SESSION_KEY = 'noname_delivery_id'
+PREORDER_OFFER_KEY = 'preorder_offer'
 
 
 def cart_products(cart):
@@ -199,6 +200,104 @@ def put(request, product, size, qty, is_preorder=False):
         return False
     raw[key] = new_quantity
     request.session[CART_SESSION_KEY] = raw
+    request.session.modified = True
+    return True
+
+
+def _session_cart(request):
+    raw = request.session.get(CART_SESSION_KEY, {})
+    return raw if isinstance(raw, dict) else {}
+
+
+def _stored_qty(raw, key):
+    value = raw.get(key)
+    return value if type(value) is int else 0
+
+
+def preorder_fits(request, product, size, quantity):
+    """True when swapping this size to a preorder of `quantity` stays inside the cart cap."""
+    raw = _session_cart(request)
+    previous = _stored_qty(raw, _key(product.pk, size, False)) + _stored_qty(raw, _key(product.pk, size, True))
+    count = sum(value for value in raw.values() if type(value) is int)
+    return count - previous + quantity <= MAX_TOTAL_ITEMS
+
+
+def preorder_offer_for(request, product, size, quantity, is_preorder, adding):
+    """
+    A stock request that asks for more than the shelf.
+    ('offer', asked, stock) when a preorder of that many still fits.
+    ('room', None, None) when the open-preorder cap blocks it.
+    (None, None, None) when this is not that case.
+    """
+    if is_preorder or not product.allow_preorder or type(quantity) is not int or not 1 <= quantity <= MAX_PER_VARIANT:
+        return None, None, None
+    variant = next((item for item in product.variants.all() if item.size == size), None)
+    if variant is None:
+        return None, None, None
+    existing = 0
+    if adding:
+        existing = _stored_qty(_session_cart(request), _key(product.pk, size, False))
+    asked = existing + quantity if adding else quantity
+    if asked <= variant.stock_quantity or asked > MAX_PER_VARIANT:
+        return None, None, None
+    if asked > preorder_room(product.pk, size):
+        return 'room', None, None
+    if not preorder_fits(request, product, size, asked):
+        return None, None, None
+    return 'offer', asked, variant.stock_quantity
+
+
+def remember_preorder_offer(request, product, size, quantity, stock, next_page):
+    request.session[PREORDER_OFFER_KEY] = {
+        'product_id': product.pk,
+        'size': size,
+        'quantity': quantity,
+        'stock': stock,
+        'title': product.title,
+        'next': next_page,
+    }
+    request.session.modified = True
+
+
+def pop_preorder_offer(request, product_id=None):
+    offer = request.session.get(PREORDER_OFFER_KEY)
+    if not isinstance(offer, dict):
+        return None
+    if product_id is not None and offer.get('product_id') != product_id:
+        return None
+    request.session.pop(PREORDER_OFFER_KEY, None)
+    request.session.modified = True
+    quantity = offer.get('quantity')
+    stock = offer.get('stock')
+    size = offer.get('size')
+    title = offer.get('title')
+    if (type(quantity) is not int or type(stock) is not int or not isinstance(size, str)
+            or not isinstance(title, str) or not 1 <= quantity <= MAX_PER_VARIANT
+            or offer.get('next') not in ('product', 'cart')):
+        return None
+    return offer
+
+
+def replace_with_preorder(request, product, size, quantity):
+    """Drop the in-stock line for this size and keep the asked quantity as a preorder."""
+    if not product.allow_preorder or type(quantity) is not int or not 1 <= quantity <= MAX_PER_VARIANT:
+        return False
+    if not size or len(size) > 40 or ':' in size or size not in product.size_list:
+        return False
+    if next((item for item in product.variants.all() if item.size == size), None) is None:
+        return False
+    if quantity > preorder_room(product.pk, size):
+        return False
+    cart = get_cart(request)
+    if not one_brand(cart['lines'] + [{'product': product}]):
+        return False
+    if not preorder_fits(request, product, size, quantity):
+        return False
+    raw = _session_cart(request).copy()
+    raw.pop(_key(product.pk, size, False), None)
+    raw[_key(product.pk, size, True)] = quantity
+    request.session[CART_SESSION_KEY] = raw
+    request.session.pop(PREORDER_OFFER_KEY, None)
     request.session.modified = True
     return True
 

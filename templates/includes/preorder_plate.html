@@ -1,0 +1,16 @@
+<div class="preorder-plate" data-preorder-plate {% if preorder_offer %}data-server-offer="1"{% else %}hidden{% endif %} role="status">
+  <p>
+    В наличии нет такого количества товара{% if preorder_offer %} «{{ preorder_offer.title }}», размер {{ preorder_offer.size }}{% else %}<span data-preorder-label></span>{% endif %}.
+    Можно оставить предзаказ на <strong data-preorder-qty>{% if preorder_offer %}{{ preorder_offer.quantity }}{% endif %}</strong> шт.
+    Склад под предзаказ не списывается.
+  </p>
+  <form method="post" action="{% url 'cart_take_preorder' %}">
+    {% csrf_token %}
+    <input type="hidden" name="product_id" value="{{ preorder_offer.product_id|default:'' }}">
+    <input type="hidden" name="size" value="{{ preorder_offer.size|default:'' }}">
+    <input type="hidden" name="quantity" value="{{ preorder_offer.quantity|default:'' }}">
+    <input type="hidden" name="next" value="{{ plate_next }}">
+    <button class="btn btn-dark" type="submit">Оставить предзаказ</button>
+    <button class="btn btn-quiet" type="button" data-dismiss-preorder>Закрыть</button>
+  </form>
+</div>

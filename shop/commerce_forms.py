@@ -64,10 +64,43 @@ class OrderStatusForm(forms.ModelForm):
         return status
 
     def clean_tracking_number(self):
-        value = ''.join((self.cleaned_data.get('tracking_number') or '').split())
-        if value and not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9\-]{0,39}', value):
-            raise forms.ValidationError('Трек: буквы, цифры и дефис, до 40 символов.')
-        return value
+        return _clean_tracking_number(self.cleaned_data.get('tracking_number'))
+
+
+def _clean_tracking_number(value):
+    value = ''.join((value or '').split())
+    if value and not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9\-]{0,39}', value):
+        raise forms.ValidationError('Трек: буквы, цифры и дефис, до 40 символов.')
+    return value
+
+
+class ManagerOrderStatusForm(forms.Form):
+    """Brand manager: assembling, handed to the carrier, or shipped. Not cancel."""
+    status = forms.ChoiceField(
+        label='Статус',
+        choices=[('', 'Выберите статус'), *Order.MANAGER_STATUS_CHOICES],
+        error_messages={
+            'required': 'Выберите: собирается, в службе доставки или отправлен.',
+            'invalid_choice': 'Выберите: собирается, в службе доставки или отправлен.',
+        },
+    )
+    tracking_number = forms.CharField(
+        label='Трек', required=False, max_length=40,
+        widget=forms.TextInput(attrs={
+            'placeholder': 'Например, 10012345678901',
+            'autocomplete': 'off',
+            'spellcheck': 'false',
+        }),
+    )
+
+    def clean_status(self):
+        status = self.cleaned_data.get('status')
+        if status not in dict(Order.MANAGER_STATUS_CHOICES):
+            raise forms.ValidationError('Выберите: собирается, в службе доставки или отправлен.')
+        return status
+
+    def clean_tracking_number(self):
+        return _clean_tracking_number(self.cleaned_data.get('tracking_number'))
 
 
 class OrderLookupForm(forms.Form):

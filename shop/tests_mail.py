@@ -100,6 +100,8 @@ class OrderMailTests(TestCase):
         )
         with self.captureOnCommitCallbacks(execute=True):
             update_order_status(order.pk, Order.PROCESSING)
+        with self.captureOnCommitCallbacks(execute=True):
+            update_order_status(order.pk, Order.IN_DELIVERY)
         self.assertEqual(len(mail.outbox), 0)
         with self.captureOnCommitCallbacks(execute=True):
             update_order_status(order.pk, Order.SHIPPED)

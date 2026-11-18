@@ -23,7 +23,7 @@ from .forms import (
     BrandAuthenticationForm, BrandCreateForm, BrandDeleteForm, BrandMessageForm, BrandProfileForm, BrandReplyForm,
     BrandManagerRegisterForm, EmailOrUsernameAuthenticationForm, ProductForm, ProductVariantFormSet, RegisterForm,
 )
-from .commerce import MAX_OPEN_PREORDER_PER_VARIANT
+from .commerce import MAX_OPEN_PREORDER_PER_VARIANT, pop_preorder_offer
 from .models import Brand, BrandManager, BrandMessage, DeliveryMethod, Product, ProductImage, ProductVariant
 from .mail import deliver_mail
 from .telegram import notify_brand_contact
@@ -234,6 +234,7 @@ def product_detail(request, slug):
         'related': related,
         'can_change_product': request.user.has_perm('shop.change_product') or manages_brand,
         'can_delete_product': request.user.has_perm('shop.delete_product') or manages_brand,
+        'preorder_offer': pop_preorder_offer(request, product.pk),
     })
 
 
