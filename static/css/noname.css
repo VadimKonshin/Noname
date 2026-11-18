@@ -232,7 +232,7 @@ a,button {transition:color .18s,background .18s,border-color .18s}
 /* Final specificity fixes for the original layout rules. */
 .underground-hero .hero-bottom {position:static;left:auto;bottom:auto;transform:none;width:100%;}
 .brand-ticker .ticker-track {animation:brand-scroll 34s linear infinite;gap:0;min-width:0}
-.brand-ticker .ticker-run {animation:none!important;min-width:max-content;word-spacing:normal;letter-spacing:normal;gap:25px}
+.brand-ticker .ticker-run {animation:none!important;min-width:max-content;word-spacing:normal;letter-spacing:normal;gap:56px}
 .brand-ticker .ticker-run>a,.brand-ticker .ticker-run>span {color:#101013;margin:0;font-size:25px;letter-spacing:.04em}
 .brand-ticker .ticker-run a>span,.brand-ticker .ticker-run>span>span {color:#fff6f1;margin:0 22px 0 35px;font-size:19px}
 .noname-manifesto h2 {font-size:clamp(41px,5vw,74px);line-height:1.03;letter-spacing:-.065em}

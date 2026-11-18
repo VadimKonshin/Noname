@@ -30,19 +30,19 @@
   <div class="ticker-track">
     <div class="ticker-run">
       {% for brand in ticker_brands %}
-        <a href="{% url 'brand_storefront' brand.slug %}">{{ brand.name }} <span aria-hidden="true">✳</span></a>
+        <a href="{% url 'brand_storefront' brand.slug %}">{{ brand.name }}</a>
       {% empty %}
-        <span>СКОРО ЗДЕСЬ ПОЯВЯТСЯ НЕЗАВИСИМЫЕ БРЕНДЫ ✳</span>
+        <span>СКОРО ЗДЕСЬ ПОЯВЯТСЯ НЕЗАВИСИМЫЕ БРЕНДЫ</span>
       {% endfor %}
-      {% for brand in ticker_brands %}<a href="{% url 'brand_storefront' brand.slug %}" tabindex="-1">{{ brand.name }} <span aria-hidden="true">✳</span></a>{% endfor %}
+      {% for brand in ticker_brands %}<a href="{% url 'brand_storefront' brand.slug %}" tabindex="-1">{{ brand.name }}</a>{% endfor %}
     </div>
     <div class="ticker-run" aria-hidden="true">
       {% for brand in ticker_brands %}
-        <a href="{% url 'brand_storefront' brand.slug %}" tabindex="-1">{{ brand.name }} <span aria-hidden="true">✳</span></a>
+        <a href="{% url 'brand_storefront' brand.slug %}" tabindex="-1">{{ brand.name }}</a>
       {% empty %}
-        <span>СКОРО ЗДЕСЬ ПОЯВЯТСЯ НЕЗАВИСИМЫЕ БРЕНДЫ ✳</span>
+        <span>СКОРО ЗДЕСЬ ПОЯВЯТСЯ НЕЗАВИСИМЫЕ БРЕНДЫ</span>
       {% endfor %}
-      {% for brand in ticker_brands %}<a href="{% url 'brand_storefront' brand.slug %}" tabindex="-1">{{ brand.name }} <span aria-hidden="true">✳</span></a>{% endfor %}
+      {% for brand in ticker_brands %}<a href="{% url 'brand_storefront' brand.slug %}" tabindex="-1">{{ brand.name }}</a>{% endfor %}
     </div>
   </div>
 </section>
