@@ -1,4 +1,4 @@
-# Local PostgreSQL and Redis. Credentials come from .env, which git does not track.
+# Local PostgreSQL and Redis only. The public server is deploy/docker-compose.yml.
 # Start: docker compose up -d
 # Stop:  docker compose down
 services:

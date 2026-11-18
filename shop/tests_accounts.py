@@ -174,7 +174,7 @@ class AccountEmailTests(TestCase):
         self.assertNotContains(page, 'Открыть страницу из письма')
         self.assertEqual(mail.outbox[0].to, ['inbox@example.com'])
 
-    @override_settings(EMAIL_BACKEND='django.core.mail.backends.console.EmailBackend')
+    @override_settings(DEBUG=True, EMAIL_BACKEND='django.core.mail.backends.console.EmailBackend')
     def test_console_backend_shows_the_confirmation_link_until_the_button(self):
         page = self.client.post(reverse('register'), {
             'username': 'console_person', 'email': 'console@example.com',
@@ -188,10 +188,24 @@ class AccountEmailTests(TestCase):
         self.assertContains(confirmed, 'Войти можно логином или этой почтой.')
         self.assertNotContains(confirmed, 'Открыть страницу из письма')
 
-    @override_settings(EMAIL_BACKEND='django.core.mail.backends.console.EmailBackend')
+    @override_settings(DEBUG=True, EMAIL_BACKEND='django.core.mail.backends.console.EmailBackend')
     def test_console_backend_shows_a_password_link_only_for_a_confirmed_mailbox(self):
         User.objects.create_user('buyer', email='buyer@example.com', password=self.password)
         missing = self.client.post(reverse('password_reset'), {'email': 'missing@example.com'}, follow=True)
         self.assertNotContains(missing, 'Открыть страницу из письма')
         found = self.client.post(reverse('password_reset'), {'email': 'buyer@example.com'}, follow=True)
         self.assertContains(found, '/account/password/reset/')
+
+    @override_settings(DEBUG=False, EMAIL_BACKEND='django.core.mail.backends.console.EmailBackend')
+    def test_public_registration_hides_mail_system_notes(self):
+        page = self.client.post(reverse('register'), {
+            'username': 'public_person', 'email': 'public@example.com',
+            'password1': self.password, 'password2': self.password,
+        }, follow=True)
+        self.assertRedirects(page, reverse('home'))
+        self.assertContains(page, 'Аккаунт создан.')
+        self.assertNotContains(page, 'Почтовый сервер')
+        self.assertNotContains(page, 'Открыть страницу из письма')
+        self.assertNotContains(page, 'консоли сервера')
+        user = User.objects.get(username='public_person')
+        self.assertIsNotNone(user.profile.email_verified_at)
