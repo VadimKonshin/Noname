@@ -650,7 +650,8 @@ def dashboard_managers(request):
     staff_ids = {pk for raw in request.POST.getlist('staff') if (pk := _integer(raw)) and pk > 0}
     permissions = _panel_permissions()
     with transaction.atomic():
-        applications = BrandManager.objects.select_for_update().select_related('user')
+        # Default ordering joins the optional brand. PostgreSQL then refuses FOR UPDATE.
+        applications = BrandManager.objects.select_for_update().select_related('user').order_by('pk')
         for application in applications:
             approved = application.pk in approved_ids
             if application.is_approved != approved:

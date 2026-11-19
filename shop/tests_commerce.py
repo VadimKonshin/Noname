@@ -1076,11 +1076,14 @@ class BrandOrderTests(TestCase):
         self.assertEqual(self.alpha_order.status, Order.SHIPPED)
         self.assertEqual(self.alpha_order.tracking_number, 'CDEK123')
 
-    def test_manager_cannot_cancel_or_change_another_brands_order(self):
+    def test_manager_can_cancel_own_order_but_not_another_brands(self):
         self.client.force_login(self.manager_user)
+        page = self.client.get(self.alpha_order.get_absolute_url())
+        self.assertContains(page, 'Отменён')
+        self.assertNotContains(page, 'Отмену по-прежнему делает администратор магазина')
         self.client.post(reverse('brand_order_status', args=[self.alpha_order.pk]), {'status': Order.CANCELLED})
         self.alpha_order.refresh_from_db()
-        self.assertEqual(self.alpha_order.status, Order.COMPLETED)
+        self.assertEqual(self.alpha_order.status, Order.CANCELLED)
         cancelled = self.client.get(self.cancelled_order.get_absolute_url())
         self.assertFalse(cancelled.context['can_change_brand_status'])
         self.client.post(reverse('brand_order_status', args=[self.cancelled_order.pk]), {'status': Order.SHIPPED})

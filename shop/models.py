@@ -353,6 +353,7 @@ class Order(models.Model):
         (PROCESSING, 'Собирается'),
         (IN_DELIVERY, 'В службе доставки'),
         (SHIPPED, 'Отправлен'),
+        (CANCELLED, 'Отменён'),
     ]
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='shop_orders', verbose_name='Покупатель')
     public_number = models.CharField('Номер для покупателя', max_length=8, unique=True, editable=False)
