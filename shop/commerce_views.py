@@ -4,13 +4,14 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.models import Permission
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models import Count, F, Prefetch, Sum
-from django.db.models.functions import Coalesce, TruncDate
+from django.db.models.functions import Coalesce, Lower, TruncDate
 from django.utils import timezone
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
@@ -574,8 +575,10 @@ def dashboard(request):
                    .order_by('-value'))
     recent = Order.objects.select_related('user').order_by('-created_at')[:8]
     applications = None
+    client_stats = None
     if request.user.is_superuser:
         applications = _manager_applications()
+        client_stats = _client_stats()
     return render(request, 'shop/dashboard.html', {
         'orders_count': Order.objects.count(),
         'active_orders_count': active_orders.count(),
@@ -588,7 +591,30 @@ def dashboard(request):
         'cancelled_count': status_counts.get(Order.CANCELLED, 0),
         'new_count': status_counts.get(Order.NEW, 0),
         'manager_applications': applications,
+        'client_stats': client_stats,
     })
+
+
+def _client_stats():
+    """Customer accounts, and buyers split by whether the order had an account."""
+    clients = get_user_model().objects.filter(
+        is_staff=False, is_superuser=False, brand_manager__isnull=True,
+    )
+    registered_buyers = Order.objects.filter(user__isnull=False).values('user_id').distinct().count()
+    guest_buyers = (
+        Order.objects.filter(user__isnull=True)
+        .annotate(email_key=Lower('email'))
+        .exclude(email_key='')
+        .values('email_key')
+        .distinct()
+        .count()
+    )
+    return {
+        'client_count': clients.count(),
+        'new_clients_week': clients.filter(date_joined__gte=timezone.now() - timedelta(days=7)).count(),
+        'registered_buyers': registered_buyers,
+        'guest_buyers': guest_buyers,
+    }
 
 
 PANEL_CODENAMES = (

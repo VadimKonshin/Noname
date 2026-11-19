@@ -539,6 +539,53 @@ class CommerceTests(TestCase):
         order.refresh_from_db()
         self.assertEqual(order.status, Order.CANCELLED)
 
+    def test_dashboard_splits_registered_and_guest_buyers(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        old = User.objects.create_user('old_client', email='old@example.org', password='PassWithLength#178')
+        User.objects.filter(pk=old.pk).update(date_joined=timezone.now() - timedelta(days=30))
+        User.objects.create_user('new_client', email='new@example.org', password='PassWithLength#178')
+        manager_user = User.objects.create_user('brand_person', email='brand@example.org', password='PassWithLength#178')
+        BrandManager.objects.create(user=manager_user, brand=self.brand, is_approved=True)
+        panel = User.objects.create_user('panel_only', password='PassWithLength#178', is_staff=True)
+        panel.user_permissions.add(Permission.objects.get(content_type__app_label='shop', codename='view_order'))
+        self._create_order()
+        Order.objects.create(
+            user=old, checkout_token='old-buyer', full_name='Старый', email='old@example.org',
+            phone='+79990000001', delivery_name='Самовывоз', delivery_price=Decimal('0'),
+            subtotal=Decimal('1000'), total=Decimal('1000'),
+        )
+        Order.objects.create(
+            user=old, checkout_token='old-buyer-again', full_name='Старый', email='old@example.org',
+            phone='+79990000001', delivery_name='Самовывоз', delivery_price=Decimal('0'),
+            subtotal=Decimal('1000'), total=Decimal('1000'),
+        )
+        for token, email in (
+            ('guest-a', 'Guest@Example.org'),
+            ('guest-b', 'guest@example.org'),
+            ('guest-c', 'other@example.org'),
+        ):
+            Order.objects.create(
+                checkout_token=token, full_name='Гость', email=email, phone='+79990000002',
+                delivery_name='Самовывоз', delivery_price=Decimal('0'),
+                subtotal=Decimal('1000'), total=Decimal('1000'),
+            )
+        self.client.force_login(panel)
+        hidden = self.client.get(reverse('dashboard'))
+        self.assertIsNone(hidden.context['client_stats'])
+        self.assertNotContains(hidden, 'ВСЕГО КЛИЕНТОВ')
+        self.assertNotContains(hidden, 'БЕЗ РЕГИСТРАЦИИ')
+        self.client.force_login(self.staff)
+        page = self.client.get(reverse('dashboard'))
+        stats = page.context['client_stats']
+        self.assertEqual(stats['client_count'], 3)
+        self.assertEqual(stats['new_clients_week'], 2)
+        self.assertEqual(stats['registered_buyers'], 2)
+        self.assertEqual(stats['guest_buyers'], 2)
+        self.assertContains(page, 'ВСЕГО КЛИЕНТОВ')
+        self.assertContains(page, 'НОВЫЕ ЗА НЕДЕЛЮ')
+        self.assertContains(page, 'БЕЗ РЕГИСТРАЦИИ')
+
     def test_staff_can_mark_order_in_delivery(self):
         order = self._create_order()
         self.client.force_login(self.staff)
