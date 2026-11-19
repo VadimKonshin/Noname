@@ -38,7 +38,7 @@
             <td>{{ order.full_name }}<small class="table-muted">{{ order.email }}</small></td>
             <td>
               {% for item in order.brand_items %}
-                {{ item.product_title }} / {{ item.size }} × {{ item.quantity }}{% if not forloop.last %}<span class="item-separator">, </span>{% endif %}
+                {{ item.product_title }} / {{ item.size }} × {{ item.quantity }}{% if item.cancelled %} · отменён{% endif %}{% if not forloop.last %}<span class="item-separator">, </span>{% endif %}
               {% endfor %}
             </td>
             <td><strong>{{ order.brand_total|floatformat:0 }} ₽</strong></td>

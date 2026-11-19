@@ -427,6 +427,7 @@ class OrderItem(models.Model):
     line_total = models.DecimalField('Сумма, ₽', max_digits=12, decimal_places=2)
     is_preorder = models.BooleanField('Предзаказ', default=False)
     preorder_days = models.PositiveSmallIntegerField('Срок изготовления на момент заказа', null=True, blank=True)
+    cancelled = models.BooleanField('Отменён', default=False)
 
     class Meta:
         verbose_name = 'Позиция заказа'

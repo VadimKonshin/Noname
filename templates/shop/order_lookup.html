@@ -24,7 +24,7 @@
         <div class="order-line">
           <div>
             <strong>{{ item.product_title }}</strong>
-            <small>Размер {{ item.size }} · {{ item.quantity }} шт.{% if item.is_preorder %} · предзаказ{% endif %}</small>
+            <small>Размер {{ item.size }} · {{ item.quantity }} шт.{% if item.is_preorder %} · предзаказ{% endif %}{% if item.cancelled %} · отменён{% endif %}</small>
           </div>
           <strong>{{ item.line_total|floatformat:0 }} ₽</strong>
         </div>

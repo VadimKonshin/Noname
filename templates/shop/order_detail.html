@@ -24,8 +24,17 @@
               {% if item.brand_name %}<small>{{ item.brand_name }}</small>{% endif %}
               <small>Размер {{ item.size }} · {{ item.unit_price|floatformat:0 }} ₽ × {{ item.quantity }}</small>
               {% if item.is_preorder %}<small><strong>Предзаказ</strong> · изготовление до {{ item.preorder_days }} дн.</small>{% endif %}
+              {% if item.cancelled %}<small><span class="status-pill status-cancelled">Отменён</span></small>{% endif %}
             </div>
-            <strong>{{ item.line_total|floatformat:0 }} ₽</strong>
+            <div>
+              <strong>{{ item.line_total|floatformat:0 }} ₽</strong>
+              {% if can_cancel_brand_items and not item.cancelled %}
+                <form method="post" action="{% url 'brand_cancel_order_item' pk=order.pk item_pk=item.pk %}">
+                  {% csrf_token %}
+                  <button class="small-action" type="submit">Отменить товар</button>
+                </form>
+              {% endif %}
+            </div>
           </div>
         {% endfor %}
       </div>

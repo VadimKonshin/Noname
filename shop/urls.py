@@ -26,6 +26,7 @@ urlpatterns = [
     path('brand/telegram/disconnect/', commerce_views.brand_telegram_disconnect, name='brand_telegram_disconnect'),
     path('brand/orders/', commerce_views.brand_orders, name='brand_orders'),
     path('brand/orders/<int:pk>/status/', commerce_views.brand_change_order_status, name='brand_order_status'),
+    path('brand/orders/<int:pk>/items/<int:item_pk>/cancel/', commerce_views.brand_cancel_order_item, name='brand_cancel_order_item'),
     path('brand/products/', views.brand_products, name='brand_products'),
     path('catalog/', views.catalog, name='catalog'),
     path('collaboration/', views.collaboration, name='info_collaboration'),
