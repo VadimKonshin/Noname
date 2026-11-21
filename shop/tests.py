@@ -721,7 +721,7 @@ class BrandAccountTests(TestCase):
         response = self.client.get(reverse('info_collaboration'))
         self.assertContains(response, 'Если хотите присоединиться к команде NoName')
         self.assertContains(response, 'collab-center')
-        self.assertContains(response, 'mailto:vdmkonshin@gmail.com')
+        self.assertContains(response, 'mailto:noname.shop@yandex.ru')
         self.assertContains(response, 'tg://resolve?domain=vadimKonshin')
         self.assertContains(response, '@vadimKonshin')
         self.assertNotContains(response, 'collab-void')
