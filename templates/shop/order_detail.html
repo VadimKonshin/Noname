@@ -24,8 +24,17 @@
               {% if item.brand_name %}<small>{{ item.brand_name }}</small>{% endif %}
               <small>Размер {{ item.size }} · {{ item.unit_price|floatformat:0 }} ₽ × {{ item.quantity }}</small>
               {% if item.is_preorder %}<small><strong>Предзаказ</strong> · изготовление до {{ item.preorder_days }} дн.</small>{% endif %}
+              {% if item.cancelled %}<small><span class="status-pill status-cancelled">Отменён</span></small>{% endif %}
             </div>
-            <strong>{{ item.line_total|floatformat:0 }} ₽</strong>
+            <div>
+              <strong>{{ item.line_total|floatformat:0 }} ₽</strong>
+              {% if can_cancel_brand_items and not item.cancelled %}
+                <form method="post" action="{% url 'brand_cancel_order_item' pk=order.pk item_pk=item.pk %}">
+                  {% csrf_token %}
+                  <button class="small-action" type="submit">Отменить товар</button>
+                </form>
+              {% endif %}
+            </div>
           </div>
         {% endfor %}
       </div>
@@ -47,7 +56,7 @@
         <div class="form-section">
           <h2>Управление статусом</h2>
           {% if can_change_brand_status %}
-            <p>Можно поставить «собирается», «в службе доставки» или «отправлен». Отмену по-прежнему делает администратор магазина. Письмо покупателю уходит только при «отправлен».</p>
+            <p>Можно поставить «собирается», «в службе доставки», «отправлен» или «отменён». Письмо покупателю уходит при «отправлен» и «отменён».</p>
           {% endif %}
           <form method="post" action="{% if can_change_brand_status %}{% url 'brand_order_status' pk=order.pk %}{% else %}{% url 'change_order_status' pk=order.pk %}{% endif %}" class="status-form">
             {% csrf_token %}
@@ -84,7 +93,7 @@
         <p class="summary-note">
           Показаны только позиции вашего бренда. Доставка и товары других брендов скрыты.
           {% if can_change_brand_status %}
-            Статус этого заказа можете сменить вы: собирается, в службе доставки или отправлен.
+            Статус этого заказа можете сменить вы: собирается, в службе доставки, отправлен или отменён.
           {% else %}
             Статус общего заказа изменяет администратор.
           {% endif %}

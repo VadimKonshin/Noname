@@ -539,6 +539,53 @@ class CommerceTests(TestCase):
         order.refresh_from_db()
         self.assertEqual(order.status, Order.CANCELLED)
 
+    def test_dashboard_splits_registered_and_guest_buyers(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        old = User.objects.create_user('old_client', email='old@example.org', password='PassWithLength#178')
+        User.objects.filter(pk=old.pk).update(date_joined=timezone.now() - timedelta(days=30))
+        User.objects.create_user('new_client', email='new@example.org', password='PassWithLength#178')
+        manager_user = User.objects.create_user('brand_person', email='brand@example.org', password='PassWithLength#178')
+        BrandManager.objects.create(user=manager_user, brand=self.brand, is_approved=True)
+        panel = User.objects.create_user('panel_only', password='PassWithLength#178', is_staff=True)
+        panel.user_permissions.add(Permission.objects.get(content_type__app_label='shop', codename='view_order'))
+        self._create_order()
+        Order.objects.create(
+            user=old, checkout_token='old-buyer', full_name='Старый', email='old@example.org',
+            phone='+79990000001', delivery_name='Самовывоз', delivery_price=Decimal('0'),
+            subtotal=Decimal('1000'), total=Decimal('1000'),
+        )
+        Order.objects.create(
+            user=old, checkout_token='old-buyer-again', full_name='Старый', email='old@example.org',
+            phone='+79990000001', delivery_name='Самовывоз', delivery_price=Decimal('0'),
+            subtotal=Decimal('1000'), total=Decimal('1000'),
+        )
+        for token, email in (
+            ('guest-a', 'Guest@Example.org'),
+            ('guest-b', 'guest@example.org'),
+            ('guest-c', 'other@example.org'),
+        ):
+            Order.objects.create(
+                checkout_token=token, full_name='Гость', email=email, phone='+79990000002',
+                delivery_name='Самовывоз', delivery_price=Decimal('0'),
+                subtotal=Decimal('1000'), total=Decimal('1000'),
+            )
+        self.client.force_login(panel)
+        hidden = self.client.get(reverse('dashboard'))
+        self.assertIsNone(hidden.context['client_stats'])
+        self.assertNotContains(hidden, 'ВСЕГО КЛИЕНТОВ')
+        self.assertNotContains(hidden, 'БЕЗ РЕГИСТРАЦИИ')
+        self.client.force_login(self.staff)
+        page = self.client.get(reverse('dashboard'))
+        stats = page.context['client_stats']
+        self.assertEqual(stats['client_count'], 3)
+        self.assertEqual(stats['new_clients_week'], 2)
+        self.assertEqual(stats['registered_buyers'], 2)
+        self.assertEqual(stats['guest_buyers'], 2)
+        self.assertContains(page, 'ВСЕГО КЛИЕНТОВ')
+        self.assertContains(page, 'НОВЫЕ ЗА НЕДЕЛЮ')
+        self.assertContains(page, 'БЕЗ РЕГИСТРАЦИИ')
+
     def test_staff_can_mark_order_in_delivery(self):
         order = self._create_order()
         self.client.force_login(self.staff)
@@ -1029,11 +1076,14 @@ class BrandOrderTests(TestCase):
         self.assertEqual(self.alpha_order.status, Order.SHIPPED)
         self.assertEqual(self.alpha_order.tracking_number, 'CDEK123')
 
-    def test_manager_cannot_cancel_or_change_another_brands_order(self):
+    def test_manager_can_cancel_own_order_but_not_another_brands(self):
         self.client.force_login(self.manager_user)
+        page = self.client.get(self.alpha_order.get_absolute_url())
+        self.assertContains(page, 'Отменён')
+        self.assertNotContains(page, 'Отмену по-прежнему делает администратор магазина')
         self.client.post(reverse('brand_order_status', args=[self.alpha_order.pk]), {'status': Order.CANCELLED})
         self.alpha_order.refresh_from_db()
-        self.assertEqual(self.alpha_order.status, Order.COMPLETED)
+        self.assertEqual(self.alpha_order.status, Order.CANCELLED)
         cancelled = self.client.get(self.cancelled_order.get_absolute_url())
         self.assertFalse(cancelled.context['can_change_brand_status'])
         self.client.post(reverse('brand_order_status', args=[self.cancelled_order.pk]), {'status': Order.SHIPPED})
@@ -1052,3 +1102,37 @@ class BrandOrderTests(TestCase):
         self.assertEqual(self.client.post(reverse('brand_order_status', args=[self.alpha_order.pk]), {
             'status': Order.SHIPPED,
         }).status_code, 403)
+
+    def test_manager_cancels_own_product_and_leaves_the_other_brand(self):
+        ProductVariant.objects.create(product=self.shirt, size='M', stock_quantity=4)
+        ProductVariant.objects.create(product=self.other_shirt, size='L', stock_quantity=2)
+        alpha_line = self.mixed_order.items.get(product=self.shirt)
+        beta_line = self.mixed_order.items.get(product=self.other_shirt)
+        self.client.force_login(self.manager_user)
+        page = self.client.get(self.mixed_order.get_absolute_url())
+        self.assertContains(page, 'Отменить товар')
+        self.assertNotContains(page, 'Beta shirt')
+        self.client.post(reverse('brand_cancel_order_item', args=[self.mixed_order.pk, alpha_line.pk]))
+        alpha_line.refresh_from_db()
+        beta_line.refresh_from_db()
+        self.mixed_order.refresh_from_db()
+        self.assertTrue(alpha_line.cancelled)
+        self.assertFalse(beta_line.cancelled)
+        self.assertEqual(self.mixed_order.status, Order.NEW)
+        self.assertEqual(ProductVariant.objects.get(product=self.shirt, size='M').stock_quantity, 6)
+        self.assertEqual(ProductVariant.objects.get(product=self.other_shirt, size='L').stock_quantity, 2)
+        self.client.post(reverse('brand_cancel_order_item', args=[self.mixed_order.pk, alpha_line.pk]))
+        self.assertEqual(ProductVariant.objects.get(product=self.shirt, size='M').stock_quantity, 6)
+        self.assertEqual(self.client.post(reverse('brand_cancel_order_item', args=[self.mixed_order.pk, beta_line.pk])).status_code, 404)
+        self.client.force_login(self.customer)
+        self.assertEqual(self.client.post(reverse('brand_cancel_order_item', args=[self.mixed_order.pk, alpha_line.pk])).status_code, 403)
+        self.client.force_login(self.manager_user)
+        own_line = self.alpha_order.items.get()
+        ProductVariant.objects.create(product=self.second_shirt, size='S', stock_quantity=1)
+        self.client.post(reverse('brand_cancel_order_item', args=[self.alpha_order.pk, own_line.pk]))
+        own_line.refresh_from_db()
+        self.alpha_order.refresh_from_db()
+        self.assertTrue(own_line.cancelled)
+        self.assertEqual(self.alpha_order.status, Order.CANCELLED)
+        self.assertEqual(ProductVariant.objects.get(product=self.second_shirt, size='S').stock_quantity, 2)
+        self.assertFalse(self.client.get(self.alpha_order.get_absolute_url()).context['can_cancel_brand_items'])

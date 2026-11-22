@@ -4,13 +4,14 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.models import Permission
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models import Count, F, Prefetch, Sum
-from django.db.models.functions import Coalesce, TruncDate
+from django.db.models.functions import Coalesce, Lower, TruncDate
 from django.utils import timezone
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
@@ -26,6 +27,7 @@ from .commerce import (
     available_delivery_methods, cart_products, get_cart, method_offered_by, one_brand,
     open_preorder_map, pickup_place, pop_preorder_offer, preorder_offer_for, preorder_room,
     put, remember_preorder_offer, replace_with_preorder, set_quantity, update_order_status,
+    cancel_order_item,
 )
 from .cdek import CdekUnavailable, configured as cdek_configured, parcel_weight, quote_delivery
 from .commerce_forms import CheckoutForm, ManagerOrderStatusForm, OrderLookupForm, OrderStatusForm
@@ -505,7 +507,10 @@ def purchase_bars(active_items, days=14):
 
 def set_brand_totals(orders):
     for order in orders:
-        order.brand_total = sum((item.line_total for item in order.brand_items), Decimal('0.00'))
+        order.brand_total = sum(
+            (item.line_total for item in order.brand_items if not item.cancelled),
+            Decimal('0.00'),
+        )
     return orders
 
 
@@ -545,10 +550,13 @@ def order_detail(request, pk):
         'order': order,
         'order_items': brand_items if brand_order_view else order.items.all(),
         'brand_order_view': brand_order_view,
-        'brand_subtotal': sum((item.line_total for item in brand_items), Decimal('0.00')),
+        'brand_subtotal': sum((item.line_total for item in brand_items if not item.cancelled), Decimal('0.00')),
         'can_view_any_order': can_view_any_order,
         'can_change_order': can_change_order,
         'can_change_brand_status': can_change_brand_status,
+        'can_cancel_brand_items': bool(
+            brand_order_view and order.status != Order.CANCELLED
+        ),
         'status_form': status_form,
         'order_reads': order.reads.select_related('user') if can_view_any_order else None,
     })
@@ -562,20 +570,22 @@ def dashboard(request):
     status_counts = {entry['status']: entry['count'] for entry in Order.objects.values('status').annotate(count=Count('pk'))}
     totals = active_orders.aggregate(total=Sum('total'), subtotal=Sum('subtotal'))
     # The values include unfulfilled orders, i.e. NOT verified payments/revenue.
-    sales = (OrderItem.objects.exclude(order__status=Order.CANCELLED)
+    sales = (OrderItem.objects.exclude(order__status=Order.CANCELLED).exclude(cancelled=True)
              .annotate(display_title=Coalesce('product__title', 'product_title'))
              .values('product_id', 'display_title', 'product__slug', 'product__is_deleted')
              .annotate(units=Sum('quantity'), value=Sum('line_total'), order_count=Count('order_id', distinct=True))
              .order_by('-units', '-value'))
-    brand_sales = (OrderItem.objects.exclude(order__status=Order.CANCELLED)
+    brand_sales = (OrderItem.objects.exclude(order__status=Order.CANCELLED).exclude(cancelled=True)
                    .values('brand_name').annotate(units=Sum('quantity'),
                                                   value=Sum('line_total'),
                                                   orders=Count('order_id', distinct=True))
                    .order_by('-value'))
     recent = Order.objects.select_related('user').order_by('-created_at')[:8]
     applications = None
+    client_stats = None
     if request.user.is_superuser:
         applications = _manager_applications()
+        client_stats = _client_stats()
     return render(request, 'shop/dashboard.html', {
         'orders_count': Order.objects.count(),
         'active_orders_count': active_orders.count(),
@@ -588,7 +598,30 @@ def dashboard(request):
         'cancelled_count': status_counts.get(Order.CANCELLED, 0),
         'new_count': status_counts.get(Order.NEW, 0),
         'manager_applications': applications,
+        'client_stats': client_stats,
     })
+
+
+def _client_stats():
+    """Customer accounts, and buyers split by whether the order had an account."""
+    clients = get_user_model().objects.filter(
+        is_staff=False, is_superuser=False, brand_manager__isnull=True,
+    )
+    registered_buyers = Order.objects.filter(user__isnull=False).values('user_id').distinct().count()
+    guest_buyers = (
+        Order.objects.filter(user__isnull=True)
+        .annotate(email_key=Lower('email'))
+        .exclude(email_key='')
+        .values('email_key')
+        .distinct()
+        .count()
+    )
+    return {
+        'client_count': clients.count(),
+        'new_clients_week': clients.filter(date_joined__gte=timezone.now() - timedelta(days=7)).count(),
+        'registered_buyers': registered_buyers,
+        'guest_buyers': guest_buyers,
+    }
 
 
 PANEL_CODENAMES = (
@@ -624,7 +657,8 @@ def dashboard_managers(request):
     staff_ids = {pk for raw in request.POST.getlist('staff') if (pk := _integer(raw)) and pk > 0}
     permissions = _panel_permissions()
     with transaction.atomic():
-        applications = BrandManager.objects.select_for_update().select_related('user')
+        # Default ordering joins the optional brand. PostgreSQL then refuses FOR UPDATE.
+        applications = BrandManager.objects.select_for_update().select_related('user').order_by('pk')
         for application in applications:
             approved = application.pk in approved_ids
             if application.is_approved != approved:
@@ -677,7 +711,7 @@ def brand_dashboard(request):
     items = scoped_order_items(brand, OrderItem.objects.all())
     orders = Order.objects.filter(items__in=items).distinct()
     active_orders = orders.exclude(status=Order.CANCELLED)
-    active_items = items.exclude(order__status=Order.CANCELLED)
+    active_items = items.exclude(order__status=Order.CANCELLED).exclude(cancelled=True)
     totals = active_items.aggregate(units=Sum('quantity'), value=Sum('line_total'))
     status_counts = {
         entry['status']: entry['count']
@@ -800,6 +834,26 @@ def brand_change_order_status(request, pk):
             messages.success(request, f'Статус заказа №{order.public_number} обновлён.')
     else:
         messages.error(request, ' '.join(error for errors in form.errors.values() for error in errors))
+    return redirect(order.get_absolute_url())
+
+
+@brand_manager_required
+@require_POST
+def brand_cancel_order_item(request, pk, item_pk):
+    manager = request.brand_manager
+    if manager.brand_id is None:
+        messages.error(request, 'Сначала создайте бренд.')
+        return redirect('brand_create')
+    order = get_object_or_404(Order.objects.prefetch_related('items__product'), pk=pk)
+    item = scoped_order_items(manager.brand, order.items).filter(pk=item_pk).first()
+    if item is None:
+        raise Http404('Заказ не найден.')
+    try:
+        cancel_order_item(order.pk, item.pk)
+    except ValidationError as exc:
+        messages.error(request, exc.message)
+    else:
+        messages.success(request, f'«{item.product_title}» отменён в заказе №{order.public_number}.')
     return redirect(order.get_absolute_url())
 
 

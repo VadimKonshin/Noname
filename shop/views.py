@@ -173,9 +173,10 @@ def brand_message_detail(request, pk):
 
 
 def home(request):
-    featured = list(public_products().filter(is_featured=True).select_related('brand').prefetch_related('images', 'variants')[:4])
+    products = public_products().select_related('brand').prefetch_related('images', 'variants')
+    featured = list(products.filter(is_featured=True).order_by('?')[:4])
     if not featured:
-        featured = list(public_products().select_related('brand').prefetch_related('images', 'variants')[:4])
+        featured = list(products.order_by('?')[:4])
     return render(request, 'shop/home.html', {'featured': featured})
 
 

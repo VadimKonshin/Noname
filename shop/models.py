@@ -353,6 +353,7 @@ class Order(models.Model):
         (PROCESSING, 'Собирается'),
         (IN_DELIVERY, 'В службе доставки'),
         (SHIPPED, 'Отправлен'),
+        (CANCELLED, 'Отменён'),
     ]
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='shop_orders', verbose_name='Покупатель')
     public_number = models.CharField('Номер для покупателя', max_length=8, unique=True, editable=False)
@@ -426,6 +427,7 @@ class OrderItem(models.Model):
     line_total = models.DecimalField('Сумма, ₽', max_digits=12, decimal_places=2)
     is_preorder = models.BooleanField('Предзаказ', default=False)
     preorder_days = models.PositiveSmallIntegerField('Срок изготовления на момент заказа', null=True, blank=True)
+    cancelled = models.BooleanField('Отменён', default=False)
 
     class Meta:
         verbose_name = 'Позиция заказа'

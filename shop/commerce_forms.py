@@ -74,13 +74,13 @@ def _clean_tracking_number(value):
 
 
 class ManagerOrderStatusForm(forms.Form):
-    """Brand manager: assembling, handed to the carrier, or shipped. Not cancel."""
+    """Brand manager of a single-brand order: assembly, carrier, shipped, or cancelled."""
     status = forms.ChoiceField(
         label='Статус',
         choices=[('', 'Выберите статус'), *Order.MANAGER_STATUS_CHOICES],
         error_messages={
-            'required': 'Выберите: собирается, в службе доставки или отправлен.',
-            'invalid_choice': 'Выберите: собирается, в службе доставки или отправлен.',
+            'required': 'Выберите: собирается, в службе доставки, отправлен или отменён.',
+            'invalid_choice': 'Выберите: собирается, в службе доставки, отправлен или отменён.',
         },
     )
     tracking_number = forms.CharField(
@@ -95,7 +95,7 @@ class ManagerOrderStatusForm(forms.Form):
     def clean_status(self):
         status = self.cleaned_data.get('status')
         if status not in dict(Order.MANAGER_STATUS_CHOICES):
-            raise forms.ValidationError('Выберите: собирается, в службе доставки или отправлен.')
+            raise forms.ValidationError('Выберите: собирается, в службе доставки, отправлен или отменён.')
         return status
 
     def clean_tracking_number(self):

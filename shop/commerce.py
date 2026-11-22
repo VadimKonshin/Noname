@@ -342,12 +342,8 @@ def update_order_status(order_id, status, tracking_number=None):
             return order
         if status_changed and status == Order.CANCELLED:
             for item in order.items.all():
-                if item.is_preorder or item.product_id is None:
-                    continue
-                ProductVariant.objects.filter(
-                    product_id=item.product_id,
-                    size=item.size,
-                ).update(stock_quantity=F('stock_quantity') + item.quantity)
+                _restock_item(item)
+            order.items.filter(cancelled=False).update(cancelled=True)
         order.status = status
         order.tracking_number = tracking
         order.save(update_fields=['status', 'tracking_number', 'updated_at'])
@@ -359,4 +355,36 @@ def update_order_status(order_id, status, tracking_number=None):
             from .telegram import notify_status_change
             notify_order_status(order.pk)
             notify_status_change(order.pk)
+    return order
+
+
+def _restock_item(item):
+    if item.cancelled or item.is_preorder or item.product_id is None:
+        return
+    ProductVariant.objects.filter(
+        product_id=item.product_id,
+        size=item.size,
+    ).update(stock_quantity=F('stock_quantity') + item.quantity)
+
+
+def cancel_order_item(order_id, item_id):
+    """Cancel one line. The order itself is cancelled only when nothing is left."""
+    with transaction.atomic():
+        order = Order.objects.select_for_update().get(pk=order_id)
+        if order.status == Order.CANCELLED:
+            raise ValidationError('Отменённый заказ нельзя открыть повторно.')
+        item = OrderItem.objects.select_for_update().get(pk=item_id, order_id=order.pk)
+        if item.cancelled:
+            raise ValidationError('Эта позиция уже отменена.')
+        _restock_item(item)
+        item.cancelled = True
+        item.save(update_fields=['cancelled'])
+        if order.items.filter(cancelled=False).exists():
+            return order
+        order.status = Order.CANCELLED
+        order.save(update_fields=['status', 'updated_at'])
+        from .mail import notify_order_status
+        from .telegram import notify_status_change
+        notify_order_status(order.pk)
+        notify_status_change(order.pk)
     return order

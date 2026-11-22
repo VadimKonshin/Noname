@@ -107,7 +107,7 @@ def order_is_this_brand_only(order, brand):
     """A brand manager may move the shared status only when every line is theirs."""
     if brand is None:
         return False
-    items = list(order.items.all())
+    items = [item for item in order.items.all() if not item.cancelled]
     if not items:
         return False
     for item in items:

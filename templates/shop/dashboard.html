@@ -29,6 +29,35 @@
     </div>
   </div>
 
+  {% if client_stats %}
+    <div class="dash-section-heading">
+      <h2>КЛИЕНТЫ</h2>
+      <span>Аккаунты и кто уже оформил заказ</span>
+    </div>
+    <div class="metric-grid">
+      <div class="metric">
+        <span>ВСЕГО КЛИЕНТОВ</span>
+        <strong>{{ client_stats.client_count }}</strong>
+        <small>Без менеджеров и администраторов</small>
+      </div>
+      <div class="metric">
+        <span>НОВЫЕ ЗА НЕДЕЛЮ</span>
+        <strong>{{ client_stats.new_clients_week }}</strong>
+        <small>Регистрации за последние 7 дней</small>
+      </div>
+      <div class="metric">
+        <span>С ЗАКАЗОМ</span>
+        <strong>{{ client_stats.registered_buyers }}</strong>
+        <small>Вошли в аккаунт при оформлении</small>
+      </div>
+      <div class="metric">
+        <span>БЕЗ РЕГИСТРАЦИИ</span>
+        <strong>{{ client_stats.guest_buyers }}</strong>
+        <small>Гости. Одна почта — один человек</small>
+      </div>
+    </div>
+  {% endif %}
+
   {% if manager_applications is not None %}
     <div class="manager-widget">
       <div class="dash-section-heading">
