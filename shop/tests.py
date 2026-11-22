@@ -80,6 +80,26 @@ class StoreTests(TestCase):
         self.assertContains(self.client.get(reverse('home')), self.product.title)
         self.assertContains(self.client.get(reverse('catalog')), self.product.title)
 
+    def test_home_selection_changes_between_loads(self):
+        for index in range(6):
+            Product.objects.create(
+                brand=self.brand, title=f'Подборка {index}', description='Хлопок',
+                price=Decimal('1000.00'), is_featured=True,
+            )
+        hidden = Product.objects.create(
+            brand=self.brand, title='Не на главной', description='Хлопок',
+            price=Decimal('1000.00'), is_featured=False,
+        )
+        seen = set()
+        for _ in range(16):
+            response = self.client.get(reverse('home'))
+            shown = response.context['featured']
+            self.assertEqual(len(shown), 4)
+            self.assertTrue(all(item.is_featured for item in shown))
+            self.assertNotIn(hidden, shown)
+            seen.add(tuple(item.pk for item in shown))
+        self.assertGreater(len(seen), 1)
+
     def test_product_detail(self):
         response = self.client.get(self.product.get_absolute_url())
         self.assertEqual(response.status_code, 200)
