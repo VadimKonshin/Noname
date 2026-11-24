@@ -1,8 +1,15 @@
 {
 	email {$ACME_EMAIL}
+	# Clients that open the site by IP often send no server name.
+	default_sni {$SITE_ADDRESS}
 }
 
 {$SITE_ADDRESS} {
+	tls {
+		issuer acme {
+			profile {$ACME_PROFILE:classic}
+		}
+	}
 	encode gzip zstd
 	request_body {
 		max_size 12MB
@@ -33,4 +40,9 @@
 			}
 		}
 	}
+}
+
+# SITE_ADDRESS must be a domain name. An IP makes this label invalid.
+www.{$SITE_ADDRESS} {
+	redir https://{$SITE_ADDRESS}{uri} permanent
 }

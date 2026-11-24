@@ -80,6 +80,16 @@ class StoreTests(TestCase):
         self.assertContains(self.client.get(reverse('home')), self.product.title)
         self.assertContains(self.client.get(reverse('catalog')), self.product.title)
 
+    def test_yandex_verification_file(self):
+        response = self.client.get('/yandex_64e4bd290b97df47.html')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Verification: 64e4bd290b97df47')
+
+    def test_google_verification_file(self):
+        response = self.client.get('/googleaa830e61bb557a81.html')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'google-site-verification: googleaa830e61bb557a81.html')
+
     def test_home_selection_changes_between_loads(self):
         for index in range(6):
             Product.objects.create(

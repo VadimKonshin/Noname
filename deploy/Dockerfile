@@ -14,6 +14,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY manage.py .
+COPY yandex_64e4bd290b97df47.html googleaa830e61bb557a81.html .
 COPY config ./config
 COPY shop ./shop
 COPY templates ./templates
