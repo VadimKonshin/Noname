@@ -12,7 +12,7 @@
 	}
 	encode gzip zstd
 	request_body {
-		max_size 12MB
+		max_size 64MB
 	}
 	header {
 		X-Content-Type-Options nosniff

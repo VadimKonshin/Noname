@@ -383,3 +383,25 @@ a,button {transition:color .18s,background .18s,border-color .18s}
 .facts-row>div+div {border-left:1px solid #ffffff18;padding-left:32px}
 @media(max-width:850px){.facts-row>div+div {padding-left:20px}.facts-row>div {padding-right:16px}}
 @media(max-width:620px){.facts-row>div+div {border-left:0;padding-left:0}}
+
+.detail-main-photo {position:relative}
+.gallery-open {display:block;width:100%;padding:0;border:0;background:transparent;cursor:zoom-in}
+.gallery-open img {display:block}
+.gallery-arrow {position:absolute;top:50%;transform:translateY(-50%);z-index:2;width:42px;height:42px;display:grid;place-items:center;padding:0;border:1px solid #5c5c63;background:#0b0b0ee6;color:#f4f1ea}
+.gallery-arrow svg {width:18px;height:18px;display:block}
+.gallery-prev {left:12px}
+.gallery-next {right:12px}
+.gallery-arrow:hover {border-color:#e45549;color:#fff}
+.photo-lightbox {position:fixed;inset:0;z-index:80;display:grid;grid-template-columns:52px minmax(0,1fr) 52px;align-items:center;gap:12px;padding:28px 16px;background:#070709f2}
+.photo-lightbox[hidden] {display:none}
+.photo-lightbox img {max-width:100%;max-height:calc(100vh - 72px);width:auto;height:auto;margin:auto;object-fit:contain}
+.photo-lightbox .gallery-arrow {position:static;transform:none}
+.lightbox-close {position:absolute;top:16px;right:16px;z-index:2;padding:10px 14px;border:1px solid #5c5c63;background:#0b0b0ee6;color:#f4f1ea;font-size:11px;font-weight:800;letter-spacing:.08em}
+.lightbox-close:hover {border-color:#e45549;color:#fff}
+body.lightbox-open {overflow:hidden}
+.size-range {display:flex;flex-wrap:wrap;gap:12px}
+.size-range-item {display:flex;flex-direction:column;gap:8px;width:76px}
+.size-range-item .size-choice {width:100%}
+.size-range-item .size-choice span {width:100%}
+.size-range-item input[type=number] {width:100%;min-height:40px;padding:8px;text-align:center}
+@media(max-width:620px){.gallery-arrow {width:38px;height:38px}.gallery-prev {left:8px}.gallery-next {right:8px}.photo-lightbox {grid-template-columns:40px minmax(0,1fr) 40px;padding:56px 8px 16px}}

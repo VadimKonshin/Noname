@@ -148,13 +148,21 @@ def optimize_stored(field_file):
     return 'rewritten'
 
 
+def _for_storage(content):
+    """Stream a prepared upload. A temp file no longer has a path after its bytes are replaced."""
+    if not hasattr(content, 'temporary_file_path'):
+        return content
+    content.seek(0)
+    return ContentFile(content.read(), name=getattr(content, 'name', None) or 'image.webp')
+
+
 class PreparedImageFieldFile(ImageFieldFile):
     def save(self, name, content, save=True):
         if not getattr(content, 'name', None):
             content.name = name
         previous = self._previous_stored_name()
         prepare_upload(content)
-        super().save(posixpath.basename(content.name or name), content, save=save)
+        super().save(posixpath.basename(content.name or name), _for_storage(content), save=save)
         # Drop the old sibling before writing the new one: both names can share a stem.
         if previous and previous != self.name:
             delete_card(self.storage, previous)

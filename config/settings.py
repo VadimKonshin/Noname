@@ -168,8 +168,8 @@ if not DEBUG:
 # The public /admin/ address is a 404. Tests still open it to cover the staff screens.
 ADMIN_CLOSED = 'test' not in sys.argv
 
-DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
-DATA_UPLOAD_MAX_NUMBER_FILES = 12
+DATA_UPLOAD_MAX_MEMORY_SIZE = 64 * 1024 * 1024
+DATA_UPLOAD_MAX_NUMBER_FILES = 40
 RATELIMIT_ENABLE = env_bool('DJANGO_RATELIMIT_ENABLE', True)
 RATELIMIT_VIEW = 'shop.views.ratelimited_error'
 

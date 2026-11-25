@@ -10,22 +10,75 @@
   document.querySelectorAll('[data-auto-submit]').forEach(select => {
     select.addEventListener('change', () => select.form?.requestSubmit());
   });
+  const gallery = document.querySelector('[data-product-gallery]');
   const mainImage = document.getElementById('gallery-main');
-  document.querySelectorAll('[data-gallery-src]').forEach(button => {
-    button.addEventListener('click', () => {
-      if (!mainImage) return;
-      mainImage.src = button.dataset.gallerySrc;
-      mainImage.alt = button.dataset.galleryAlt || '';
-      document.querySelectorAll('.thumb').forEach(item => item.classList.remove('active'));
-      button.classList.add('active');
+  const thumbs = gallery ? [...gallery.querySelectorAll('[data-gallery-src]')] : [];
+  const lightbox = document.querySelector('[data-gallery-lightbox]');
+  const lightboxImg = lightbox?.querySelector('[data-gallery-lightbox-img]');
+  let index = Math.max(0, thumbs.findIndex(thumb => thumb.classList.contains('active')));
+  const show = next => {
+    if (!thumbs.length || !mainImage) return;
+    index = (next + thumbs.length) % thumbs.length;
+    const thumb = thumbs[index];
+    const src = thumb.dataset.gallerySrc;
+    const alt = thumb.dataset.galleryAlt || '';
+    mainImage.src = src;
+    mainImage.alt = alt;
+    if (lightboxImg) {
+      lightboxImg.src = src;
+      lightboxImg.alt = alt;
+    }
+    thumbs.forEach(item => item.classList.toggle('active', item === thumb));
+  };
+  thumbs.forEach((button, thumbIndex) => {
+    button.addEventListener('click', () => show(thumbIndex));
+  });
+  document.querySelectorAll('[data-gallery-step]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.stopPropagation();
+      show(index + Number(button.dataset.galleryStep || '0'));
     });
   });
-  const galleryPicker = document.getElementById('gallery_images');
+  const closeLightbox = () => {
+    if (!lightbox) return;
+    lightbox.hidden = true;
+    document.body.classList.remove('lightbox-open');
+  };
+  gallery?.querySelector('[data-gallery-open]')?.addEventListener('click', () => {
+    if (!lightbox) return;
+    show(index);
+    lightbox.hidden = false;
+    document.body.classList.add('lightbox-open');
+    lightbox.querySelector('[data-gallery-close]')?.focus();
+  });
+  lightbox?.querySelector('[data-gallery-close]')?.addEventListener('click', closeLightbox);
+  lightbox?.addEventListener('click', event => {
+    if (event.target === lightbox) closeLightbox();
+  });
+  document.addEventListener('keydown', event => {
+    if (!lightbox || lightbox.hidden) return;
+    if (event.key === 'Escape') {
+      closeLightbox();
+      return;
+    }
+    if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+      event.preventDefault();
+      show(index + (event.key === 'ArrowRight' ? 1 : -1));
+    }
+  });
+  const galleryPicker = document.getElementById('product_photos') || document.getElementById('gallery_images');
   const count = document.getElementById('gallery-file-count');
   if (galleryPicker && count) {
+    const empty = count.textContent;
     galleryPicker.addEventListener('change', () => {
       const n = galleryPicker.files.length;
-      count.textContent = n ? `Выбрано фотографий: ${n}` : 'Можно выбрать сразу несколько файлов.';
+      if (!n) {
+        count.textContent = empty;
+        return;
+      }
+      count.textContent = galleryPicker.dataset.coverSet === '1'
+        ? `Выбрано фотографий: ${n}. Они добавятся к вещи.`
+        : `Выбрано фотографий: ${n}. Первая станет карточкой.`;
     });
   }
 })();
@@ -148,19 +201,16 @@ function openPreorderPlate(plate, {productId, size, quantity, title}) {
 })();
 
 (() => {
-  const addButton = document.querySelector('[data-add-variant]');
-  const container = document.querySelector('[data-variant-forms]');
-  const template = document.querySelector('[data-variant-template]');
-  const totalForms = document.querySelector('#id_variants-TOTAL_FORMS');
-  if (!addButton || !container || !template || !totalForms) return;
-  addButton.addEventListener('click', () => {
-    const index = Number(totalForms.value);
-    container.insertAdjacentHTML('beforeend', template.innerHTML.replaceAll('__prefix__', index));
-    totalForms.value = index + 1;
-  });
-  container.addEventListener('click', event => {
-    const removeButton = event.target.closest('[data-remove-variant]');
-    if (removeButton) removeButton.closest('[data-variant-row]').remove();
+  document.querySelectorAll('.size-range-item').forEach(item => {
+    const box = item.querySelector('input[type="checkbox"]');
+    const stock = item.querySelector('input[type="number"]');
+    if (!box || !stock) return;
+    stock.addEventListener('input', () => {
+      if (stock.value !== '') box.checked = true;
+    });
+    box.addEventListener('change', () => {
+      if (box.checked && stock.value === '') stock.value = '0';
+    });
   });
 })();
 

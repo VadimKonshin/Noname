@@ -77,56 +77,53 @@
 
         <div class="form-section">
           <h2>04 / Размеры и остатки</h2>
-          <p class="form-hint">Укажи количество каждого размера. Нулевой остаток можно принимать как предзаказ, если эта опция включена ниже.</p>
-          {{ variant_formset.management_form }}
-          {% if variant_formset.non_form_errors %}<div class="form-errors">{{ variant_formset.non_form_errors }}</div>{% endif %}
-          <div data-variant-forms>
-            {% for variant_form in variant_formset %}
-              <div class="form-field variant-form-row" data-variant-row>
-                {{ variant_form.id }}
-                <div>
-                  <label for="{{ variant_form.size.id_for_label }}">Размер</label>
-                  {{ variant_form.size }}
-                  {% if variant_form.size.errors %}<div class="field-error">{{ variant_form.size.errors }}</div>{% endif %}
-                </div>
-                <div>
-                  <label for="{{ variant_form.stock_quantity.id_for_label }}">Остаток</label>
-                  {{ variant_form.stock_quantity }}
-                  {% if variant_form.stock_quantity.errors %}<div class="field-error">{{ variant_form.stock_quantity.errors }}</div>{% endif %}
-                </div>
-                {% if variant_form.instance.pk %}
-                  <label class="check-field">{{ variant_form.DELETE }}<span>Удалить размер</span></label>
-                {% endif %}
+          <p class="form-hint">Отметь размеры из ряда. Название писать не нужно. Остаток 0 значит, что размера сейчас нет: его можно взять предзаказом, если предзаказ включён ниже.</p>
+          {% if size_form.non_field_errors %}<div class="form-errors">{{ size_form.non_field_errors }}</div>{% endif %}
+          <div class="size-range">
+            {% for row in size_form.rows %}
+              <div class="size-range-item">
+                <label class="size-choice">
+                  {{ row.offer }}
+                  <span>{{ row.size }}</span>
+                </label>
+                {{ row.stock }}
+                {% if row.name %}{{ row.name }}{% endif %}
+                {% if row.stock.errors %}<div class="field-error">{{ row.stock.errors }}</div>{% endif %}
               </div>
             {% endfor %}
           </div>
-          <template data-variant-template>
-            <div class="form-field variant-form-row" data-variant-row>
-              {{ variant_formset.empty_form.id }}
-              <div><label>Размер</label>{{ variant_formset.empty_form.size }}</div>
-              <div><label>Остаток</label>{{ variant_formset.empty_form.stock_quantity }}</div>
-            </div>
-          </template>
-          <button type="button" class="small-action" data-add-variant>+ Добавить размер</button>
+          {% if size_form.legacy_sizes %}
+            <p class="form-hint">Размеры не из ряда уже сохранены у вещи. Снимите отметку, если их больше не нужно.</p>
+          {% endif %}
         </div>
 
         <div class="form-section">
           <h2>05 / Фотографии</h2>
-          <p class="form-hint">JPG, PNG или WebP, до 8 МБ. Сайт сохранит уменьшенную WebP-копию без данных камеры. Добавь обложку и до {{ max_gallery }} дополнительных фотографий.</p>
+          <p class="form-hint">JPG, PNG или WebP, каждый файл до 8 МБ. Сайт сохранит уменьшенную WebP-копию без данных камеры. {% if product and product.cover %}Новые фото добавятся к вещи. Карточка в каталоге не сменится, пока её не заменишь.{% else %}Можно выбрать сразу сколько нужно. Первая фотография станет карточкой в каталоге, остальные откроются на странице вещи.{% endif %}</p>
+          {% if product and product.cover %}
+            <div class="current-photos">
+              <h3>Карточка</h3>
+              <div class="existing-images">
+                <div class="existing-image">
+                  <img src="{{ product.cover|listing_src }}" alt="Карточка товара" loading="lazy" decoding="async">
+                </div>
+              </div>
+            </div>
+            <div class="form-field">
+              <label for="{{ form.cover.id_for_label }}">Заменить карточку</label>
+              {{ form.cover }}
+              {% if form.cover.errors %}<div class="field-error">{{ form.cover.errors }}</div>{% endif %}
+            </div>
+          {% endif %}
           <div class="form-field">
-            <label for="{{ form.cover.id_for_label }}">Главная фотография</label>
-            {{ form.cover }}
-            {% if form.cover.errors %}<div class="field-error">{{ form.cover.errors }}</div>{% endif %}
-          </div>
-          <div class="form-field">
-            <label for="gallery_images">Дополнительные фотографии</label>
-            <input type="file" id="gallery_images" name="gallery_images" accept="image/jpeg,image/png,image/webp" multiple>
-            <small id="gallery-file-count">Можно выбрать сразу несколько файлов.</small>
+            <label for="product_photos">{% if product and product.cover %}Ещё фотографии{% else %}Фотографии{% endif %}</label>
+            <input type="file" id="product_photos" name="product_photos" accept="image/jpeg,image/png,image/webp" multiple {% if product and product.cover %}data-cover-set="1"{% endif %}>
+            <small id="gallery-file-count">{% if product and product.cover %}Можно выбрать сразу несколько. Они добавятся под карточкой.{% else %}Можно выбрать сразу сколько нужно. Первая станет карточкой.{% endif %}</small>
           </div>
           {% if product and product.images.all %}
             <div class="current-photos">
-              <h3>Загруженные фотографии</h3>
-              <p class="form-hint">Отметь изображения, которые хочешь удалить при сохранении.</p>
+              <h3>Остальные фотографии</h3>
+              <p class="form-hint">Отметь изображения, которые хочешь убрать при сохранении.</p>
               <div class="existing-images">
                 {% for photo in product.images.all %}
                   <label class="existing-image">

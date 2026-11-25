@@ -4,10 +4,8 @@ from django import forms
 from django.contrib.auth.forms import AuthenticationForm, SetPasswordForm, UserChangeForm, UserCreationForm
 from django.contrib.auth.models import User
 from django.db import transaction
-from django.forms import BaseInlineFormSet, inlineformset_factory
-
 from .accounts import resolve_login_name
-from .models import Brand, BrandManager, Product, ProductVariant, UserProfile
+from .models import SIZE_ORDER, Brand, BrandManager, Product, ProductVariant, UserProfile
 
 
 class RegisterForm(UserCreationForm):
@@ -263,48 +261,89 @@ class BrandDeleteForm(forms.Form):
         return data
 
 
-class ProductVariantForm(forms.ModelForm):
-    class Meta:
-        model = ProductVariant
-        fields = ('size', 'stock_quantity')
-        widgets = {
-            'size': forms.TextInput(attrs={'placeholder': 'Например, M'}),
-            'stock_quantity': forms.NumberInput(attrs={'min': 0}),
+class ProductSizeForm(forms.Form):
+    """Standard clothing sizes are chosen, not typed. A blank stock means the size is not offered."""
+
+    def __init__(self, *args, product=None, **kwargs):
+        self.product = product
+        super().__init__(*args, **kwargs)
+        existing = {}
+        if product and product.pk:
+            existing = {variant.size: variant.stock_quantity for variant in product.variants.all()}
+        self.standard_sizes = SIZE_ORDER
+        self.legacy_sizes = [size for size in existing if size not in SIZE_ORDER]
+        for size in SIZE_ORDER:
+            self._add_size(size, existing.get(size) if size in existing else None, size in existing)
+        for index, size in enumerate(self.legacy_sizes):
+            self.fields[f'legacy_name_{index}'] = forms.CharField(widget=forms.HiddenInput, initial=size)
+            self._add_size(size, existing[size], True, prefix=f'legacy_{index}')
+
+    def _add_size(self, size, stock, offered, prefix=None):
+        key = prefix or size
+        self.fields[f'offer_{key}'] = forms.BooleanField(label=size, required=False, initial=offered)
+        self.fields[f'stock_{key}'] = forms.IntegerField(
+            label=f'Остаток {size}',
+            required=False,
+            min_value=0,
+            initial=stock,
+            widget=forms.NumberInput(attrs={'min': 0, 'inputmode': 'numeric', 'aria-label': f'Остаток {size}'}),
+        )
+
+    @property
+    def rows(self):
+        rows = []
+        for size in self.standard_sizes:
+            rows.append(self._row(size, size, False))
+        for index, size in enumerate(self.legacy_sizes):
+            rows.append(self._row(f'legacy_{index}', size, True))
+        return rows
+
+    def _row(self, key, size, legacy):
+        return {
+            'size': size,
+            'offer': self[f'offer_{key}'],
+            'stock': self[f'stock_{key}'],
+            'name': self[f'legacy_name_{key.removeprefix("legacy_")}'] if legacy else None,
+            'legacy': legacy,
         }
 
-    def clean_size(self):
-        size = self.cleaned_data['size'].strip()
-        if not size:
-            raise forms.ValidationError('Укажите размер.')
-        if ':' in size:
-            raise forms.ValidationError('Символ : использовать нельзя.')
-        return size
-
-
-class BaseProductVariantFormSet(BaseInlineFormSet):
     def clean(self):
-        super().clean()
-        if any(self.errors):
-            return
-        sizes = []
-        for form in self.forms:
-            if not form.cleaned_data or form.cleaned_data.get('DELETE'):
+        cleaned = super().clean()
+        chosen = []
+        for size in self.standard_sizes:
+            self._take(cleaned, size, size, chosen)
+        for index, size in enumerate(self.legacy_sizes):
+            posted = (cleaned.get(f'legacy_name_{index}') or '').strip()
+            if posted != size:
                 continue
-            sizes.append(form.cleaned_data['size'].casefold())
-        if not sizes:
-            raise forms.ValidationError('Добавьте хотя бы один размер и укажите его остаток.')
-        if len(sizes) != len(set(sizes)):
-            raise forms.ValidationError('Не повторяйте одинаковые размеры.')
+            self._take(cleaned, f'legacy_{index}', size, chosen)
+        if not chosen and not self.errors:
+            raise forms.ValidationError('Отметьте хотя бы один размер из ряда.')
+        cleaned['sizes'] = chosen
+        return cleaned
 
+    def _take(self, cleaned, key, size, chosen):
+        if not cleaned.get(f'offer_{key}'):
+            return
+        stock = cleaned.get(f'stock_{key}')
+        if stock is None:
+            self.add_error(f'stock_{key}', 'Укажите остаток, можно ноль.')
+            return
+        chosen.append((size, stock))
 
-ProductVariantFormSet = inlineformset_factory(
-    Product,
-    ProductVariant,
-    form=ProductVariantForm,
-    formset=BaseProductVariantFormSet,
-    extra=1,
-    can_delete=True,
-)
+    def save(self, product):
+        chosen = dict(self.cleaned_data['sizes'])
+        existing = {variant.size: variant for variant in product.variants.all()}
+        for size, stock in chosen.items():
+            variant = existing.get(size)
+            if variant is None:
+                ProductVariant.objects.create(product=product, size=size, stock_quantity=stock)
+            elif variant.stock_quantity != stock:
+                variant.stock_quantity = stock
+                variant.save(update_fields=['stock_quantity'])
+        for size, variant in existing.items():
+            if size not in chosen:
+                variant.delete()
 
 
 class ProductForm(forms.ModelForm):

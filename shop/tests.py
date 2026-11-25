@@ -14,7 +14,7 @@ from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from PIL import Image
 from .images import card_storage_name
-from .models import Brand, BrandManager, BrandMessage, Product, ProductImage, ProductVariant
+from .models import SIZE_ORDER, Brand, BrandManager, BrandMessage, Product, ProductImage, ProductVariant
 
 
 User = get_user_model()
@@ -45,21 +45,26 @@ def mail_path(body):
 
 
 def variant_payload(product=None):
-    variants = list(product.variants.all()) if product else [None]
     data = {
-        'variants-TOTAL_FORMS': str(len(variants)),
-        'variants-INITIAL_FORMS': str(len(variants) if product else 0),
-        'variants-MIN_NUM_FORMS': '0',
-        'variants-MAX_NUM_FORMS': '1000',
+        'offers_cdek': 'on',
+        'offers_post': 'on',
+        'weight_grams': '500',
     }
-    for index, variant in enumerate(variants):
-        if variant:
-            data[f'variants-{index}-id'] = str(variant.pk)
-        data[f'variants-{index}-size'] = variant.size if variant else 'M'
-        data[f'variants-{index}-stock_quantity'] = str(variant.stock_quantity if variant else 5)
-    data['offers_cdek'] = 'on'
-    data['offers_post'] = 'on'
-    data['weight_grams'] = '500'
+    variants = list(product.variants.all()) if product and product.pk else []
+    if not variants:
+        data['offer_M'] = 'on'
+        data['stock_M'] = '5'
+        return data
+    legacy_index = 0
+    for variant in variants:
+        if variant.size in SIZE_ORDER:
+            data[f'offer_{variant.size}'] = 'on'
+            data[f'stock_{variant.size}'] = str(variant.stock_quantity)
+        else:
+            data[f'legacy_name_{legacy_index}'] = variant.size
+            data[f'offer_legacy_{legacy_index}'] = 'on'
+            data[f'stock_legacy_{legacy_index}'] = str(variant.stock_quantity)
+            legacy_index += 1
     return data
 
 
@@ -185,6 +190,73 @@ class StoreTests(TestCase):
                 with Image.open(item.cover.path) as cover:
                     cover.load()
 
+    def test_first_photo_becomes_the_card_and_the_rest_open_beside_it(self):
+        def color_png(name, color):
+            output = io.BytesIO()
+            Image.new('RGB', (32, 32), color).save(output, format='PNG')
+            return SimpleUploadedFile(name, output.getvalue(), content_type='image/png')
+
+        def pixel(path):
+            with Image.open(path) as image:
+                return image.convert('RGB').getpixel((4, 4))
+
+        with tempfile.TemporaryDirectory() as temp:
+            with override_settings(MEDIA_ROOT=temp):
+                self.client.force_login(self.staff)
+                form = self.client.get(reverse('product_create'))
+                self.assertContains(form, 'Первая фотография станет карточкой')
+                self.assertContains(form, 'name="product_photos"')
+                response = self.client.post(reverse('product_create'), {
+                    'brand': self.brand.pk, 'title': 'Три ракурса', 'description': 'Описание вещи', 'price': '3990',
+                    'color': 'Чёрный', 'is_published': 'on',
+                    'product_photos': [
+                        color_png('first.png', (220, 20, 20)),
+                        color_png('second.png', (20, 180, 40)),
+                        color_png('third.png', (20, 40, 210)),
+                    ],
+                    **variant_payload(),
+                })
+                item = Product.objects.get(title='Три ракурса')
+                self.assertRedirects(response, item.get_absolute_url())
+                self.assertEqual(item.images.count(), 2)
+                self.assertGreater(pixel(item.cover.path)[0], 180)
+                extras = list(item.images.order_by('sort_order', 'pk'))
+                self.assertGreater(pixel(extras[0].image.path)[1], 140)
+                self.assertGreater(pixel(extras[1].image.path)[2], 170)
+                page = self.client.get(item.get_absolute_url())
+                self.assertContains(page, 'data-gallery-lightbox')
+                self.assertContains(page, 'Следующее фото')
+                self.assertContains(page, 'Предыдущее фото')
+                body = page.content.decode()
+                self.assertLess(body.index(Path(item.cover.name).name), body.index(Path(extras[0].image.name).name))
+
+                kept = item.cover.name
+                edited = self.client.post(reverse('product_edit', kwargs={'slug': item.slug}), {
+                    'brand': self.brand.pk, 'title': 'Три ракурса', 'description': 'Описание вещи', 'price': '3990',
+                    'color': 'Чёрный', 'is_published': 'on',
+                    'product_photos': [color_png('fourth.png', (240, 220, 20))],
+                    **variant_payload(item),
+                })
+                self.assertEqual(edited.status_code, 302)
+                item.refresh_from_db()
+                self.assertEqual(item.cover.name, kept)
+                self.assertEqual(item.images.count(), 3)
+
+    def test_phone_sized_upload_is_saved_from_memory(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with override_settings(MEDIA_ROOT=temp, FILE_UPLOAD_MAX_MEMORY_SIZE=1):
+                self.client.force_login(self.staff)
+                response = self.client.post(reverse('product_create'), {
+                    'brand': self.brand.pk, 'title': 'Фото с телефона', 'description': 'Описание вещи', 'price': '3990',
+                    'color': 'Чёрный', 'is_published': 'on',
+                    'product_photos': [sample_png('phone.png'), sample_png('back.png')],
+                    **variant_payload(),
+                })
+                item = Product.objects.get(title='Фото с телефона')
+                self.assertRedirects(response, item.get_absolute_url())
+                self.assertTrue(item.cover.name.endswith('.webp'))
+                self.assertEqual(item.images.count(), 1)
+
     def test_bad_gallery_image_rejected(self):
         self.client.force_login(self.staff)
         response = self.client.post(reverse('product_create'), {
@@ -233,6 +305,8 @@ class StoreTests(TestCase):
                 detail = self.client.get(item.get_absolute_url())
                 self.assertContains(detail, Path(item.cover.name).name)
                 self.assertContains(detail, 'fetchpriority="high"')
+                self.assertNotContains(detail, 'data-gallery-open')
+                self.assertNotContains(detail, 'thumbnail-grid')
                 ProductVariant.objects.create(product=item, size='M', stock_quantity=3)
                 self.client.post(reverse('cart_add', args=[item.slug]), {'size': 'M', 'quantity': 1})
                 cart = self.client.get(reverse('cart'))
@@ -286,6 +360,35 @@ class StoreTests(TestCase):
         self.assertContains(selected, other_item.title)
         self.assertNotContains(selected, self.product.title)
         self.assertContains(self.client.get(reverse('home')), other.name)
+
+    def test_new_product_uses_the_size_scale(self):
+        self.client.force_login(self.staff)
+        page = self.client.get(reverse('product_create'))
+        self.assertContains(page, 'name="offer_XS"')
+        self.assertContains(page, 'name="offer_3XL"')
+        self.assertNotContains(page, 'Например, M')
+        response = self.client.post(reverse('product_create'), {
+            'brand': self.brand.pk, 'title': 'Ряд размеров', 'description': 'Описание вещи', 'price': '2500',
+            'color': 'Чёрный', 'is_published': 'on',
+            'offer_S': 'on', 'stock_S': '2',
+            'offer_L': 'on', 'stock_L': '0',
+            'offer_CUSTOM': 'on', 'stock_CUSTOM': '9',
+            **variant_payload(),
+        })
+        self.assertEqual(response.status_code, 302)
+        item = Product.objects.get(title='Ряд размеров')
+        self.assertEqual(
+            set(item.variants.values_list('size', 'stock_quantity')),
+            {('M', 5), ('S', 2), ('L', 0)},
+        )
+        missing = self.client.post(reverse('product_create'), {
+            'brand': self.brand.pk, 'title': 'Без размера', 'description': 'Описание', 'price': '2500',
+            'color': 'Чёрный', 'is_published': 'on',
+            'offers_cdek': 'on', 'offers_post': 'on', 'weight_grams': '500',
+        })
+        self.assertEqual(missing.status_code, 200)
+        self.assertContains(missing, 'Отметьте хотя бы один размер')
+        self.assertFalse(Product.objects.filter(title='Без размера').exists())
 
     def test_size_buttons_start_unselected_and_only_real_sizes_show(self):
         self.product.variants.all().delete()

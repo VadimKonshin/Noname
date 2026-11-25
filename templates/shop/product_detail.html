@@ -8,31 +8,45 @@
   {% if product.brand %}<a href="{% url 'brand_storefront' product.brand.slug %}">{{ product.brand.name }}</a>{% else %}Бренд{% endif %}<span>/</span><span>{{ product.title }}</span>
 </div>
 <section class="container detail-layout">
-  <div class="detail-gallery">
+  <div class="detail-gallery" data-product-gallery>
+    {% with extra=product.images.all %}
     <div class="detail-main-photo">
       {% with photo=product.photo %}
-        {% if photo %}
+        {% if many_photos and photo %}
+          <button type="button" class="gallery-open" data-gallery-open aria-label="Открыть фото">
+            <img id="gallery-main" src="{{ photo.url }}" alt="{{ product.title }}" fetchpriority="high">
+          </button>
+        {% elif photo %}
           <img id="gallery-main" src="{{ photo.url }}" alt="{{ product.title }}" fetchpriority="high">
         {% else %}
           <img id="gallery-main" src="{% static 'img/placeholder.svg' %}" alt="Фото товара скоро появится">
         {% endif %}
       {% endwith %}
       <span class="detail-image-label">NONAME / CURATED LABELS</span>
+      {% if many_photos %}
+        <button type="button" class="gallery-arrow gallery-prev" data-gallery-step="-1" aria-label="Предыдущее фото">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6 8 12l6 6" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
+        </button>
+        <button type="button" class="gallery-arrow gallery-next" data-gallery-step="1" aria-label="Следующее фото">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
+        </button>
+      {% endif %}
     </div>
-    {% if product.cover or product.images.all %}
+    {% if many_photos %}
       <div class="thumbnail-grid" aria-label="Фотографии товара">
         {% if product.cover %}
           <button type="button" class="thumb active" data-gallery-src="{{ product.cover.url }}" data-gallery-alt="{{ product.title }} — главное фото">
             <img src="{{ product.cover|listing_src }}" alt="Главное фото" loading="lazy" decoding="async">
           </button>
         {% endif %}
-        {% for photo in product.images.all %}
+        {% for photo in extra %}
           <button type="button" class="thumb{% if not product.cover and forloop.first %} active{% endif %}" data-gallery-src="{{ photo.image.url }}" data-gallery-alt="{{ photo.alt_text|default:product.title }}">
             <img src="{{ photo.image|listing_src }}" alt="{{ photo.alt_text|default:product.title }}" loading="lazy" decoding="async">
           </button>
         {% endfor %}
       </div>
     {% endif %}
+    {% endwith %}
   </div>
 
   <div class="detail-info">
@@ -171,5 +185,17 @@
     </div>
   </div>
 </section>
+{% endif %}
+{% if many_photos %}
+<div class="photo-lightbox" data-gallery-lightbox hidden role="dialog" aria-modal="true" aria-label="Фотография товара">
+  <button type="button" class="lightbox-close" data-gallery-close>Закрыть</button>
+  <button type="button" class="gallery-arrow gallery-prev" data-gallery-step="-1" aria-label="Предыдущее фото">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6 8 12l6 6" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
+  </button>
+  <img data-gallery-lightbox-img alt="">
+  <button type="button" class="gallery-arrow gallery-next" data-gallery-step="1" aria-label="Следующее фото">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
+  </button>
+</div>
 {% endif %}
 {% endblock %}

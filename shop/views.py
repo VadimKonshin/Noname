@@ -25,7 +25,7 @@ from .accounts import (
 )
 from .forms import (
     BrandAuthenticationForm, BrandCreateForm, BrandDeleteForm, BrandMessageForm, BrandProfileForm, BrandReplyForm,
-    BrandManagerRegisterForm, EmailOrUsernameAuthenticationForm, ProductForm, ProductVariantFormSet, RegisterForm,
+    BrandManagerRegisterForm, EmailOrUsernameAuthenticationForm, ProductForm, ProductSizeForm, RegisterForm,
 )
 from .commerce import MAX_OPEN_PREORDER_PER_VARIANT, pop_preorder_offer
 from .models import Brand, BrandManager, BrandMessage, DeliveryMethod, Product, ProductImage, ProductVariant
@@ -34,7 +34,7 @@ from .telegram import notify_brand_contact
 from .validators import validate_product_image
 
 
-GALLERY_MAX_COUNT = 8
+PHOTO_MAX_COUNT = 30
 logger = logging.getLogger(__name__)
 
 
@@ -234,8 +234,10 @@ def product_detail(request, slug):
             public_products().filter(brand_id=product.brand_id).exclude(pk=product.pk)
             .select_related('brand').prefetch_related('images', 'variants')[:3]
         )
+    photo_count = (1 if product.cover else 0) + len(product.images.all())
     return render(request, 'shop/product_detail.html', {
         'product': product,
+        'many_photos': photo_count > 1,
         'related': related,
         'can_change_product': request.user.has_perm('shop.change_product') or manages_brand,
         'can_delete_product': request.user.has_perm('shop.delete_product') or manages_brand,
@@ -423,9 +425,14 @@ def brand_delete(request):
     return render(request, 'shop/brand_delete.html', {'brand': brand, 'form': form})
 
 
-def validate_gallery(files, max_new=GALLERY_MAX_COUNT):
-    if len(files) > max_new:
-        raise ValidationError(f'Можно добавить ещё не более {max_new} фотографий (всего максимум {GALLERY_MAX_COUNT}).')
+def _uploaded_photos(request):
+    photos = request.FILES.getlist('product_photos')
+    if photos:
+        return photos
+    return request.FILES.getlist('gallery_images')
+
+
+def _check_photos(files):
     for uploaded in files:
         try:
             validate_product_image(uploaded)
@@ -441,23 +448,36 @@ def save_product(request, product=None):
         instance=product,
         managed_brand=manager.brand if manager else None,
     )
-    variant_formset = ProductVariantFormSet(
+    size_form = ProductSizeForm(
         request.POST if request.method == 'POST' else None,
-        instance=form.instance,
-        prefix='variants',
+        product=product,
     )
     if request.method == 'POST':
-        gallery = request.FILES.getlist('gallery_images')
+        photos = _uploaded_photos(request)
+        posted_cover = request.FILES.get('cover')
+        has_cover = bool(product and product.cover)
+        clearing_cover = bool(has_cover and request.POST.get('cover-clear') and not posted_cover)
+        cover_from_batch = None
+        gallery_files = list(photos)
+        if photos and not posted_cover and (not has_cover or clearing_cover):
+            cover_from_batch = photos[0]
+            gallery_files = photos[1:]
+        delete_ids = request.POST.getlist('delete_images') if product else []
         current_count = product.images.count() if product else 0
-        to_delete = product.images.filter(pk__in=request.POST.getlist('delete_images')).count() if product else 0
-        remaining_slots = max(0, GALLERY_MAX_COUNT - current_count + to_delete)
+        to_delete = product.images.filter(pk__in=delete_ids).count() if product else 0
+        will_have_cover = bool(posted_cover or cover_from_batch or (has_cover and not clearing_cover))
+        gallery_after = current_count - to_delete + len(gallery_files)
         try:
-            validate_gallery(gallery, remaining_slots)
+            if gallery_after + (1 if will_have_cover else 0) > PHOTO_MAX_COUNT:
+                raise ValidationError(f'На одной вещи можно сохранить до {PHOTO_MAX_COUNT} фотографий.')
+            _check_photos(([cover_from_batch] if cover_from_batch else []) + gallery_files)
         except ValidationError as exc:
             form.add_error(None, exc)
-        if form.is_valid() and variant_formset.is_valid():
+        if form.is_valid() and size_form.is_valid():
             with transaction.atomic():
                 instance = form.save(commit=False)
+                if cover_from_batch is not None:
+                    instance.cover = cover_from_batch
                 if manager:
                     instance.brand = manager.brand
                 if instance.is_deleted:
@@ -465,17 +485,16 @@ def save_product(request, product=None):
                     instance.is_available = False
                     instance.is_featured = False
                 instance.save()
-                variant_formset.instance = instance
-                variant_formset.save()
-                for image in gallery:
-                    ProductImage.objects.create(product=instance, image=image)
+                size_form.save(instance)
+                last_order = instance.images.order_by('-sort_order').values_list('sort_order', flat=True).first() or 0
+                for offset, image in enumerate(gallery_files, start=1):
+                    ProductImage.objects.create(product=instance, image=image, sort_order=last_order + offset)
                 if product:
-                    deleted_ids = request.POST.getlist('delete_images')
-                    instance.images.filter(pk__in=deleted_ids).delete()
+                    instance.images.filter(pk__in=delete_ids).delete()
             messages.success(request, 'Товар сохранён.')
             return redirect('product_detail', slug=instance.slug) if instance.is_published else redirect('product_edit', slug=instance.slug)
     return render(request, 'shop/product_form.html', {
-        'form': form, 'variant_formset': variant_formset, 'product': product, 'max_gallery': GALLERY_MAX_COUNT,
+        'form': form, 'size_form': size_form, 'product': product,
         'managed_brand': manager.brand if manager else None,
         'preorder_cap': MAX_OPEN_PREORDER_PER_VARIANT,
     })
