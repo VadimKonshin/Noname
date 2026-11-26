@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% block title %}Пользователи — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page">
+  <div class="eyebrow"><span class="tiny-dot"></span> STAFF / АККАУНТЫ</div>
+  <h1 class="commerce-heading">ПОЛЬЗОВАТЕЛИ<span class="heading-period">.</span></h1>
+  {% include 'includes/dashboard_nav.html' with active_page='users' %}
+  <p class="page-lead">Покупатели, менеджеры и администраторы. Почта одна на аккаунт. Удаление аккаунта не стирает бренд и заказы.</p>
+  <form method="get" class="order-filter">
+    <label for="user-q">Поиск</label>
+    <input id="user-q" type="search" name="q" value="{{ q }}" placeholder="Логин, почта или имя">
+    <label for="user-role">Кто</label>
+    <select id="user-role" name="role">
+      <option value="">Все</option>
+      <option value="customers" {% if role == 'customers' %}selected{% endif %}>Покупатели</option>
+      <option value="managers" {% if role == 'managers' %}selected{% endif %}>Менеджеры</option>
+      <option value="staff" {% if role == 'staff' %}selected{% endif %}>Администраторы</option>
+    </select>
+    <button type="submit" class="small-action">Показать</button>
+    <a class="table-link" href="{% url 'panel_user_add' %}">+ Новый аккаунт</a>
+  </form>
+  <div class="table-scroll">
+    <table class="store-table">
+      <thead>
+        <tr><th>Аккаунт</th><th>Почта</th><th>Роль</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for person in page %}
+          <tr>
+            <td>
+              <strong>{{ person.username }}</strong>
+              <small class="table-muted">{{ person.date_joined|date:'d.m.Y' }}{% if not person.is_active %} · выключен{% endif %}</small>
+            </td>
+            <td>
+              {{ person.email|default:'—' }}
+              <small class="table-muted">{% if person.email_verified %}подтверждена{% else %}не подтверждена{% endif %}</small>
+            </td>
+            <td>
+              {% if person.is_superuser %}Суперпользователь
+              {% elif person.is_staff %}Администратор магазина
+              {% elif person.brand_manager %}Менеджер{% if person.brand_manager.brand %} · {{ person.brand_manager.brand.name }}{% else %} · бренд не создан{% endif %}
+              {% else %}Покупатель{% endif %}
+            </td>
+            <td>
+              <div class="table-actions">
+                <a class="table-link" href="{% url 'panel_user_edit' person.pk %}">Открыть</a>
+                {% if person.pk != user.pk %}<a class="table-link danger-link" href="{% url 'panel_user_delete' person.pk %}">Удалить</a>{% endif %}
+              </div>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4">Аккаунтов нет.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include 'includes/pagination.html' %}
+</section>
+{% endblock %}

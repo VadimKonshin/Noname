@@ -366,14 +366,14 @@ class CommerceTests(TestCase):
         self.assertIn(self.pickup.pk, [method.pk for method in cart.context['delivery_methods']])
 
     def test_brand_switch_hides_a_carrier_the_product_still_offers(self):
-        post = DeliveryMethod.objects.create(
-            name='Почта тест', code=DeliveryMethod.POST, price=Decimal('390.00'), requires_address=True,
+        courier = DeliveryMethod.objects.create(
+            name='Курьер тест', code=DeliveryMethod.COURIER, price=Decimal('650.00'), requires_address=True,
         )
-        Brand.objects.filter(pk=self.brand.pk).update(offers_post=False)
+        Brand.objects.filter(pk=self.brand.pk).update(offers_courier=False)
         self._add(quantity=1)
         cart = self.client.get(reverse('cart'))
-        self.assertNotIn(post.pk, [method.pk for method in cart.context['delivery_methods']])
-        response = self._choose_delivery(post)
+        self.assertNotIn(courier.pk, [method.pk for method in cart.context['delivery_methods']])
+        response = self._choose_delivery(courier)
         self.assertRedirects(response, reverse('cart'))
         self.assertNotIn('noname_delivery_id', self.client.session)
 
@@ -396,8 +396,8 @@ class CommerceTests(TestCase):
         self.assertRedirects(response, reverse('cart'))
         self.assertNotIn('noname_delivery_id', self.client.session)
         self.shirt.offers_cdek = True
-        self.shirt.offers_post = False
-        self.shirt.save(update_fields=['offers_cdek', 'offers_post'])
+        self.shirt.offers_courier = False
+        self.shirt.save(update_fields=['offers_cdek', 'offers_courier'])
         self._choose_delivery(cdek)
         self.assertEqual(self.client.session['noname_delivery_id'], cdek.pk)
 

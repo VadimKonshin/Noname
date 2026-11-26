@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% block title %}{% if manager %}{{ manager.user.username }}{% else %}Новый менеджер{% endif %} — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page">
+  <div class="eyebrow"><span class="tiny-dot"></span> STAFF / МЕНЕДЖЕР</div>
+  <h1 class="commerce-heading">{% if manager %}{{ manager.user.username }}{% else %}МЕНЕДЖЕР{% endif %}<span class="heading-period">.</span></h1>
+  {% include 'includes/dashboard_nav.html' with active_page='managers' %}
+  <p class="page-lead">Один аккаунт — одна заявка. Бренд можно привязать сразу или оставить пустым, пока менеджер создаст его сам после подтверждения.</p>
+  {% if not manager and not form.fields.user.queryset %}
+    <div class="form-section">
+      <p>Свободных аккаунтов нет. Сначала создайте пользователя без заявки менеджера.</p>
+      <a class="table-link" href="{% url 'panel_user_add' %}">Новый аккаунт</a>
+    </div>
+  {% else %}
+    <form method="post" class="checkout-form" novalidate>
+      {% csrf_token %}
+      {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+      <div class="form-section">
+        <h2>01 / Заявка</h2>
+        {% for field in form %}
+          {% if field.field.widget.input_type == 'checkbox' %}
+            <label class="check-field">{{ field }}<span>{{ field.label }}</span></label>
+            {% if field.help_text %}<p class="form-hint">{{ field.help_text }}</p>{% endif %}
+            {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
+          {% else %}
+            <div class="form-field">
+              <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+              {{ field }}
+              {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
+            </div>
+          {% endif %}
+        {% endfor %}
+        {% if manager %}
+          <p class="form-hint">Telegram: {% if manager.telegram_chat_id %}личный чат подключён{% else %}не подключён{% endif %}. Чат отключается в кабинете менеджера.</p>
+        {% endif %}
+      </div>
+      <button type="submit" class="btn btn-dark">Сохранить <span>↗</span></button>
+      <a class="cancel-link" href="{% url 'panel_managers' %}">К списку менеджеров</a>
+    </form>
+  {% endif %}
+</section>
+{% endblock %}

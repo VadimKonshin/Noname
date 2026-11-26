@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% block title %}Бренды — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page">
+  <div class="eyebrow"><span class="tiny-dot"></span> STAFF / БРЕНДЫ</div>
+  <h1 class="commerce-heading">БРЕНДЫ<span class="heading-period">.</span></h1>
+  {% include 'includes/dashboard_nav.html' with active_page='brands' %}
+  <p class="page-lead">Название, витрина, таблица размеров и доставка. Бренд не удаляется насовсем: скрытие с товарами происходит только по заявке менеджера. Заказы остаются.</p>
+  <form method="get" class="order-filter">
+    <label for="brand-q">Поиск</label>
+    <input id="brand-q" type="search" name="q" value="{{ q }}" placeholder="Название или адрес">
+    <label for="brand-state">Состояние</label>
+    <select id="brand-state" name="state">
+      <option value="">Все</option>
+      <option value="active" {% if state == 'active' %}selected{% endif %}>На витрине</option>
+      <option value="hidden" {% if state == 'hidden' %}selected{% endif %}>Скрытые</option>
+      <option value="deletion" {% if state == 'deletion' %}selected{% endif %}>Ждут удаления</option>
+    </select>
+    <button type="submit" class="small-action">Показать</button>
+    <a class="table-link" href="{% url 'panel_brand_add' %}">+ Новый бренд</a>
+  </form>
+  <div class="table-scroll">
+    <table class="store-table">
+      <thead>
+        <tr><th>Бренд</th><th>Витрина</th><th>Порядок</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for brand in page %}
+          <tr {% if brand.deletion_requested_at and not brand.is_deleted %}class="manager-pending"{% endif %}>
+            <td>
+              <strong>{{ brand.name }}</strong>
+              <small class="table-muted">/{{ brand.slug }}</small>
+            </td>
+            <td>
+              {% if brand.is_deleted %}
+                <span class="status-pill status-cancelled">Удалён</span>
+              {% elif brand.is_active %}
+                <span class="status-pill status-completed">На витрине</span>
+              {% else %}
+                <span class="status-pill">Скрыт</span>
+              {% endif %}
+              {% if brand.deletion_requested_at and not brand.is_deleted %}
+                <small class="table-muted">Заявка {{ brand.deletion_requested_at|date:'d.m.Y H:i' }}</small>
+              {% endif %}
+            </td>
+            <td>{{ brand.sort_order }}</td>
+            <td>
+              <div class="table-actions">
+                <a class="table-link" href="{% url 'panel_brand_edit' brand.pk %}">Открыть</a>
+                {% if brand.deletion_requested_at and not brand.is_deleted %}
+                  <form method="post" action="{% url 'panel_brand_confirm_deletion' brand.pk %}">{% csrf_token %}<button class="small-action" type="submit">Подтвердить удаление</button></form>
+                  <form method="post" action="{% url 'panel_brand_dismiss_deletion' brand.pk %}">{% csrf_token %}<button class="small-action" type="submit">Отклонить</button></form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4">Брендов нет.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include 'includes/pagination.html' %}
+</section>
+{% endblock %}

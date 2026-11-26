@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block title %}Сообщение от {{ note.sender_name }} — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page">
+  <div class="eyebrow"><span class="tiny-dot"></span> STAFF / СООБЩЕНИЕ</div>
+  <h1 class="commerce-heading">{{ note.sender_name }}<span class="heading-period">.</span></h1>
+  {% include 'includes/dashboard_nav.html' with active_page='messages' %}
+  <div class="form-section">
+    <p class="form-hint">{{ note.created_at|date:'d.m.Y H:i' }} · {{ note.brand.name }}{% if note.sender_email %} · {{ note.sender_email }}{% endif %}{% if note.sender_telegram %} · {{ note.sender_telegram }}{% endif %}</p>
+    {% if note.product %}<p class="form-hint">Вещь: {{ note.product.title }}</p>{% endif %}
+    {% if note.user %}<p class="form-hint">Аккаунт: {{ note.user.username }}</p>{% endif %}
+    <p class="message-body">{{ note.body|linebreaksbr }}</p>
+    {% if note.replied_at %}
+      <p class="form-hint">Ответ {{ note.replied_at|date:'d.m.Y H:i' }}{% if note.replied_by %} · {{ note.replied_by.username }}{% endif %}</p>
+      <p class="message-body">{{ note.reply_body|linebreaksbr }}</p>
+    {% else %}
+      <p class="form-hint">Ответа ещё нет. Его пишет менеджер бренда, не панель магазина.</p>
+    {% endif %}
+    {% if note.read_at %}<p class="form-hint">Менеджер открыл сообщение {{ note.read_at|date:'d.m.Y H:i' }}.</p>{% endif %}
+  </div>
+  <a class="back-catalog" href="{% url 'panel_messages' %}">← К сообщениям</a>
+</section>
+{% endblock %}

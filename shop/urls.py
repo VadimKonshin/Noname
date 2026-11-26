@@ -1,7 +1,7 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path
 from django_ratelimit.decorators import ratelimit
-from . import accounts_views, views, commerce_views
+from . import accounts_views, views, commerce_views, panel_views
 
 login_view = ratelimit(group='login', key='ip', rate='10/5m', method='POST')(
     views.StoreLoginView.as_view()
@@ -49,6 +49,24 @@ urlpatterns = [
     path('dashboard/orders/<int:pk>/status/', commerce_views.change_order_status, name='change_order_status'),
     path('dashboard/managers/', commerce_views.dashboard_managers, name='dashboard_managers'),
     path('dashboard/products/', commerce_views.dashboard_products, name='dashboard_products'),
+    path('dashboard/brands/', panel_views.brands, name='panel_brands'),
+    path('dashboard/brands/add/', panel_views.brand_edit, name='panel_brand_add'),
+    path('dashboard/brands/<int:pk>/', panel_views.brand_edit, name='panel_brand_edit'),
+    path('dashboard/brands/<int:pk>/confirm-deletion/', panel_views.brand_confirm_deletion, name='panel_brand_confirm_deletion'),
+    path('dashboard/brands/<int:pk>/dismiss-deletion/', panel_views.brand_dismiss_deletion, name='panel_brand_dismiss_deletion'),
+    path('dashboard/users/', panel_views.users, name='panel_users'),
+    path('dashboard/users/add/', panel_views.user_edit, name='panel_user_add'),
+    path('dashboard/users/<int:pk>/', panel_views.user_edit, name='panel_user_edit'),
+    path('dashboard/users/<int:pk>/delete/', panel_views.user_delete, name='panel_user_delete'),
+    path('dashboard/brand-managers/', panel_views.managers, name='panel_managers'),
+    path('dashboard/brand-managers/add/', panel_views.manager_edit, name='panel_manager_add'),
+    path('dashboard/brand-managers/<int:pk>/', panel_views.manager_edit, name='panel_manager_edit'),
+    path('dashboard/messages/', panel_views.messages_list, name='panel_messages'),
+    path('dashboard/messages/<int:pk>/', panel_views.message_detail, name='panel_message'),
+    path('dashboard/delivery/', panel_views.delivery_methods, name='panel_delivery'),
+    path('dashboard/delivery/add/', panel_views.delivery_edit, name='panel_delivery_add'),
+    path('dashboard/delivery/<int:pk>/', panel_views.delivery_edit, name='panel_delivery_edit'),
+    path('dashboard/delivery/<int:pk>/delete/', panel_views.delivery_delete, name='panel_delivery_delete'),
 
     path('catalog/<str:slug>/', views.product_detail, name='product_detail'),
     path('register/', views.register, name='register'),

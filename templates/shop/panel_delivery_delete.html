@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block title %}Удалить способ доставки — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page narrow-page">
+  <div class="eyebrow"><span class="tiny-dot"></span> STAFF / ПОДТВЕРЖДЕНИЕ</div>
+  <h1 class="commerce-heading">УБРАТЬ СПОСОБ<span class="heading-period">?</span></h1>
+  {% include 'includes/dashboard_nav.html' with active_page='delivery' %}
+  <div class="form-section">
+    <h2>{{ method.name }}</h2>
+    <p class="page-lead">Новые корзины его больше не увидят. Уже оформленные заказы сохранят название, срок и цену, которые были в момент заказа.</p>
+    <form method="post">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-danger btn-wide">Да, убрать способ ↗</button>
+    </form>
+    <a class="back-catalog" href="{% url 'panel_delivery' %}">← Отмена</a>
+  </div>
+</section>
+{% endblock %}

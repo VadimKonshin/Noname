@@ -168,6 +168,16 @@ class RuntimeSettingsTests(SimpleTestCase):
             'DJANGO_SECURE_HSTS_SECONDS': '0',
         })
         errors, _warnings = envfile.production_issues(ready)
+        self.assertTrue(any(':80' in error for error in errors))
+        ready.update({
+            'SITE_ADDRESS': '92.118.88.34',
+            'DJANGO_ALLOWED_HOSTS': '92.118.88.34',
+            'DJANGO_SITE_URL': 'https://92.118.88.34',
+            'DJANGO_CSRF_TRUSTED_ORIGINS': 'https://92.118.88.34',
+            'DJANGO_SECURE_SSL_REDIRECT': '1',
+            'ACME_PROFILE': 'shortlived',
+        })
+        errors, _warnings = envfile.production_issues(ready)
         self.assertEqual(errors, [])
 
     def test_media_archive_keeps_files_inside_the_directory(self):

@@ -53,7 +53,7 @@ def info_page(request, page):
         method.code: method
         for method in DeliveryMethod.objects.filter(
             is_active=True,
-            code__in=(DeliveryMethod.CDEK, DeliveryMethod.POST, DeliveryMethod.PICKUP),
+            code__in=(DeliveryMethod.CDEK, DeliveryMethod.COURIER, DeliveryMethod.PICKUP),
         )
     }
     return render(request, 'shop/info_page.html', {'page': page, 'carriers': carriers})
@@ -260,8 +260,8 @@ def receive_line(brand, products):
     ways = []
     if brand.offers_cdek:
         ways.append('СДЭК')
-    if brand.offers_post:
-        ways.append('Почта России')
+    if brand.offers_courier:
+        ways.append('курьер')
     address = (brand.pickup_address or '').strip()
     if address and (brand.offers_pickup or any(product.offers_pickup for product in products)):
         ways.append('самовывоз')
@@ -490,6 +490,23 @@ def save_product(request, product=None):
                 for offset, image in enumerate(gallery_files, start=1):
                     ProductImage.objects.create(product=instance, image=image, sort_order=last_order + offset)
                 if product:
+                    for image in instance.images.exclude(pk__in=delete_ids):
+                        alt_key = f'image_alt_{image.pk}'
+                        sort_key = f'image_sort_{image.pk}'
+                        changed = []
+                        if alt_key in request.POST:
+                            alt = request.POST.get(alt_key, '').strip()[:160]
+                            if alt != image.alt_text:
+                                image.alt_text = alt
+                                changed.append('alt_text')
+                        raw_sort = request.POST.get(sort_key, '').strip() if sort_key in request.POST else ''
+                        if raw_sort.isdigit():
+                            sort_order = min(int(raw_sort), 999)
+                            if sort_order != image.sort_order:
+                                image.sort_order = sort_order
+                                changed.append('sort_order')
+                        if changed:
+                            image.save(update_fields=changed)
                     instance.images.filter(pk__in=delete_ids).delete()
             messages.success(request, 'Товар сохранён.')
             return redirect('product_detail', slug=instance.slug) if instance.is_published else redirect('product_edit', slug=instance.slug)

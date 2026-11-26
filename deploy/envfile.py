@@ -59,6 +59,18 @@ def _bad_host(host):
     return host in {'localhost', '127.0.0.1', '*', 'example.com'} or host.endswith(('.example.com', '.local'))
 
 
+def _require_https_origin(env, errors, origin):
+    if _get(env, 'DJANGO_SITE_URL').rstrip('/') != origin:
+        errors.append(f'DJANGO_SITE_URL={origin}')
+    origins = [part.strip() for part in _get(env, 'DJANGO_CSRF_TRUSTED_ORIGINS').split(',') if part.strip()]
+    if not origins or any(not item.startswith('https://') for item in origins) or origin not in origins:
+        errors.append(f'DJANGO_CSRF_TRUSTED_ORIGINS={origin}')
+    if _get(env, 'DJANGO_SECURE_SSL_REDIRECT') != '1':
+        errors.append('DJANGO_SECURE_SSL_REDIRECT=1')
+    if _get(env, 'DJANGO_TRUST_X_FORWARDED_PROTO') != '1':
+        errors.append('DJANGO_TRUST_X_FORWARDED_PROTO=1')
+
+
 def _placeholder_email(value):
     text = value.lower()
     return '@example.com' in text or '.example.com' in text
@@ -106,40 +118,27 @@ def production_issues(env):
         errors.append('DJANGO_ALLOWED_HOSTS: ваш домен.')
 
     address = _get(env, 'SITE_ADDRESS').lower().rstrip('.')
+    profile = _get(env, 'ACME_PROFILE') or 'classic'
     if address == ':80':
-        if len(hosts) != 1 or not _public_ip(hosts[0]):
-            errors.append('DJANGO_ALLOWED_HOSTS: один публичный IP.')
+        errors.append('SITE_ADDRESS: публичный IP или домен. Адрес :80 оставляет пароль без защиты.')
+    elif _public_ip(address):
+        if len(hosts) != 1 or hosts[0].lower() != address:
+            errors.append('DJANGO_ALLOWED_HOSTS: тот же публичный IP, что SITE_ADDRESS.')
         else:
-            origin = f'http://{hosts[0]}'
-            if _get(env, 'DJANGO_SITE_URL').rstrip('/') != origin:
-                errors.append(f'DJANGO_SITE_URL={origin}')
-            origins = [part.strip() for part in _get(env, 'DJANGO_CSRF_TRUSTED_ORIGINS').split(',') if part.strip()]
-            if origins != [origin]:
-                errors.append(f'DJANGO_CSRF_TRUSTED_ORIGINS={origin}')
-            if _get(env, 'DJANGO_SECURE_SSL_REDIRECT') != '0':
-                errors.append('DJANGO_SECURE_SSL_REDIRECT=0')
-            if (_get(env, 'DJANGO_SECURE_HSTS_SECONDS') or '0') != '0':
-                errors.append('DJANGO_SECURE_HSTS_SECONDS=0')
-            if _get(env, 'DJANGO_TRUST_X_FORWARDED_PROTO') != '1':
-                errors.append('DJANGO_TRUST_X_FORWARDED_PROTO=1')
+            _require_https_origin(env, errors, f'https://{address}')
+        if profile != 'shortlived':
+            errors.append('ACME_PROFILE=shortlived')
     elif not _HOST.fullmatch(address):
         errors.append('SITE_ADDRESS: домен без https:// и без порта.')
     elif _bad_host(address):
         errors.append('SITE_ADDRESS: замените shop.example.com на свой домен.')
     else:
         known = {host.lower().rstrip('.') for host in hosts}
-        origin = f'https://{address}'
         if address not in known:
             errors.append('SITE_ADDRESS должен входить в DJANGO_ALLOWED_HOSTS.')
-        if _get(env, 'DJANGO_SITE_URL').rstrip('/') != origin:
-            errors.append(f'DJANGO_SITE_URL={origin}')
-        origins = [part.strip() for part in _get(env, 'DJANGO_CSRF_TRUSTED_ORIGINS').split(',') if part.strip()]
-        if not origins or any(not item.startswith('https://') for item in origins) or origin not in origins:
-            errors.append(f'DJANGO_CSRF_TRUSTED_ORIGINS={origin}')
-        if _get(env, 'DJANGO_SECURE_SSL_REDIRECT') != '1':
-            errors.append('DJANGO_SECURE_SSL_REDIRECT=1')
-        if _get(env, 'DJANGO_TRUST_X_FORWARDED_PROTO') != '1':
-            errors.append('DJANGO_TRUST_X_FORWARDED_PROTO=1')
+        _require_https_origin(env, errors, f'https://{address}')
+        if profile not in {'classic', 'shortlived'}:
+            errors.append('ACME_PROFILE=classic')
 
     acme = _get(env, 'ACME_EMAIL')
     if not _EMAIL.fullmatch(acme) or _placeholder_email(acme):

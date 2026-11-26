@@ -10,7 +10,11 @@
   <p class="page-lead">
     Здесь цена, фото карточки, описание и то, как эту вещь можно получить. В каталоге она появится, если включена публикация.
   </p>
-  {% if managed_brand %}{% include 'includes/brand_nav.html' with active_page='products' %}{% endif %}
+  {% if managed_brand %}
+    {% include 'includes/brand_nav.html' with active_page='products' %}
+  {% elif perms.shop.view_product %}
+    {% include 'includes/dashboard_nav.html' with active_page='products' %}
+  {% endif %}
 
   <form class="editor-form" method="post" enctype="multipart/form-data" novalidate>
     {% csrf_token %}
@@ -49,7 +53,7 @@
 
         <div class="form-section">
           <h2>03 / Как отдать вещь</h2>
-          <p class="form-hint">СДЭК и Почта России попадут в корзину, только если они включены и здесь, и в настройках бренда. Самовывоз появится, если его включили у вещи или у всего бренда, и у бренда есть адрес. Вес нужен для расчёта СДЭК: если точный не известен, оставьте 500 г.</p>
+          <p class="form-hint">СДЭК и курьер попадут в корзину, только если они включены и здесь, и в настройках бренда. Самовывоз появится, если его включили у вещи или у всего бренда, и у бренда есть адрес. Вес нужен для расчёта СДЭК: если точный не известен, оставьте 500 г.</p>
           <div class="form-field">
             <label for="{{ form.weight_grams.id_for_label }}">{{ form.weight_grams.label }} *</label>
             {{ form.weight_grams }}
@@ -57,8 +61,8 @@
           </div>
           <label class="check-field">{{ form.offers_cdek }}<span>{{ form.offers_cdek.label }}</span></label>
           {% if form.offers_cdek.errors %}<div class="field-error">{{ form.offers_cdek.errors }}</div>{% endif %}
-          <label class="check-field">{{ form.offers_post }}<span>{{ form.offers_post.label }}</span></label>
-          {% if form.offers_post.errors %}<div class="field-error">{{ form.offers_post.errors }}</div>{% endif %}
+          <label class="check-field">{{ form.offers_courier }}<span>{{ form.offers_courier.label }}</span></label>
+          {% if form.offers_courier.errors %}<div class="field-error">{{ form.offers_courier.errors }}</div>{% endif %}
           <label class="check-field">{{ form.offers_pickup }}<span>{{ form.offers_pickup.label }}</span></label>
           {% if form.offers_pickup.errors %}<div class="field-error">{{ form.offers_pickup.errors }}</div>{% endif %}
           {% if managed_brand %}
@@ -126,10 +130,12 @@
               <p class="form-hint">Отметь изображения, которые хочешь убрать при сохранении.</p>
               <div class="existing-images">
                 {% for photo in product.images.all %}
-                  <label class="existing-image">
-                    <img src="{{ photo.image|listing_src }}" alt="Дополнительное фото" loading="lazy" decoding="async">
-                    <span><input type="checkbox" name="delete_images" value="{{ photo.pk }}"> Удалить</span>
-                  </label>
+                  <div class="existing-image">
+                    <img src="{{ photo.image|listing_src }}" alt="{{ photo.alt_text|default:'Дополнительное фото' }}" loading="lazy" decoding="async">
+                    <span><label><input type="checkbox" name="delete_images" value="{{ photo.pk }}"> Удалить</label></span>
+                    <input class="photo-note" type="text" name="image_alt_{{ photo.pk }}" value="{{ photo.alt_text }}" maxlength="160" placeholder="Подпись" aria-label="Подпись фото">
+                    <input class="photo-note photo-sort" type="number" name="image_sort_{{ photo.pk }}" value="{{ photo.sort_order }}" min="0" max="999" aria-label="Порядок фото">
+                  </div>
                 {% endfor %}
               </div>
             </div>
@@ -155,7 +161,7 @@
           <div class="publication-note">Товар увидят покупатели только при включённом пункте «Показывать в каталоге».</div>
         </div>
         <button class="btn btn-dark btn-wide" type="submit">Сохранить товар <span>↗</span></button>
-        <a class="cancel-link" href="{% if managed_brand %}{% url 'brand_products' %}{% elif product and product.is_published %}{{ product.get_absolute_url }}{% else %}{% url 'catalog' %}{% endif %}">Отмена</a>
+        <a class="cancel-link" href="{% if managed_brand %}{% url 'brand_products' %}{% else %}{% url 'dashboard_products' %}{% endif %}">Отмена</a>
       </aside>
     </div>
   </form>

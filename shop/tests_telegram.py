@@ -219,6 +219,40 @@ class TelegramTests(TestCase):
         self.assertIn('Чужая вещь', by_chat['7777'])
         self.assertNotIn('MOON', by_chat['7777'])
 
+    def test_both_managers_of_one_brand_receive_the_order(self):
+        from unittest.mock import patch
+        second_user = User.objects.create_user('second_manager', email='second@example.org', password='PassWithLength#178')
+        second = BrandManager.objects.create(
+            user=second_user, brand=self.brand, is_approved=True, telegram_chat_id='5151',
+        )
+        token = 'second-manager-bind'
+        second.telegram_chat_id = None
+        second.telegram_bind_hash = hashlib.sha256(token.encode()).hexdigest()
+        second.telegram_bind_expires = timezone.now() + timedelta(minutes=10)
+        second.save()
+        with patch('shop.telegram.urlopen', return_value=FakeResponse()):
+            handle_update({'message': {'text': f'/start {token}', 'chat': {'id': 5151, 'type': 'private'}}})
+        self.manager.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(self.manager.telegram_chat_id, '4242')
+        self.assertEqual(second.telegram_chat_id, '5151')
+        order = Order.objects.create(
+            checkout_token='two-managers', full_name='Покупатель', email='buyer@example.org',
+            phone='+79990001122', delivery_name='Самовывоз', delivery_price=Decimal('0'),
+            subtotal=Decimal('3000'), total=Decimal('3000'),
+        )
+        OrderItem.objects.create(
+            order=order, product=self.shirt, product_title=self.shirt.title, brand_name=self.brand.name,
+            size='M', quantity=1, unit_price=Decimal('3000'), line_total=Decimal('3000'),
+        )
+        with patch('shop.telegram.urlopen', return_value=FakeResponse()) as urlopen:
+            with self.captureOnCommitCallbacks(execute=True):
+                notify_new_order(order.pk)
+        chats = {sent_payload(call.args[0])['chat_id'] for call in urlopen.call_args_list}
+        self.assertEqual(chats, {'4242', '5151'})
+        for call in urlopen.call_args_list:
+            self.assertIn(self.shirt.title, sent_payload(call.args[0])['text'])
+
     def test_unconfirmed_manager_is_not_notified(self):
         from unittest.mock import patch
         quiet = User.objects.create_user('quiet_manager', email='quiet@example.org', password='PassWithLength#178')

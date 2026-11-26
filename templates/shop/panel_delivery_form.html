@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% block title %}{% if method %}{{ method.name }}{% else %}Новый способ{% endif %} — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page">
+  <div class="eyebrow"><span class="tiny-dot"></span> STAFF / ДОСТАВКА</div>
+  <h1 class="commerce-heading">{% if method %}{{ method.name }}{% else %}НОВЫЙ СПОСОБ{% endif %}<span class="heading-period">.</span></h1>
+  {% include 'includes/dashboard_nav.html' with active_page='delivery' %}
+  <form method="post" class="checkout-form" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    <div class="form-section">
+      <h2>01 / Способ</h2>
+      <p class="form-hint">Коды «СДЭК», «Курьер» и «Самовывоз» магазин узнаёт сам. Другой код — отдельный способ со своей ценой. Адрес самовывоза бренда важнее адреса в этой карточке.</p>
+      {% for field in form %}
+        {% if field.field.widget.input_type == 'checkbox' %}
+          <label class="check-field">{{ field }}<span>{{ field.label }}</span></label>
+          {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
+        {% else %}
+          <div class="form-field">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
+          </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+    <button type="submit" class="btn btn-dark">Сохранить <span>↗</span></button>
+    <a class="cancel-link" href="{% url 'panel_delivery' %}">К списку способов</a>
+  </form>
+</section>
+{% endblock %}

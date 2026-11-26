@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% block title %}{% if person %}{{ person.username }}{% else %}Новый аккаунт{% endif %} — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page">
+  <div class="eyebrow"><span class="tiny-dot"></span> STAFF / АККАУНТ</div>
+  <h1 class="commerce-heading">{% if person %}{{ person.username }}{% else %}НОВЫЙ АККАУНТ{% endif %}<span class="heading-period">.</span></h1>
+  {% include 'includes/dashboard_nav.html' with active_page='users' %}
+  <form method="post" class="checkout-form" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    <div class="form-section">
+      <h2>01 / Вход</h2>
+      {% for field in form %}
+        {% if field.name == 'username' or field.name == 'email' or field.name == 'first_name' or field.name == 'last_name' or field.name == 'password' %}
+          <div class="form-field">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}
+            {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
+          </div>
+        {% endif %}
+      {% endfor %}
+      <label class="check-field">{{ form.email_verified }}<span>{{ form.email_verified.label }}</span></label>
+      {% if form.email_verified.errors %}<div class="field-error">{{ form.email_verified.errors }}</div>{% endif %}
+      <label class="check-field">{{ form.is_active }}<span>{{ form.is_active.label }}</span></label>
+    </div>
+    <div class="form-section">
+      <h2>02 / Права</h2>
+      <p class="form-hint">«Права администратора магазина» открывают заказы и товары. Суперпользователь видит ещё бренды, менеджеров, сообщения, доставку и аккаунты. Это не заявка менеджера бренда.</p>
+      <label class="check-field">{{ form.is_staff }}<span>{{ form.is_staff.label }}</span></label>
+      <label class="check-field">{{ form.is_superuser }}<span>{{ form.is_superuser.label }}</span></label>
+      {% if manager %}
+        <p class="form-hint">Заявка менеджера: {% if manager.brand %}{{ manager.brand.name }}{% else %}бренд ещё не создан{% endif %}. {% if manager.is_approved %}Подтверждена.{% else %}Ждёт подтверждения.{% endif %} <a href="{% url 'panel_manager_edit' manager.pk %}">Открыть заявку</a></p>
+      {% elif person %}
+        <p class="form-hint"><a href="{% url 'panel_manager_add' %}">Сделать менеджером бренда</a></p>
+      {% endif %}
+    </div>
+    <button type="submit" class="btn btn-dark">Сохранить <span>↗</span></button>
+    <a class="cancel-link" href="{% url 'panel_users' %}">К списку аккаунтов</a>
+  </form>
+</section>
+{% endblock %}

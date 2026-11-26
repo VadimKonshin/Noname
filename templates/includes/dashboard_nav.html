@@ -9,6 +9,13 @@
   {% if perms.shop.add_product %}
     <a href="{% url 'product_create' %}">+ Создать товар</a>
   {% endif %}
+  {% if user.is_superuser %}
+    <a href="{% url 'panel_brands' %}" {% if active_page == 'brands' %}class="active"{% endif %}>Бренды</a>
+    <a href="{% url 'panel_managers' %}" {% if active_page == 'managers' %}class="active"{% endif %}>Менеджеры</a>
+    <a href="{% url 'panel_messages' %}" {% if active_page == 'messages' %}class="active"{% endif %}>Сообщения</a>
+    <a href="{% url 'panel_delivery' %}" {% if active_page == 'delivery' %}class="active"{% endif %}>Доставка</a>
+    <a href="{% url 'panel_users' %}" {% if active_page == 'users' %}class="active"{% endif %}>Пользователи</a>
+  {% endif %}
   {% if show_admin and user.is_staff and admin_enabled %}
     <a href="{% url 'admin:index' %}">Django Admin ↗</a>
   {% endif %}

@@ -20,7 +20,7 @@ class Brand(models.Model):
     description = models.TextField('О бренде', blank=True)
     size_chart = models.TextField('Таблица размеров', blank=True)
     offers_cdek = models.BooleanField('СДЭК', default=True)
-    offers_post = models.BooleanField('Почта России', default=True)
+    offers_courier = models.BooleanField('Курьер', default=True)
     offers_pickup = models.BooleanField('Самовывоз', default=False)
     pickup_address = models.CharField('Адрес самовывоза', max_length=250, blank=True)
     is_active = models.BooleanField('Показывать бренд', default=True)
@@ -175,7 +175,7 @@ class Product(models.Model):
         'Вес, г', default=500, validators=[MinValueValidator(100), MaxValueValidator(30000)],
     )
     offers_cdek = models.BooleanField('СДЭК', default=True)
-    offers_post = models.BooleanField('Почта России', default=True)
+    offers_courier = models.BooleanField('Курьер', default=True)
     offers_pickup = models.BooleanField('Самовывоз', default=False)
     price = models.DecimalField('Цена, ₽', max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
     cover = PreparedImageField('Главное фото', upload_to='products/covers/', blank=True, validators=[validate_product_image])
@@ -296,12 +296,12 @@ class ProductImage(models.Model):
 
 class DeliveryMethod(models.Model):
     CDEK = 'cdek'
-    POST = 'post'
+    COURIER = 'courier'
     PICKUP = 'pickup'
     CODE_CHOICES = [
         ('', 'Другой'),
         (CDEK, 'СДЭК'),
-        (POST, 'Почта России'),
+        (COURIER, 'Курьер'),
         (PICKUP, 'Самовывоз'),
     ]
     name = models.CharField('Название доставки', max_length=100)

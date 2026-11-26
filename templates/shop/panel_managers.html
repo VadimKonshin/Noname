@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block title %}Менеджеры — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page">
+  <div class="eyebrow"><span class="tiny-dot"></span> STAFF / МЕНЕДЖЕРЫ</div>
+  <h1 class="commerce-heading">МЕНЕДЖЕРЫ<span class="heading-period">.</span></h1>
+  {% include 'includes/dashboard_nav.html' with active_page='managers' %}
+  <p class="page-lead">Заявка, бренд и подтверждение. Кабинет всё равно закрыт, пока почта не подтверждена. Ключ подключения Telegram здесь не показывается.</p>
+  <form method="get" class="order-filter">
+    <label for="manager-q">Поиск</label>
+    <input id="manager-q" type="search" name="q" value="{{ q }}" placeholder="Логин, почта или бренд">
+    <button type="submit" class="small-action">Показать</button>
+    <a class="table-link" href="{% url 'panel_manager_add' %}">+ Назначить менеджера</a>
+  </form>
+  <div class="table-scroll">
+    <table class="store-table">
+      <thead>
+        <tr><th>Аккаунт</th><th>Бренд</th><th>Почта</th><th>Telegram</th><th>Заявка</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for row in page %}
+          <tr {% if not row.is_approved %}class="manager-pending"{% endif %}>
+            <td>
+              <strong>{{ row.user.username }}</strong>
+              <small class="table-muted">{{ row.created_at|date:'d.m.Y H:i' }}</small>
+            </td>
+            <td>{{ row.brand.name|default:'Ещё не создан' }}</td>
+            <td>
+              {{ row.user.email|default:'—' }}
+              <small class="table-muted">{% if row.email_verified %}подтверждена{% else %}не подтверждена{% endif %}</small>
+            </td>
+            <td>{% if row.telegram_chat_id %}подключён{% else %}нет{% endif %}</td>
+            <td>{% if row.is_approved %}подтверждена{% else %}ждёт{% endif %}</td>
+            <td><a class="table-link" href="{% url 'panel_manager_edit' row.pk %}">Открыть</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6">Заявок менеджеров нет.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include 'includes/pagination.html' %}
+</section>
+{% endblock %}

@@ -19,13 +19,13 @@
           <b>{% if cdek_live %}по индексу{% else %}{{ carriers.cdek.price|floatformat:0 }} ₽{% endif %}</b>
         </article>
       {% endif %}
-      {% if carriers.post %}
+      {% if carriers.courier %}
         <article class="delivery-card">
           <div>
-            <strong>Почта России</strong>
-            <small>До отделения. {{ carriers.post.eta }}</small>
+            <strong>Доставка курьером</strong>
+            <small>До двери. {{ carriers.courier.eta }}</small>
           </div>
-          <b>{{ carriers.post.price|floatformat:0 }} ₽</b>
+          <b>{{ carriers.courier.price|floatformat:0 }} ₽</b>
         </article>
       {% endif %}
       {% if carriers.pickup %}

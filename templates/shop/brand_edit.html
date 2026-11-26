@@ -30,7 +30,7 @@
       <h2>03 / Как вас получают</h2>
       <p class="form-hint">Выключение снимает способ со всех вещей бренда. Самовывоз для всех вещей включается здесь. Для одной вещи его можно включить в карточке товара, если адрес уже указан.</p>
       <label class="check-field">{{ form.offers_cdek }}<span>СДЭК</span></label>
-      <label class="check-field">{{ form.offers_post }}<span>Почта России</span></label>
+      <label class="check-field">{{ form.offers_courier }}<span>Доставка курьером</span></label>
       <label class="check-field">{{ form.offers_pickup }}<span>Самовывоз для всех вещей</span></label>
       {% if form.offers_pickup.errors %}<div class="field-error">{{ form.offers_pickup.errors }}</div>{% endif %}
       <div class="form-field">

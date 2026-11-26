@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% block title %}Сообщения брендам — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page">
+  <div class="eyebrow"><span class="tiny-dot"></span> STAFF / СООБЩЕНИЯ</div>
+  <h1 class="commerce-heading">СООБЩЕНИЯ<span class="heading-period">.</span></h1>
+  {% include 'includes/dashboard_nav.html' with active_page='messages' %}
+  <p class="page-lead">Письма покупателей брендам. Здесь только чтение: ответ пишет менеджер из своего кабинета, и текст из панели не меняется.</p>
+  <form method="get" class="order-filter">
+    <label for="message-q">Поиск</label>
+    <input id="message-q" type="search" name="q" value="{{ q }}" placeholder="Имя, почта, Telegram или текст">
+    <button type="submit" class="small-action">Показать</button>
+  </form>
+  <div class="table-scroll">
+    <table class="store-table">
+      <thead>
+        <tr><th>Когда</th><th>Бренд</th><th>Кто</th><th>Вещь</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for note in page %}
+          <tr>
+            <td>{{ note.created_at|date:'d.m.Y H:i' }}<small class="table-muted">{% if note.read_at %}прочитано{% else %}новое{% endif %}</small></td>
+            <td><strong>{{ note.brand.name }}</strong></td>
+            <td>{{ note.sender_name }}<small class="table-muted">{{ note.sender_email|default:note.sender_telegram|default:'—' }}</small></td>
+            <td>{{ note.product.title|default:'—' }}</td>
+            <td><a class="table-link" href="{% url 'panel_message' note.pk %}">Открыть</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5">Сообщений нет.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include 'includes/pagination.html' %}
+</section>
+{% endblock %}

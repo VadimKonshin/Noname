@@ -187,7 +187,12 @@ a,button {transition:color .18s,background .18s,border-color .18s}
 .table-muted {color:#84848d}
 .message-body {white-space:pre-wrap;overflow-wrap:anywhere;color:#e6e6ea;line-height:1.55}
 .table-link {color:#e7e7e9}
-.order-filter select {background:#1d1d21;color:#f0efeb;border-color:#47474b}
+.order-filter select,.order-filter input {background:#1d1d21;color:#f0efeb;border:1px solid #47474b;min-height:40px;padding:8px 12px}
+.order-filter input {min-width:min(280px,100%)}
+.danger-link {color:#f0b3ba}
+.existing-image:has(.photo-note) {width:200px}
+.existing-image .photo-note {display:block;width:100%;margin-top:8px;background:#1d1d21;color:#f0efeb;border:1px solid #47474b;min-height:36px;padding:6px 8px}
+.existing-image .photo-sort {max-width:88px}
 /* Cart is one vertical sequence: products -> subtotal -> delivery -> total */
 .noname-cart .cart-sequence {max-width:920px;margin:30px auto 0}
 .checkout-step-title {border-top:1px solid #58585d;border-bottom:1px solid #38383f;display:flex;justify-content:space-between;gap:25px;padding:22px 0 14px;color:#f2f0ed;font-weight:900;letter-spacing:.14em;font-size:12px}

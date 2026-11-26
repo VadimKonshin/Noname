@@ -20,13 +20,13 @@ def one_brand(lines):
 
 
 def method_offered_by(method, products):
-    """СДЭК and Почта России need both the brand and every item. Pickup needs the brand address and a yes on the brand or on every item."""
+    """СДЭК and courier need both the brand and every item. Pickup needs the brand address and a yes on the brand or on every item."""
     if method is None or not method.is_active or method.price < 0 or not products:
         return False
     if method.code == DeliveryMethod.CDEK:
         return all(product.offers_cdek and _brand_allows(product, 'offers_cdek') for product in products)
-    if method.code == DeliveryMethod.POST:
-        return all(product.offers_post and _brand_allows(product, 'offers_post') for product in products)
+    if method.code == DeliveryMethod.COURIER:
+        return all(product.offers_courier and _brand_allows(product, 'offers_courier') for product in products)
     if method.code == DeliveryMethod.PICKUP:
         return all(_product_can_pickup(product) for product in products)
     return True

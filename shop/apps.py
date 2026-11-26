@@ -23,6 +23,8 @@ class ShopConfig(AppConfig):
             return
         if any(command in argv for command in ('test', 'migrate', 'makemigrations', 'collectstatic', 'shell', 'telegram_bot')):
             return
+        if os.environ.get('NONAME_SKIP_BOT') == '1':
+            return
         if 'runserver' not in argv or os.environ.get('RUN_MAIN') != 'true':
             return
         from .telegram import start_polling

@@ -7,6 +7,8 @@
   {% include 'includes/dashboard_nav.html' with active_page='orders' show_admin=1 %}
 
   <form method="get" class="order-filter">
+    <label for="order-q">Поиск</label>
+    <input id="order-q" type="search" name="q" value="{{ q }}" placeholder="Номер, имя, почта или телефон">
     <label for="status-filter">Фильтр по статусу</label>
     <select id="status-filter" name="status" data-auto-submit>
       <option value="">Все заказы</option>

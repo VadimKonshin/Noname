@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block title %}Доставка — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page">
+  <div class="eyebrow"><span class="tiny-dot"></span> STAFF / ДОСТАВКА</div>
+  <h1 class="commerce-heading">ДОСТАВКА<span class="heading-period">.</span></h1>
+  {% include 'includes/dashboard_nav.html' with active_page='delivery' %}
+  <p class="page-lead">Способы, которые магазин предлагает брендам. В корзину попадают только включённые, и только если бренд и вещи их тоже включили. Самовывоз берёт адрес бренда, не общий адрес отсюда.</p>
+  <form method="get" class="order-filter">
+    <label for="delivery-q">Поиск</label>
+    <input id="delivery-q" type="search" name="q" value="{{ q }}" placeholder="Название">
+    <button type="submit" class="small-action">Показать</button>
+    <a class="table-link" href="{% url 'panel_delivery_add' %}">+ Новый способ</a>
+  </form>
+  <div class="table-scroll">
+    <table class="store-table">
+      <thead>
+        <tr><th>Способ</th><th>Цена</th><th>Срок</th><th>Покупателям</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for method in page %}
+          <tr>
+            <td>
+              <strong>{{ method.name }}</strong>
+              <small class="table-muted">{% if method.code %}{{ method.get_code_display }}{% else %}без кода{% endif %}{% if method.description %} · {{ method.description }}{% endif %}</small>
+            </td>
+            <td>{{ method.price|floatformat:0 }} ₽</td>
+            <td>{{ method.eta|default:'—' }}</td>
+            <td>{% if method.is_active %}<span class="status-pill status-completed">Включён</span>{% else %}<span class="status-pill">Выключен</span>{% endif %}</td>
+            <td>
+              <div class="table-actions">
+                <a class="table-link" href="{% url 'panel_delivery_edit' method.pk %}">Открыть</a>
+                <a class="table-link danger-link" href="{% url 'panel_delivery_delete' method.pk %}">Удалить</a>
+              </div>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5">Способов доставки нет.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include 'includes/pagination.html' %}
+</section>
+{% endblock %}

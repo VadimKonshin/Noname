@@ -47,7 +47,7 @@ def mail_path(body):
 def variant_payload(product=None):
     data = {
         'offers_cdek': 'on',
-        'offers_post': 'on',
+        'offers_courier': 'on',
         'weight_grams': '500',
     }
     variants = list(product.variants.all()) if product and product.pk else []
@@ -384,7 +384,7 @@ class StoreTests(TestCase):
         missing = self.client.post(reverse('product_create'), {
             'brand': self.brand.pk, 'title': 'Без размера', 'description': 'Описание', 'price': '2500',
             'color': 'Чёрный', 'is_published': 'on',
-            'offers_cdek': 'on', 'offers_post': 'on', 'weight_grams': '500',
+            'offers_cdek': 'on', 'offers_courier': 'on', 'weight_grams': '500',
         })
         self.assertEqual(missing.status_code, 200)
         self.assertContains(missing, 'Отметьте хотя бы один размер')
@@ -449,7 +449,7 @@ class StoreTests(TestCase):
         self.assertNotContains(delivery, 'не расчёт')
         self.assertNotContains(self.client.get(reverse('info_contacts')), 'для разработки')
 
-    def test_buyer_delivery_is_cdek_and_post(self):
+    def test_buyer_delivery_is_cdek_and_courier(self):
         from .models import DeliveryMethod
         self.assertFalse(DeliveryMethod.objects.filter(name__contains='(демо)', is_active=True).exists())
         self.assertFalse(DeliveryMethod.objects.get(name='Доставка по городу').is_active)
@@ -458,14 +458,14 @@ class StoreTests(TestCase):
         self.assertTrue(pickup.is_active)
         self.assertEqual(pickup.price, Decimal('0.00'))
         cdek = DeliveryMethod.objects.get(code=DeliveryMethod.CDEK, is_active=True)
-        post = DeliveryMethod.objects.get(code=DeliveryMethod.POST, is_active=True)
+        courier = DeliveryMethod.objects.get(code=DeliveryMethod.COURIER, is_active=True)
         self.assertEqual(cdek.name, 'СДЭК')
-        self.assertEqual(post.name, 'Почта России')
+        self.assertEqual(courier.name, 'Доставка курьером')
 
-    def test_cart_lists_cdek_and_post_without_pickup(self):
+    def test_cart_lists_cdek_and_courier_without_pickup(self):
         self.client.post(reverse('cart_add', args=[self.product.slug]), {'size': 'M', 'quantity': 1})
         response = self.client.get(reverse('cart'))
-        self.assertEqual([method.name for method in response.context['delivery_methods']], ['СДЭК', 'Почта России'])
+        self.assertEqual([method.name for method in response.context['delivery_methods']], ['СДЭК', 'Доставка курьером'])
         self.assertNotContains(response, 'Самовывоз')
 
     def test_brand_page_lists_its_products(self):
@@ -602,7 +602,7 @@ class BrandAccountTests(TestCase):
         self.assertRedirects(response, reverse('brand_create'))
         response = self.client.post(reverse('brand_create'), {
             'name': 'CREATED BRAND', 'description': 'Created after approval',
-            'offers_cdek': 'on', 'offers_post': 'on',
+            'offers_cdek': 'on', 'offers_courier': 'on',
         })
         self.assertRedirects(response, reverse('brand_dashboard'))
         manager.refresh_from_db()
@@ -677,12 +677,12 @@ class BrandAccountTests(TestCase):
         page = self.client.get(reverse('product_create'))
         self.assertContains(page, '03 / Как отдать вещь')
         self.assertContains(page, 'name="offers_cdek"')
-        self.assertContains(page, 'name="offers_post"')
+        self.assertContains(page, 'name="offers_courier"')
         self.assertContains(page, 'name="offers_pickup"')
         self.assertNotContains(page, 'Добавить адрес самовывоза')
         missing = variant_payload()
         missing.pop('offers_cdek')
-        missing.pop('offers_post')
+        missing.pop('offers_courier')
         rejected = self.client.post(reverse('product_create'), {
             'title': 'Без службы',
             'description': 'Нет способа',
@@ -693,23 +693,23 @@ class BrandAccountTests(TestCase):
         self.assertEqual(rejected.status_code, 200)
         self.assertFalse(Product.objects.filter(title='Без службы').exists())
         self.assertContains(rejected, 'Отметьте СДЭК')
-        only_post = variant_payload()
-        only_post.pop('offers_cdek')
+        only_courier = variant_payload()
+        only_courier.pop('offers_cdek')
         saved = self.client.post(reverse('product_create'), {
-            'title': 'Только почта',
-            'description': 'Почта России',
+            'title': 'Только курьер',
+            'description': 'Доставка курьером',
             'price': '4500',
             'color': 'Чёрный',
             'is_published': 'on',
-            **only_post,
+            **only_courier,
         })
-        product = Product.objects.get(title='Только почта')
+        product = Product.objects.get(title='Только курьер')
         self.assertRedirects(saved, product.get_absolute_url())
         self.assertFalse(product.offers_cdek)
-        self.assertTrue(product.offers_post)
+        self.assertTrue(product.offers_courier)
         pickup_only = variant_payload()
         pickup_only.pop('offers_cdek')
-        pickup_only.pop('offers_post')
+        pickup_only.pop('offers_courier')
         pickup_only['offers_pickup'] = 'on'
         without_address = self.client.post(reverse('product_create'), {
             'title': 'Самовывоз без адреса',
@@ -840,7 +840,7 @@ class BrandAccountTests(TestCase):
             'description': 'Новое описание мастерской',
             'size_chart': 'M — грудь 96–100',
             'offers_cdek': 'on',
-            'offers_post': 'on',
+            'offers_courier': 'on',
         })
         self.assertRedirects(response, reverse('brand_dashboard'))
         self.brand.refresh_from_db()

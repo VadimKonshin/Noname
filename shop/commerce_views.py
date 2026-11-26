@@ -10,7 +10,7 @@ from django.contrib.auth.models import Permission
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
-from django.db.models import Count, F, Prefetch, Sum
+from django.db.models import Count, F, Prefetch, Q, Sum
 from django.db.models.functions import Coalesce, Lower, TruncDate
 from django.utils import timezone
 from django.http import Http404
@@ -748,9 +748,15 @@ def dashboard_orders(request):
         orders = orders.filter(status=status)
     else:
         status = ''
+    query = (request.GET.get('q') or '').strip()[:80]
+    if query:
+        orders = orders.filter(
+            Q(public_number__icontains=query) | Q(full_name__icontains=query)
+            | Q(email__icontains=query) | Q(phone__icontains=query),
+        )
     return render(request, 'shop/dashboard_orders.html', {
         'page': Paginator(orders, 20).get_page(request.GET.get('page')),
-        'statuses': Order.STATUS_CHOICES, 'selected_status': status,
+        'statuses': Order.STATUS_CHOICES, 'selected_status': status, 'q': query,
     })
 
 
@@ -861,7 +867,7 @@ def brand_cancel_order_item(request, pk, item_pk):
 @permission_required('shop.view_product', raise_exception=True)
 @require_GET
 def dashboard_products(request):
-    products = Product.objects.all().order_by('is_deleted', '-created_at').prefetch_related('variants')
+    products = Product.objects.select_related('brand').order_by('is_deleted', '-created_at').prefetch_related('variants')
     return render(request, 'shop/dashboard_products.html', {
         'products': products,
         'can_change_products': request.user.has_perm('shop.change_product'),

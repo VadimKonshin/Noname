@@ -6,7 +6,7 @@
 
 ## Что нужно заранее
 
-- Домен, у которого A-запись указывает на сервер. Сертификат выпускается на имя, не на IP. Пока своего домена нет, сайт открывается по адресу сервера: `SITE_ADDRESS=:80`, в `DJANGO_ALLOWED_HOSTS` этот IP, `DJANGO_SITE_URL` и `DJANGO_CSRF_TRUSTED_ORIGINS` начинаются с `http://`, `DJANGO_SECURE_SSL_REDIRECT=0` и `DJANGO_SECURE_HSTS_SECONDS=0`. Имя хостера вроде `имя.fvds.ru` сертификат не получает: Let's Encrypt ограничивает всю зону `fvds.ru`.
+- Домен, у которого A-запись указывает на сервер. Пока своего домена нет, `SITE_ADDRESS` — публичный IP сервера, `ACME_PROFILE=shortlived`, а `DJANGO_SITE_URL` и `DJANGO_CSRF_TRUSTED_ORIGINS` начинаются с `https://`. Caddy берёт для IP короткий сертификат Let's Encrypt, и вход перестаёт идти по голому HTTP. Имя хостера вроде `имя.fvds.ru` сертификат не получает: Let's Encrypt ограничивает всю зону `fvds.ru`.
 - Ubuntu с Docker Engine и плагином Compose. Проверка: `docker compose version`.
 - Открытые порты 22, 80 и 443. На Ubuntu с ufw:
 

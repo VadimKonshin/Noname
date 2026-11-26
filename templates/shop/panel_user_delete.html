@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block title %}Удалить аккаунт — NoName{% endblock %}
+{% block content %}
+<section class="container commerce-page narrow-page">
+  <div class="eyebrow"><span class="tiny-dot"></span> STAFF / ПОДТВЕРЖДЕНИЕ</div>
+  <h1 class="commerce-heading">УДАЛИТЬ АККАУНТ<span class="heading-period">?</span></h1>
+  {% include 'includes/dashboard_nav.html' with active_page='users' %}
+  <div class="form-section">
+    <h2>{{ person.username }}</h2>
+    <p class="page-lead">Аккаунт и заявка менеджера, если она была, исчезнут. Бренд, товары, заказы и сообщения останутся. Заказы этого человека станут гостевыми.</p>
+    <form method="post">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-danger btn-wide">Да, удалить аккаунт ↗</button>
+    </form>
+    <a class="back-catalog" href="{% url 'panel_users' %}">← Отмена</a>
+  </div>
+</section>
+{% endblock %}
