@@ -306,7 +306,6 @@ a,button {transition:color .18s,background .18s,border-color .18s}
 .size-stock li {display:flex;justify-content:space-between;gap:16px;border-bottom:1px solid #34343a;padding-bottom:8px;font-size:13px}
 .size-stock span {letter-spacing:.08em;color:#eeeae4}
 .size-stock strong {font-weight:700;color:#f0b2ac}
-.staff-stats {width:min(1080px,calc(100% - 180px))}
 .telegram-actions {display:flex;flex-wrap:wrap;align-items:center;gap:28px;margin-top:18px}
 .telegram-actions form {margin:0}
 .btn-quiet {background:transparent;color:#eceae6;border:1px solid #5c5c63;gap:12px}
@@ -346,8 +345,7 @@ a,button {transition:color .18s,background .18s,border-color .18s}
 .manager-choice {display:flex;align-items:center;gap:8px;margin:8px 0;font-size:13px;color:#eceae6}
 .manager-choice input {accent-color:#e45549;width:16px;height:16px}
 .manager-pending td:first-child {box-shadow:inset 3px 0 0 #e45549}
-@media(max-width:850px){.staff-stats {width:calc(100% - 80px)}}
-@media(max-width:620px){.staff-stats {width:calc(100% - 48px)}.catalog-photos .product-visual {aspect-ratio:.91}.thanks-actions {flex-direction:column;align-items:center}}
+@media(max-width:620px){.catalog-photos .product-visual {aspect-ratio:.91}.thanks-actions {flex-direction:column;align-items:center}}
 @media(prefers-reduced-motion:reduce){.thanks-burst i {animation:none;opacity:.85}}
 
 /* Card shows one garment. The full board stays on the product page. */
